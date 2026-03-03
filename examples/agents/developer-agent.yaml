@@ -22,16 +22,6 @@ spec:
     6. Commits with descriptive messages
     7. Pushes the branch and posts a status update
 
-  requires_tools:
-    - github:read_issue
-    - github:read_comments
-    - github:add_comment
-    - github:create_branch
-    - github:edit_file
-    - github:create_file
-    - github:search_codebase
-    - ai:completion
-
   inputs:
     issue_url:
       type: string

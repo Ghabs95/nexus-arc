@@ -526,33 +526,33 @@ class TestMultiTierWorkflow:
     def test_enterprise_workflow_loads_full(self):
         """Smoke test: load the enterprise workflow full tier."""
         path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "workflows", "enterprise_workflow.yaml"
+            os.path.dirname(__file__), "..", "examples", "workflows", "enterprise_full_workflow.yaml"
         )
         if not os.path.exists(path):
             pytest.skip("enterprise workflow not found")
-        wf = WorkflowDefinition.from_yaml(path, workflow_type="full")
+        wf = WorkflowDefinition.from_yaml(path)
         assert len(wf.steps) > 5
         assert wf.steps[0].agent.name == "triage"
 
     def test_enterprise_workflow_loads_shortened(self):
         """Smoke test: load the enterprise workflow shortened tier."""
         path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "workflows", "enterprise_workflow.yaml"
+            os.path.dirname(__file__), "..", "examples", "workflows", "enterprise_shortened_workflow.yaml"
         )
         if not os.path.exists(path):
             pytest.skip("enterprise workflow not found")
-        wf = WorkflowDefinition.from_yaml(path, workflow_type="shortened")
+        wf = WorkflowDefinition.from_yaml(path)
         assert len(wf.steps) >= 3
         assert wf.steps[0].agent.name == "triage"
 
     def test_enterprise_workflow_loads_fast_track(self):
         """Smoke test: load the enterprise workflow fast-track tier."""
         path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "workflows", "enterprise_workflow.yaml"
+            os.path.dirname(__file__), "..", "examples", "workflows", "enterprise_fast_track_workflow.yaml"
         )
         if not os.path.exists(path):
             pytest.skip("enterprise workflow not found")
-        wf = WorkflowDefinition.from_yaml(path, workflow_type="fast-track")
+        wf = WorkflowDefinition.from_yaml(path)
         assert len(wf.steps) >= 3
         # Last non-router step should be deployer
         non_router = [s for s in wf.steps if s.agent.name != "router"]

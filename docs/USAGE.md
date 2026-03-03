@@ -139,7 +139,7 @@ Nexus ARC supports human approval gates and merge policies within workflow defin
 
 monitoring:
   log_all_decisions: true
-  audit_trail: "github_comments"
+  audit_trail: "vcs_comments"
   notify_human: true
   
   human_approval_gates:

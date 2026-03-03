@@ -45,6 +45,7 @@ from nexus.core.workflow_engine.workflow_definition_loader import (
     build_prompt_context_text,
     build_workflow_steps,
     parse_require_human_merge_approval,
+    parse_require_approval_for,
     resolve_workflow_steps_list,
     resolve_next_agent_types_from_steps,
 )
@@ -611,6 +612,7 @@ class WorkflowDefinition:
             raise ValueError("Workflow definition must include a non-empty steps list")
 
         require_human_merge_approval = parse_require_human_merge_approval(data)
+        require_approval_for = parse_require_approval_for(data)
         steps = build_workflow_steps(
             data=data,
             steps_data=steps_data,
@@ -629,6 +631,7 @@ class WorkflowDefinition:
             steps=steps,
             metadata=workflow_metadata,
             require_human_merge_approval=require_human_merge_approval,
+            require_approval_for=require_approval_for,
         )
 
         # Apply workflow-level approval gates to all steps

@@ -119,7 +119,3 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=nexus --cov-report=term-missing"
-filterwarnings = [
-    "ignore:.*Eventlet is deprecated.*:DeprecationWarning",
-    "ignore:unclosed database in <sqlite3.Connection.*:ResourceWarning"
-]

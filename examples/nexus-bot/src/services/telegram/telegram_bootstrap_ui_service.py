@@ -76,7 +76,8 @@ def build_help_text() -> str:
         "🔧 **Git Platform Management:**\n"
         "• /assign <project> <issue#> - Assign issue to yourself\n"
         "• /implement <project> <issue#> - Request AI Agent implementation\n"
-        "• /prepare <project> <issue#> - Add AI Agent instructions\n\n"
+        "• /prepare <project> <issue#> - Add AI Agent instructions\n"
+        "• /plan <project> <issue#> - Request a technical implementation plan\n\n"
         "ℹ️ /help - Show this list"
     )
 

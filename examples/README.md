@@ -138,10 +138,9 @@ spec:
       type: enum
       values: [ "p0-critical", "p1-high", "p2-medium", "p3-low" ]
 
-  requires_tools:
-    - github:read_issue
-    - github:add_comment
-    - ai:completion
+  # Agents do not declare tools individually anymore.
+  # Tools are sandboxed by the Workflow at the pipeline level.
+  # They receive default generic vcs capabilities dynamically.
 
   ai_instructions: |
     Analyze this issue and classify it...
@@ -200,7 +199,7 @@ name: "Nexus ARC Development Workflow"
 steps:
   - id: "triage"
     agent_type: "triage"
-    tools: [ github:read_issue, github:add_comment, ... ]
+    tools: [ vcs:read_issue, vcs:add_comment, ... ]
     on_success: "route_by_type"
 
   - id: "route_by_type"

@@ -20,14 +20,6 @@ spec:
     5. Posts review comments
     6. Approves or requests changes
     7. Requires full regression (or equivalent full CI suite) to pass before approval
-
-  requires_tools:
-    - github:read_pr
-    - github:review_pr
-    - github:suggest_changes
-    - github:add_comment
-    - github:approve_pr
-    - ai:completion
   
   inputs:
     pr_urls:

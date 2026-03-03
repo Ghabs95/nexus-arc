@@ -12,6 +12,28 @@ This folder is now the canonical home for the Telegram bot runtime that previous
 
 ## Quick start
 
+## Interactive Commands
+
+The bot supports the following key commands across Telegram/Discord:
+
+**Git Platform Management:**
+- `/assign <project> <issue#>` - Assign an issue to yourself
+- `/implement <project> <issue#>` - Request AI Agent implementation
+- `/prepare <project> <issue#>` - Add AI Agent instructions
+- `/plan <project> <issue#>` - Request a technical implementation plan
+
+**Workflow & Monitoring:**
+- `/status [project|all]` - View pending tasks in the inbox
+- `/track <project> <issue#>` - Track an issue for updates
+- `/myissues` - View all your tracked issues
+- `/active` or `/wfstate` - View active workflows
+
+**General:**
+- `/chat` - Speak directly with the AI
+- `/help` - Show all available commands
+- `/menu` - Interactive button menu
+
+
 ```bash
 cd /opt/nexus-arc/examples/nexus-bot
 python3 -m venv venv

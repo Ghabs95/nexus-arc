@@ -24,14 +24,6 @@ spec:
     4. Commits the design doc
     5. Opens a PR for review
     6. Links back to original issue
-
-  requires_tools:
-    - github:get_issue
-    - github:create_branch
-    - github:create_file
-    - github:create_pr
-    - github:add_comment
-    - ai:completion
   
   inputs:
     issue_url:

@@ -13,7 +13,7 @@ from nexus.core.yaml_loader import RETRY_BACKOFF_STRATEGIES, YamlWorkflowLoader
 def _minimal_dict(**overrides):
     """Return a minimal valid workflow dict."""
     base = {
-        "name": "Test Workflow",
+        "metadata": {"name": "Test Workflow"},
         "steps": [
             {"id": "step1", "name": "Triage", "agent_type": "triage"},
             {"id": "step2", "name": "Develop", "agent_type": "developer", "on_success": "step3"},
@@ -42,7 +42,7 @@ class TestValidateDictHappy:
 
     def test_valid_retry_policy_exponential(self):
         data = {
-            "name": "Retry Test",
+            "metadata": {"name": "Retry Test"},
             "steps": [
                 {
                     "id": "s1",
@@ -61,7 +61,7 @@ class TestValidateDictHappy:
     def test_valid_retry_policy_all_strategies(self):
         for strategy in RETRY_BACKOFF_STRATEGIES:
             data = {
-                "name": "Retry",
+                "metadata": {"name": "Retry"},
                 "steps": [
                     {"id": "s1", "agent_type": "triage", "retry_policy": {"backoff": strategy}}
                 ],
@@ -71,7 +71,7 @@ class TestValidateDictHappy:
 
     def test_valid_parallel_field(self):
         data = {
-            "name": "Parallel Test",
+            "metadata": {"name": "Parallel Test"},
             "steps": [
                 {"id": "step1", "agent_type": "triage"},
                 {"id": "step2", "agent_type": "developer", "parallel": ["step1"]},
@@ -82,7 +82,7 @@ class TestValidateDictHappy:
 
     def test_tiered_workflow_valid(self):
         data = {
-            "name": "Tiered",
+            "metadata": {"name": "Tiered"},
             "full_workflow": {
                 "steps": [
                     {"id": "t1", "agent_type": "triage"},
@@ -110,18 +110,18 @@ class TestValidateDictErrors:
         assert any("name" in e or "id" in e for e in errors)
 
     def test_empty_steps_returns_error(self):
-        data = {"name": "No Steps", "steps": []}
+        data = {"metadata": {"name": "No Steps"}, "steps": []}
         errors = YamlWorkflowLoader.validate_dict(data)
         assert errors
 
     def test_missing_agent_type(self):
-        data = {"name": "Bad", "steps": [{"id": "s1", "name": "No Type"}]}
+        data = {"metadata": {"name": "Bad"}, "steps": [{"id": "s1", "metadata": {"name": "No Type"}}]}
         errors = YamlWorkflowLoader.validate_dict(data)
         assert any("agent_type" in e for e in errors)
 
     def test_invalid_on_success_reference(self):
         data = {
-            "name": "Bad Ref",
+            "metadata": {"name": "Bad Ref"},
             "steps": [{"id": "s1", "agent_type": "triage", "on_success": "nonexistent"}],
         }
         errors = YamlWorkflowLoader.validate_dict(data)
@@ -129,7 +129,7 @@ class TestValidateDictErrors:
 
     def test_malformed_condition_syntax(self):
         data = {
-            "name": "Bad Cond",
+            "metadata": {"name": "Bad Cond"},
             "steps": [{"id": "s1", "agent_type": "triage", "condition": "x =="}],
         }
         errors = YamlWorkflowLoader.validate_dict(data)
@@ -137,7 +137,7 @@ class TestValidateDictErrors:
 
     def test_retry_policy_non_dict(self):
         data = {
-            "name": "Bad Retry",
+            "metadata": {"name": "Bad Retry"},
             "steps": [{"id": "s1", "agent_type": "triage", "retry_policy": "3"}],
         }
         errors = YamlWorkflowLoader.validate_dict(data)
@@ -145,7 +145,7 @@ class TestValidateDictErrors:
 
     def test_retry_policy_negative_max_retries(self):
         data = {
-            "name": "Bad Retry",
+            "metadata": {"name": "Bad Retry"},
             "steps": [{"id": "s1", "agent_type": "triage", "retry_policy": {"max_retries": -1}}],
         }
         errors = YamlWorkflowLoader.validate_dict(data)
@@ -153,7 +153,7 @@ class TestValidateDictErrors:
 
     def test_retry_policy_invalid_backoff(self):
         data = {
-            "name": "Bad Backoff",
+            "metadata": {"name": "Bad Backoff"},
             "steps": [{"id": "s1", "agent_type": "triage", "retry_policy": {"backoff": "random"}}],
         }
         errors = YamlWorkflowLoader.validate_dict(data)
@@ -161,14 +161,14 @@ class TestValidateDictErrors:
 
     def test_parallel_non_list(self):
         data = {
-            "name": "Bad Parallel",
+            "metadata": {"name": "Bad Parallel"},
             "steps": [{"id": "s1", "agent_type": "triage", "parallel": "step2"}],
         }
         errors = YamlWorkflowLoader.validate_dict(data)
         assert any("parallel" in e for e in errors)
 
     def test_step_not_dict(self):
-        data = {"name": "Bad Step", "steps": ["not-a-dict"]}
+        data = {"metadata": {"name": "Bad Step"}, "steps": ["not-a-dict"]}
         errors = YamlWorkflowLoader.validate_dict(data)
         assert errors
 
@@ -207,7 +207,7 @@ class TestLoadFromDict:
     def test_strict_mode_raises_on_warning(self):
         # Unknown parallel step id → warning
         data = {
-            "name": "Parallel Warn",
+            "metadata": {"name": "Parallel Warn"},
             "steps": [
                 {"id": "s1", "agent_type": "triage", "parallel": ["nonexistent"]},
             ],
@@ -218,7 +218,7 @@ class TestLoadFromDict:
     def test_non_strict_mode_proceeds_with_warning(self):
         # Same data should succeed in non-strict mode
         data = {
-            "name": "Parallel Warn",
+            "metadata": {"name": "Parallel Warn"},
             "steps": [
                 {"id": "s1", "agent_type": "triage", "parallel": ["nonexistent"]},
             ],
@@ -235,7 +235,7 @@ class TestLoadFromDict:
 class TestRetryPolicyParsing:
     def test_retry_policy_max_retries_mapped_to_step_retry(self):
         data = {
-            "name": "Retry Mapping",
+            "metadata": {"name": "Retry Mapping"},
             "steps": [
                 {
                     "id": "s1",
@@ -250,7 +250,7 @@ class TestRetryPolicyParsing:
 
     def test_explicit_retry_takes_precedence_over_retry_policy(self):
         data = {
-            "name": "Retry Precedence",
+            "metadata": {"name": "Retry Precedence"},
             "steps": [
                 {
                     "id": "s1",
@@ -277,7 +277,7 @@ class TestRetryPolicyParsing:
 class TestParallelFieldParsing:
     def test_parallel_field_populated(self):
         data = {
-            "name": "Parallel",
+            "metadata": {"name": "Parallel"},
             "steps": [
                 {"id": "step1", "agent_type": "triage"},
                 {"id": "step2", "agent_type": "developer", "parallel": ["step1"]},
@@ -294,7 +294,7 @@ class TestParallelFieldParsing:
 
     def test_multiple_parallel_ids(self):
         data = {
-            "name": "Multi Parallel",
+            "metadata": {"name": "Multi Parallel"},
             "steps": [
                 {"id": "a", "agent_type": "triage"},
                 {"id": "b", "agent_type": "developer"},
@@ -355,11 +355,11 @@ class TestLoadFile:
         from pathlib import Path
 
         yaml_path = (
-            Path(__file__).parent.parent / "examples" / "workflows" / "enterprise_workflow.yaml"
+            Path(__file__).parent.parent / "examples" / "workflows" / "enterprise_full_workflow.yaml"
         )
         if not yaml_path.exists():
             pytest.skip("Example YAML not found")
-        wf = YamlWorkflowLoader.load(str(yaml_path), workflow_type="full")
+        wf = YamlWorkflowLoader.load(str(yaml_path))
         assert isinstance(wf, Workflow)
         assert len(wf.steps) > 0
 
@@ -372,7 +372,7 @@ class TestLoadFile:
 class TestRetryPolicyBackoffStorage:
     def test_backoff_strategy_stored_on_step(self):
         data = {
-            "name": "Backoff Test",
+            "metadata": {"name": "Backoff Test"},
             "steps": [
                 {
                     "id": "s1",
@@ -386,7 +386,7 @@ class TestRetryPolicyBackoffStorage:
 
     def test_initial_delay_stored_on_step(self):
         data = {
-            "name": "Delay Test",
+            "metadata": {"name": "Delay Test"},
             "steps": [
                 {
                     "id": "s1",
@@ -406,7 +406,7 @@ class TestRetryPolicyBackoffStorage:
 
     def test_constant_backoff_stored(self):
         data = {
-            "name": "Constant Backoff",
+            "metadata": {"name": "Constant Backoff"},
             "steps": [
                 {
                     "id": "s1",

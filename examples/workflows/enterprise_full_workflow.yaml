@@ -7,16 +7,18 @@ metadata:
 
 workflow_type: "full"
 timeout_seconds: 10800
+allowed_tools:
+  - "vcs:read_issue"
+  - "vcs:add_comment"
+  - "vcs:add_label"
+  - "vcs:search_codebase"
 
 steps:
   - id: "triage"
     name: "Triage & Classification"
     description: "Classify the issue, assign priority, and decide the path"
     agent_type: "triage"
-    tools:
-      - github:read_issue
-      - github:add_comment
-      - github:add_label
+    tools: []  # Inherits global tools but gets no special write access
     inputs:
       - issue_url: "string"
     outputs:
@@ -40,10 +42,9 @@ steps:
     description: "Create a design proposal covering API contracts and ADRs"
     agent_type: "designer"
     tools:
-      - github:create_branch
-      - github:create_file
-      - github:create_pr
-      - github:add_comment
+      - vcs:create_branch
+      - vcs:create_file
+      - vcs:create_pr
     inputs:
       - issue_url: "string"
       - classification: "string"
@@ -58,11 +59,9 @@ steps:
     description: "Implement code changes based on design or triage output"
     agent_type: "developer"
     tools:
-      - github:create_branch
-      - github:commit_changes
-      - github:create_pr
-      - github:add_comment
-      - github:search_codebase
+      - vcs:create_branch
+      - vcs:commit_changes
+      - vcs:create_pr
     inputs:
       - issue_url: "string"
     outputs:
@@ -76,10 +75,9 @@ steps:
     description: "Review implementation for correctness, quality, and standards; approve only after full regression (or equivalent full CI suite) passes"
     agent_type: "reviewer"
     tools:
-      - github:review_pr
-      - github:add_comment
-      - github:request_changes
-      - github:approve_pr
+      - vcs:review_pr
+      - vcs:request_changes
+      - vcs:approve_pr
     inputs:
       - pr_urls: "list[string]"
     outputs:
@@ -101,10 +99,9 @@ steps:
     name: "Compliance & Security Review"
     description: "Verify privacy, security, and regulatory compliance"
     agent_type: "compliance"
+    require_human_approval: true
     tools:
-      - github:review_pr
-      - github:add_comment
-      - github:add_label
+      - vcs:review_pr
     inputs:
       - implementation_pr_url: "string"
     outputs:
@@ -124,10 +121,10 @@ steps:
     name: "Merge & Deploy"
     description: "Merge approved PR and create a release"
     agent_type: "deployer"
+    require_human_approval: true
     tools:
-      - github:merge_pr
-      - github:create_release
-      - github:add_comment
+      - vcs:merge_pr
+      - vcs:create_release
     inputs:
       - implementation_pr_url: "string"
     outputs:
@@ -140,10 +137,9 @@ steps:
     description: "Update docs, write changelog entry, and close the issue"
     agent_type: "writer"
     tools:
-      - github:create_file
-      - github:edit_file
-      - github:add_comment
-      - github:close_issue
+      - vcs:create_file
+      - vcs:edit_file
+      - vcs:close_issue
     inputs:
       - issue_url: "string"
       - deployment_status: "string"
@@ -157,8 +153,7 @@ steps:
     description: "Post summary and close issues that failed review"
     agent_type: "finalizer"
     tools:
-      - github:add_comment
-      - github:close_issue
+      - vcs:close_issue
     inputs:
       - issue_url: "string"
       - review_comments: "list[string]"
@@ -166,9 +161,6 @@ steps:
 
 monitoring:
   log_all_decisions: true
-  audit_trail: "github_comments"
+  audit_trail: "vcs_comments"
   notify_human: true
-  human_approval_gates:
-    - before: "deploy"
-    - before: "compliance"
   require_human_merge_approval: true

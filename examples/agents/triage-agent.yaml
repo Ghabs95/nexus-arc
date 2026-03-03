@@ -24,13 +24,7 @@ spec:
     3. Suggests appropriate labels and assignee
     4. Posts findings as issue comment
 
-  # Tools the agent needs
-  requires_tools:
-    - github:read_issue
-    - github:add_comment
-    - github:add_label
-    - ai:completion  # LLM call
-  
+  # Tools the agent needs  
   # Input contract
   inputs:
     issue_url:

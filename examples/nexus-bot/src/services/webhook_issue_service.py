@@ -39,7 +39,7 @@ def handle_issue_opened_event(
     issue_labels = event.get("labels", [])
     repo_name = event.get("repo", "unknown")
 
-    logger.info("📋 New issue: #%s - %s by %s", issue_number, issue_title, issue_author)
+    logger.info("📋 Issue event (%s): #%s - %s by %s", action, issue_number, issue_title, issue_author)
 
     if action == "closed":
         message = policy.build_issue_closed_message(event)
@@ -62,11 +62,14 @@ def handle_issue_opened_event(
             "worktree_cleanup": cleanup_ok,
         }
 
-    if action != "opened":
-        return {"status": "ignored", "reason": f"action is {action}, not opened"}
+    plan_requested = "agent:plan-requested" in issue_labels
+    if action not in {"opened", "labeled"}:
+        return {"status": "ignored", "reason": f"action is {action}, not opened/labeled"}
+    if action == "labeled" and not plan_requested:
+        return {"status": "ignored", "reason": "labeled action without agent:plan-requested"}
 
     workflow_labels = [l for l in issue_labels if str(l).startswith("workflow:")]
-    if workflow_labels:
+    if action == "opened" and workflow_labels:
         logger.info(
             "⏭️ Skipping self-created issue #%s (has workflow label: %s)",
             issue_number,
@@ -102,8 +105,8 @@ def handle_issue_opened_event(
         system_ops = project_config.get("system_operations", {})
         default_agent = str(system_ops.get("default") or "").strip()
         
-        # Override agent_type if planning is requested
-        if "agent:plan-requested" in issue_labels:
+        # Route to the planning agent when explicitly requested.
+        if plan_requested:
             agent_type = str(system_ops.get("plan") or default_agent).strip()
             logger.info("📝 Routing issue #%s to %s agent based on plan label.", issue_number, agent_type)
         else:

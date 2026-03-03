@@ -16,6 +16,19 @@ def parse_require_human_merge_approval(data: dict[str, Any]) -> bool:
     return bool(require_human_merge_approval)
 
 
+def parse_require_approval_for(data: dict[str, Any]) -> list[str]:
+    """Parse list of steps that require strict human approval gates."""
+    require_approval_for = data.get("require_approval_for")
+    if not require_approval_for:
+        metadata = data.get("metadata")
+        if isinstance(metadata, dict):
+            require_approval_for = metadata.get("require_approval_for")
+            
+    if isinstance(require_approval_for, list):
+        return [str(step_id) for step_id in require_approval_for]
+    return []
+
+
 def resolve_workflow_steps_list(
     data: dict[str, Any], workflow_type: str = ""
 ) -> list[dict[str, Any]]:
@@ -84,13 +97,36 @@ def build_workflow_steps(
                 step_initial_delay = float(raw_delay) if raw_delay else 0.0
             except (TypeError, ValueError):
                 step_initial_delay = 0.0
-
+        
+        # Enforce workflow-level security limits
+        workflow_tools = data.get("allowed_tools")
+        
+        step_tools = step_data.get("tools")
+        if isinstance(step_tools, list) and isinstance(workflow_tools, list):
+            # Step requested specific tools; filter out any not in the global whitelist
+            combined_tools = [t for t in step_tools if t in workflow_tools]
+        elif isinstance(step_tools, list):
+            # No global whitelist; step tools are accepted as-is
+            combined_tools = step_tools
+        elif isinstance(workflow_tools, list):
+            # Step declared no specific list; default to full global whitelist
+            combined_tools = workflow_tools
+        else:
+            # Neither defined
+            combined_tools = []
+            
+        # Every step requires the ability to post status comments for observability
+        if "vcs:add_comment" not in combined_tools:
+            # Copy to avoid mutating original lists from yaml parser
+            combined_tools = list(combined_tools) + ["vcs:add_comment"]
+            
         agent = Agent(
             name=agent_type,
             display_name=step_data.get("name", agent_type),
             description=step_desc or f"Step {idx}",
             timeout=data.get("timeout_seconds", 600),
             max_retries=2,
+            allowed_tools=combined_tools,
         )
 
         inputs_data = step_data.get("inputs", {})
@@ -123,6 +159,7 @@ def build_workflow_steps(
                 on_success=step_data.get("on_success"),
                 final_step=bool(step_data.get("final_step", False)),
                 parallel_with=parallel_with,
+                require_human_approval=bool(step_data.get("require_human_approval", False)),
             )
         )
 

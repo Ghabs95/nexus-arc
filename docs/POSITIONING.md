@@ -76,6 +76,17 @@ every workflow has a complete audit trail. Think Temporal meets GitHub Actions f
 | **Reliability** | Basic           | Enterprise-grade      |
 | **Compliance**  | ⚠️ DIY          | ✅ Built-in            |
 
+### vs Monolithic Agents (e.g. infinite loops for Long-Horizon Tasks)
+
+**"A single monolithic agent attempting a massive multi-hour task will hallucinate, exhaust its context window, and burn your API budget. Nexus ARC breaks long-horizon tasks into finite, specialized state machines."**
+
+| What | Monolithic Agent (`while True`) | Nexus ARC |
+|---|---|---|
+| **Context Window** | Explodes (keeps entire history) | Trims (passes only previous output) |
+| **Model Cost** | Max tier required for *all* steps | Tiered (cheap models for triage, heavy for dev) |
+| **Error Recovery** | Blindly repeats failing commands | Isolated retries via `workflow_policy` |
+| **Human In the Loop** | Hard (agent runs autonomously until crash) | Easy (pause at any workflow boundary) |
+
 ---
 
 ## Target Audiences

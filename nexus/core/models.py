@@ -62,13 +62,13 @@ class ApprovalGate:
         return ApprovalGate(
             gate_type=ApprovalGateType.PR_MERGE,
             required=True,
-            tool_restrictions=["gh pr merge", "git push origin main", "git push origin master"],
+            tool_restrictions=["vcs:merge_pr", "git push origin main", "git push origin master"],
             approval_message=(
                 "🚨 **PR MERGE APPROVAL POLICY (CRITICAL):**\n"
                 "❌ DO NOT merge Pull Requests automatically\n"
-                "❌ DO NOT use `gh pr merge` command\n"
-                "✅ You MAY create PRs with `gh pr create`\n"
-                "✅ Post PR link in your GitHub comment\n"
+                "❌ DO NOT use `vcs:merge_pr` command\n"
+                "✅ You MAY create PRs with `vcs:create_pr`\n"
+                "✅ Post PR link in your review comment\n"
                 "✅ Human approval REQUIRED before merge\n"
                 "⚠️  Violating this can break production - wait for human review"
             ),
@@ -85,6 +85,7 @@ class Agent:
     provider_preference: str | None = None  # "openai", "copilot", "gemini", etc.
     timeout: int = 600  # seconds
     max_retries: int = 3
+    allowed_tools: list[str] = field(default_factory=list)  # Restricted sandbox tools, if any
 
     def __str__(self) -> str:
         return f"@{self.name}"
@@ -113,6 +114,7 @@ class WorkflowStep:
     completed_at: datetime | None = None
     error: str | None = None
     retry_count: int = 0  # Number of retries attempted so far
+    require_human_approval: bool = False  # If this inline step specifically needs approval
     approval_gates: list[ApprovalGate] = field(default_factory=list)  # Approval gates for this step
     routes: list[dict[str, Any]] = field(
         default_factory=list
@@ -132,7 +134,7 @@ class WorkflowStep:
     def get_approval_constraints(self) -> str:
         """Get combined approval constraint messages for all gates."""
         messages = [
-            gate.approval_message
+            str(gate.approval_message)
             for gate in self.approval_gates
             if gate.required and gate.approval_message
         ]
@@ -163,6 +165,7 @@ class Workflow:
     completed_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     require_human_merge_approval: bool = True  # Workflow-level PR merge approval policy
+    require_approval_for: list[str] = field(default_factory=list)  # Step IDs requiring human approval
 
     def get_step(self, step_num: int) -> WorkflowStep | None:
         """Get step by number."""
@@ -201,12 +204,36 @@ class Workflow:
         This should be called after workflow is loaded from YAML to ensure
         workflow-level policies are applied to individual steps.
         """
+        import os
+        
+        strict_approvals = str(os.getenv("NEXUS_STRICT_APPROVALS", "false")).lower() == "true"
+
         if self.require_human_merge_approval:
             pr_merge_gate = ApprovalGate.pr_merge_gate()
             for step in self.steps:
                 # Add PR merge gate if not already present
                 if not step.has_approval_gate(ApprovalGateType.PR_MERGE):
                     step.approval_gates.append(pr_merge_gate)
+
+        human_approval_gate = ApprovalGate(
+            gate_type=ApprovalGateType.CUSTOM,
+            required=True,
+            approval_message=(
+                "🚨 **HUMAN APPROVAL REQUIRED:**\n"
+                "This step requires human approval before proceeding."
+            ),
+        )
+
+        for step in self.steps:
+            needs_approval = (
+                strict_approvals 
+                or step.name in self.require_approval_for 
+                or f"step_{step.step_num}" in self.require_approval_for
+                or getattr(step, "id", None) in self.require_approval_for
+                or step.require_human_approval
+            )
+            if needs_approval and not step.has_approval_gate(ApprovalGateType.CUSTOM):
+                step.approval_gates.append(human_approval_gate)
 
     def __len__(self) -> int:
         return len(self.steps)

@@ -117,3 +117,69 @@ def test_handle_issue_closed_event_triggers_worktree_cleanup():
     assert result["worktree_cleanup"] is True
     assert cleanups == [("acme/repo", "88")]
     assert notifications == ["closed:88"]
+
+
+def test_handle_issue_labeled_plan_requested_creates_planning_task(tmp_path):
+    inbox_dir = tmp_path / "workspace-a" / ".nexus" / "inbox" / "proj-a"
+
+    result = handle_issue_opened_event(
+        event={
+            "action": "labeled",
+            "number": 90,
+            "title": "Need design first",
+            "body": "Draft a clear implementation plan.",
+            "author": "alice",
+            "url": "https://github.com/acme/repo/issues/90",
+            "labels": ["agent:plan-requested"],
+            "repo": "acme/repo",
+        },
+        logger=MagicMock(),
+        policy=_Policy(),
+        notify_lifecycle=lambda _m: True,
+        emit_alert=lambda *args, **kwargs: True,
+        project_config={
+            "proj-a": {
+                "workspace": "workspace-a",
+                "git_repo": "acme/repo",
+            },
+            "system_operations": {"default": "triage", "inbox": "triage", "plan": "designer"},
+        },
+        base_dir=str(tmp_path),
+        project_repos=lambda key, cfg, get_repos: cfg.get("git_repos", [cfg.get("git_repo")]),
+        get_repos=lambda _key: [],
+        get_tasks_active_dir=lambda root, project: str(
+            tmp_path / "workspace-a" / ".nexus" / "tasks" / project / "active"
+        ),
+        get_inbox_dir=lambda root, project: str(inbox_dir),
+    )
+
+    assert result["status"] == "task_created"
+    assert result["agent_type"] == "designer"
+
+
+def test_handle_issue_labeled_without_plan_label_is_ignored(tmp_path):
+    result = handle_issue_opened_event(
+        event={
+            "action": "labeled",
+            "number": 91,
+            "title": "Label update only",
+            "body": "",
+            "author": "alice",
+            "url": "https://github.com/acme/repo/issues/91",
+            "labels": ["priority:high"],
+            "repo": "acme/repo",
+        },
+        logger=MagicMock(),
+        policy=_Policy(),
+        notify_lifecycle=lambda _m: True,
+        emit_alert=lambda *args, **kwargs: True,
+        project_config={"proj-a": {"workspace": "workspace-a", "git_repo": "acme/repo"}},
+        base_dir=str(tmp_path),
+        project_repos=lambda key, cfg, get_repos: [cfg.get("git_repo")],
+        get_repos=lambda _key: [],
+        get_tasks_active_dir=lambda root, project: str(tmp_path / "active"),
+        get_inbox_dir=lambda root, project: str(tmp_path / "inbox"),
+    )
+
+    assert result["status"] == "ignored"
+    assert result["reason"] == "labeled action without agent:plan-requested"

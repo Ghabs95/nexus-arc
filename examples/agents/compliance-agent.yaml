@@ -19,12 +19,6 @@ spec:
     4. Reviews data retention and third-party sharing
     5. Approves or blocks with detailed reasoning
 
-  requires_tools:
-    - github:read_pr
-    - github:review_pr
-    - github:add_comment
-    - github:add_label
-
   inputs:
     implementation_pr_url:
       type: string

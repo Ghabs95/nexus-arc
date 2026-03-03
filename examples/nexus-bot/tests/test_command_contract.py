@@ -7,7 +7,7 @@ def test_command_parity_report_contains_expected_sections():
     assert "telegram_only" in report
     assert "discord_only" in report
     assert "shared" in report
-    for required in {"chat", "track", "tracked", "myissues", "status"}:
+    for required in {"chat", "track", "tracked", "myissues", "status", "plan"}:
         assert required in report["shared"]
 
 

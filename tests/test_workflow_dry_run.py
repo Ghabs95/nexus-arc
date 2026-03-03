@@ -11,7 +11,7 @@ from nexus.core.workflow import WorkflowDefinition
 def _minimal_workflow(**overrides):
     """Return a minimal valid workflow dict."""
     base = {
-        "name": "Test Workflow",
+        "metadata": {"name": "Test Workflow"},
         "steps": [
             {"id": "step1", "name": "Step One", "agent_type": "triage"},
             {"id": "step2", "name": "Step Two", "agent_type": "developer", "on_success": "step3"},
@@ -55,13 +55,13 @@ class TestDryRunValidation:
         assert any("name" in e or "id" in e for e in report.errors)
 
     def test_empty_steps_list(self):
-        data = {"name": "Broken", "steps": []}
+        data = {"metadata": {"name": "Broken"}, "steps": []}
         report = WorkflowDefinition.dry_run(data)
         assert any("steps" in e.lower() or "No steps" in e for e in report.errors)
 
     def test_missing_workflow_type_tier(self):
         # Requesting a tier that doesn't exist should yield an error
-        data = {"name": "Tiered", "full_workflow": {"steps": [{"id": "s1", "agent_type": "dev"}]}}
+        data = {"metadata": {"name": "Tiered"}, "full_workflow": {"steps": [{"id": "s1", "agent_type": "dev"}]}}
         report = WorkflowDefinition.dry_run(data, workflow_type="fast-track")
         assert not report.is_valid
 
@@ -77,7 +77,7 @@ class TestDryRunValidation:
 
     def test_invalid_on_success_reference(self):
         data = {
-            "name": "Bad Ref",
+            "metadata": {"name": "Bad Ref"},
             "steps": [
                 {"id": "s1", "agent_type": "triage", "on_success": "nonexistent"},
             ],
@@ -87,7 +87,7 @@ class TestDryRunValidation:
 
     def test_malformed_condition(self):
         data = {
-            "name": "Bad Cond",
+            "metadata": {"name": "Bad Cond"},
             "steps": [
                 {"id": "s1", "agent_type": "triage", "condition": "result =="},
             ],
@@ -131,7 +131,7 @@ class TestDryRunSimulation:
 
     def test_false_condition_marked_skip(self):
         data = {
-            "name": "Conditional",
+            "metadata": {"name": "Conditional"},
             "steps": [
                 {"id": "s1", "agent_type": "triage"},
                 {"id": "s2", "agent_type": "developer", "condition": "1 == 2"},
@@ -142,7 +142,7 @@ class TestDryRunSimulation:
 
     def test_true_condition_marked_run(self):
         data = {
-            "name": "Conditional",
+            "metadata": {"name": "Conditional"},
             "steps": [
                 {"id": "s1", "agent_type": "triage"},
                 {"id": "s2", "agent_type": "developer", "condition": "1 == 1"},
@@ -154,7 +154,7 @@ class TestDryRunSimulation:
     def test_name_error_condition_treated_as_run(self):
         # Condition references an output variable not yet available → should be RUN
         data = {
-            "name": "Name Error",
+            "metadata": {"name": "Name Error"},
             "steps": [
                 {"id": "s1", "agent_type": "triage", "condition": "result['tier'] == 'high'"},
             ],
@@ -164,7 +164,7 @@ class TestDryRunSimulation:
 
     def test_router_steps_excluded_from_predicted_flow(self):
         data = {
-            "name": "With Router",
+            "metadata": {"name": "With Router"},
             "steps": [
                 {"id": "s1", "agent_type": "triage", "on_success": "router1"},
                 {
@@ -180,7 +180,7 @@ class TestDryRunSimulation:
 
     def test_tiered_workflow_dry_run(self):
         data = {
-            "name": "Tiered",
+            "metadata": {"name": "Tiered"},
             "fast_track_workflow": {
                 "steps": [
                     {"id": "t1", "agent_type": "triage"},

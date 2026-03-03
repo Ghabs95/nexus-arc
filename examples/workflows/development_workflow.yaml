@@ -8,6 +8,9 @@ metadata:
 workflow_type: "orchestrator"
 timeout_seconds: 3600
 
+require_approval_for:
+  - "dispatch"
+
 steps:
   - id: "triage"
     name: "Development Tier Selection"

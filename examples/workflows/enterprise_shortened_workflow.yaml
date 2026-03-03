@@ -14,9 +14,9 @@ steps:
     description: "Classify priority, scope, and affected components"
     agent_type: "triage"
     tools:
-      - github:read_issue
-      - github:add_comment
-      - github:add_label
+      - vcs:read_issue
+      - vcs:add_comment
+      - vcs:add_label
     inputs:
       - issue_url: "string"
     outputs:
@@ -29,9 +29,9 @@ steps:
     description: "Investigate the issue and identify root cause"
     agent_type: "debug"
     tools:
-      - github:search_codebase
-      - github:read_file
-      - github:add_comment
+      - vcs:search_codebase
+      - vcs:read_file
+      - vcs:add_comment
     inputs:
       - issue_url: "string"
       - severity: "string"
@@ -46,9 +46,9 @@ steps:
     description: "Implement the change and open a PR"
     agent_type: "developer"
     tools:
-      - github:create_branch
-      - github:commit_changes
-      - github:create_pr
+      - vcs:create_branch
+      - vcs:commit_changes
+      - vcs:create_pr
     inputs:
       - issue_url: "string"
       - root_cause: "string"
@@ -63,9 +63,9 @@ steps:
     description: "Review the change for correctness and approve only after full regression (or equivalent full CI suite) passes"
     agent_type: "reviewer"
     tools:
-      - github:review_pr
-      - github:approve_pr
-      - github:add_comment
+      - vcs:review_pr
+      - vcs:approve_pr
+      - vcs:add_comment
     inputs:
       - pr_urls: "list[string]"
     outputs:
@@ -85,9 +85,9 @@ steps:
     description: "Merge the change and create a release"
     agent_type: "deployer"
     tools:
-      - github:merge_pr
-      - github:create_release
-      - github:add_comment
+      - vcs:merge_pr
+      - vcs:create_release
+      - vcs:add_comment
     inputs:
       - fix_pr_url: "string"
     outputs:
@@ -99,8 +99,8 @@ steps:
     description: "Write summary and close the issue"
     agent_type: "writer"
     tools:
-      - github:add_comment
-      - github:close_issue
+      - vcs:add_comment
+      - vcs:close_issue
     inputs:
       - issue_url: "string"
       - root_cause: "string"
@@ -110,7 +110,7 @@ steps:
 
 monitoring:
   log_all_decisions: true
-  audit_trail: "github_comments"
+  audit_trail: "vcs_comments"
   notify_human: true
   human_approval_gates:
     - before: "deploy"

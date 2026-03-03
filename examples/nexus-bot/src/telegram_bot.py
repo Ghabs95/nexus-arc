@@ -768,6 +768,7 @@ def _callback_handler_deps() -> CallbackHandlerDeps:
             audit_handler=audit_handler,
             active_handler=active_handler,
             reprocess_handler=reprocess_handler,
+            plan_handler=plan_handler,
         ),
         report_bug_action=_report_bug_action_wrapper,
     )

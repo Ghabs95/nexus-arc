@@ -308,6 +308,7 @@ After starting the bot, send `/start` in your Telegram chat. You should see the 
 /help          → list all commands
 /status        → show pending inbox tasks
 /menu          → interactive command menu
+/plan          → request a technical implementation plan
 ```
 
 If using the health check, visit `http://localhost:8080/health` to confirm all services are running.

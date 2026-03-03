@@ -40,6 +40,7 @@ def build_callback_action_handlers(
     audit_handler,
     active_handler,
     reprocess_handler,
+    plan_handler,
 ):
     return {
         "logs": partial(ctx_call_telegram_handler, handler=logs_handler),
@@ -51,6 +52,7 @@ def build_callback_action_handlers(
         "audit": partial(ctx_call_telegram_handler, handler=audit_handler),
         "active": partial(ctx_call_telegram_handler, handler=active_handler),
         "reprocess": partial(ctx_call_telegram_handler, handler=reprocess_handler),
+        "plan": partial(ctx_call_telegram_handler, handler=plan_handler),
     }
 
 

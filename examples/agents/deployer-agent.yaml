@@ -20,12 +20,6 @@ spec:
     5. Verifies deployment health
     6. Posts deployment status as a comment
 
-  requires_tools:
-    - github:merge_pr
-    - github:create_release
-    - github:add_comment
-    - github:close_issue
-
   inputs:
     implementation_pr_url:
       type: string

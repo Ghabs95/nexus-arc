@@ -89,7 +89,7 @@ workflow_types:
 
 monitoring:
   log_all_decisions: true
-  audit_trail: "github_comments"
+  audit_trail: "vcs_comments"
   require_human_merge_approval: true
 ```
 

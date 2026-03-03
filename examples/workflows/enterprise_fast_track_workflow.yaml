@@ -14,9 +14,9 @@ steps:
     description: "Rapid assessment of the critical issue"
     agent_type: "triage"
     tools:
-      - github:read_issue
-      - github:add_label
-      - github:add_comment
+      - vcs:read_issue
+      - vcs:add_label
+      - vcs:add_comment
     inputs:
       - issue_url: "string"
     outputs:
@@ -29,10 +29,10 @@ steps:
     description: "Rapidly implement minimal change"
     agent_type: "developer"
     tools:
-      - github:create_branch
-      - github:commit_changes
-      - github:create_pr
-      - github:add_comment
+      - vcs:create_branch
+      - vcs:commit_changes
+      - vcs:create_pr
+      - vcs:add_comment
     inputs:
       - issue_url: "string"
       - urgency: "string"
@@ -46,8 +46,8 @@ steps:
     description: "Rapid review of the hotfix with full regression (or equivalent full CI suite) required before approval"
     agent_type: "reviewer"
     tools:
-      - github:review_pr
-      - github:approve_pr
+      - vcs:review_pr
+      - vcs:approve_pr
     inputs:
       - pr_urls: "list[string]"
     outputs:
@@ -67,10 +67,10 @@ steps:
     description: "Merge fast-track changes and deploy immediately"
     agent_type: "deployer"
     tools:
-      - github:merge_pr
-      - github:create_release
-      - github:add_comment
-      - github:close_issue
+      - vcs:merge_pr
+      - vcs:create_release
+      - vcs:add_comment
+      - vcs:close_issue
     inputs:
       - fast_track_pr_url: "string"
     outputs:
@@ -80,7 +80,7 @@ steps:
 
 monitoring:
   log_all_decisions: true
-  audit_trail: "github_comments"
+  audit_trail: "vcs_comments"
   notify_human: true
   human_approval_gates:
     - before: "deploy"

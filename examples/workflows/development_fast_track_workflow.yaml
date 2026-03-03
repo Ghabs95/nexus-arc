@@ -14,9 +14,9 @@ steps:
     description: "Rapid assessment of urgency and blast radius"
     agent_type: "triage"
     tools:
-      - github:read_issue
-      - github:add_label
-      - github:add_comment
+      - vcs:read_issue
+      - vcs:add_label
+      - vcs:add_comment
     inputs:
       - issue_url: "string"
     outputs:
@@ -29,10 +29,10 @@ steps:
     description: "Implement minimal safe fix"
     agent_type: "developer"
     tools:
-      - github:create_branch
-      - github:edit_file
-      - github:create_pr
-      - github:add_comment
+      - vcs:create_branch
+      - vcs:edit_file
+      - vcs:create_pr
+      - vcs:add_comment
     inputs:
       - issue_url: "string"
     outputs:
@@ -45,9 +45,9 @@ steps:
     description: "Fast review with full CI/regression requirement"
     agent_type: "reviewer"
     tools:
-      - github:review_pr
-      - github:approve_pr
-      - github:request_changes
+      - vcs:review_pr
+      - vcs:approve_pr
+      - vcs:request_changes
     inputs:
       - pr_urls: "list[string]"
     outputs:
@@ -67,7 +67,7 @@ steps:
     description: "Post fast-track summary"
     agent_type: "summarizer"
     tools:
-      - github:add_comment
+      - vcs:add_comment
     inputs:
       - issue_url: "string"
     outputs:

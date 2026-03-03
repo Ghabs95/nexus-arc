@@ -18,12 +18,6 @@ spec:
     3. Lists outcomes and next steps
     4. Posts summary comment
     5. Optionally closes the issue
-
-  requires_tools:
-    - github:read_issue
-    - github:add_comment
-    - github:close_issue  # Optional
-    - ai:completion
   
   inputs:
     issue_url:

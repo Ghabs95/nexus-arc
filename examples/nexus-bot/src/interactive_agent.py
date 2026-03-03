@@ -40,6 +40,7 @@ from handlers.issue_command_handlers import (
     comments_handler,
     implement_handler,
     myissues_handler,
+    plan_handler,
     prepare_handler,
     respond_handler,
     track_handler,
@@ -174,6 +175,7 @@ def _bind_handlers(plugin: InteractiveClientPlugin) -> None:
     plugin.register_command_handler("comments", lambda ctx: comments_handler(ctx, issue_deps))
     plugin.register_command_handler("implement", lambda ctx: implement_handler(ctx, issue_deps))
     plugin.register_command_handler("myissues", lambda ctx: myissues_handler(ctx, issue_deps))
+    plugin.register_command_handler("plan", lambda ctx: plan_handler(ctx, issue_deps))
     plugin.register_command_handler("prepare", lambda ctx: prepare_handler(ctx, issue_deps))
     plugin.register_command_handler("respond", lambda ctx: respond_handler(ctx, issue_deps))
     plugin.register_command_handler("track", lambda ctx: track_handler(ctx, issue_deps))
