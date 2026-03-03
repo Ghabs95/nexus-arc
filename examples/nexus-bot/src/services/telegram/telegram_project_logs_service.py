@@ -2,6 +2,10 @@ import glob
 import os
 import re
 
+from services.project.project_catalog_service import (
+    get_single_project_key as _shared_get_single_project_key,
+)
+
 
 def resolve_project_root_from_task_path(task_file: str) -> str:
     normalized = os.path.abspath(task_file).replace("\\", "/")
@@ -232,9 +236,7 @@ def iter_project_keys(*, project_config: dict) -> list[str]:
     return keys
 
 
-def get_single_project_key(*, project_config: dict) -> str | None:
-    keys = iter_project_keys(project_config=project_config)
-    return keys[0] if len(keys) == 1 else None
+get_single_project_key = _shared_get_single_project_key
 
 
 def get_project_root(*, project_key: str, project_config: dict, base_dir: str) -> str | None:

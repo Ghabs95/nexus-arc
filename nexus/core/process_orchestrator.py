@@ -2,7 +2,7 @@
 
 Extracts dead/stuck-agent detection, completion scanning, auto-chain, and
 finalisation from host applications (e.g. nexus's inbox_processor) into a
-reusable, agent-agnostic nexus-core class.
+reusable, agent-agnostic nexus-arc class.
 
 Typical host usage (nexus Phase-3 thin shell)::
 

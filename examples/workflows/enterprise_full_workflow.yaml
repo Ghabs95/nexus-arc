@@ -1,0 +1,174 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Enterprise Full Workflow"
+  description: "Full enterprise delivery with design, review, compliance, and deploy gates."
+  version: "1.0.0"
+
+workflow_type: "full"
+timeout_seconds: 10800
+
+steps:
+  - id: "triage"
+    name: "Triage & Classification"
+    description: "Classify the issue, assign priority, and decide the path"
+    agent_type: "triage"
+    tools:
+      - github:read_issue
+      - github:add_comment
+      - github:add_label
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - classification: "enum[feature|bug|doc|support]"
+      - priority: "enum[p0-critical|p1-high|p2-medium|p3-low]"
+      - needs_design: "boolean"
+    on_success: "route_triage"
+
+  - id: "route_triage"
+    name: "Route After Triage"
+    agent_type: "router"
+    routes:
+      - when: "classification == 'feature' and needs_design == false"
+        then: "develop"
+      - when: "classification == 'feature'"
+        then: "design"
+      - default: "develop"
+
+  - id: "design"
+    name: "Architecture & Design"
+    description: "Create a design proposal covering API contracts and ADRs"
+    agent_type: "designer"
+    tools:
+      - github:create_branch
+      - github:create_file
+      - github:create_pr
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+      - classification: "string"
+    outputs:
+      - design_pr_url: "string"
+      - design_patterns: "list[string]"
+      - estimated_effort: "string"
+    on_success: "develop"
+
+  - id: "develop"
+    name: "Implementation"
+    description: "Implement code changes based on design or triage output"
+    agent_type: "developer"
+    tools:
+      - github:create_branch
+      - github:commit_changes
+      - github:create_pr
+      - github:add_comment
+      - github:search_codebase
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - implementation_pr_url: "string"
+      - test_coverage: "string"
+      - implementation_notes: "string"
+    on_success: "review"
+
+  - id: "review"
+    name: "Code Review"
+    description: "Review implementation for correctness, quality, and standards; approve only after full regression (or equivalent full CI suite) passes"
+    agent_type: "reviewer"
+    tools:
+      - github:review_pr
+      - github:add_comment
+      - github:request_changes
+      - github:approve_pr
+    inputs:
+      - pr_urls: "list[string]"
+    outputs:
+      - review_status: "enum[approved|changes_requested|rejected]"
+      - review_comments: "list[string]"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Review"
+    agent_type: "router"
+    routes:
+      - when: "review_status == 'approved'"
+        then: "compliance"
+      - when: "review_status == 'changes_requested'"
+        then: "develop"
+      - default: "close_rejected"
+
+  - id: "compliance"
+    name: "Compliance & Security Review"
+    description: "Verify privacy, security, and regulatory compliance"
+    agent_type: "compliance"
+    tools:
+      - github:review_pr
+      - github:add_comment
+      - github:add_label
+    inputs:
+      - implementation_pr_url: "string"
+    outputs:
+      - compliance_status: "enum[approved|blocked]"
+      - compliance_issues: "list[string]"
+    on_success: "route_compliance"
+
+  - id: "route_compliance"
+    name: "Route After Compliance"
+    agent_type: "router"
+    routes:
+      - when: "compliance_status == 'approved'"
+        then: "deploy"
+      - default: "develop"
+
+  - id: "deploy"
+    name: "Merge & Deploy"
+    description: "Merge approved PR and create a release"
+    agent_type: "deployer"
+    tools:
+      - github:merge_pr
+      - github:create_release
+      - github:add_comment
+    inputs:
+      - implementation_pr_url: "string"
+    outputs:
+      - deployment_status: "string"
+      - release_url: "string"
+    on_success: "close_loop"
+
+  - id: "close_loop"
+    name: "Document & Close"
+    description: "Update docs, write changelog entry, and close the issue"
+    agent_type: "writer"
+    tools:
+      - github:create_file
+      - github:edit_file
+      - github:add_comment
+      - github:close_issue
+    inputs:
+      - issue_url: "string"
+      - deployment_status: "string"
+    outputs:
+      - documentation_url: "string"
+      - changelog_entry: "string"
+    final_step: true
+
+  - id: "close_rejected"
+    name: "Close Rejected Issue"
+    description: "Post summary and close issues that failed review"
+    agent_type: "finalizer"
+    tools:
+      - github:add_comment
+      - github:close_issue
+    inputs:
+      - issue_url: "string"
+      - review_comments: "list[string]"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  audit_trail: "github_comments"
+  notify_human: true
+  human_approval_gates:
+    - before: "deploy"
+    - before: "compliance"
+  require_human_merge_approval: true

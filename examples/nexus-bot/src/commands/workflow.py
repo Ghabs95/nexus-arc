@@ -90,7 +90,7 @@ async def pause_handler(ctx: InteractiveContext):
         await ctx.reply_text(f"⚠️ Unable to pause workflow for issue #{issue_num}.")
         return
 
-    AuditStore.audit_log(int(issue_num), "WORKFLOW_PAUSED", "via nexus-core")
+    AuditStore.audit_log(int(issue_num), "WORKFLOW_PAUSED", "via nexus-arc")
 
     status = await workflow_plugin.get_workflow_status(issue_num)
     status_text = ""
@@ -164,7 +164,7 @@ async def resume_handler(ctx: InteractiveContext):
         )
         return
 
-    AuditStore.audit_log(int(issue_num), "WORKFLOW_RESUMED", "via nexus-core")
+    AuditStore.audit_log(int(issue_num), "WORKFLOW_RESUMED", "via nexus-arc")
 
     status = await workflow_plugin.get_workflow_status(issue_num)
     status_text = ""
@@ -210,7 +210,7 @@ async def stop_handler(ctx: InteractiveContext):
         else:
             logger.error(f"Failed to kill agent PID {pid} for issue #{issue_num}")
 
-    # Prevent further auto-chaining by pausing workflow in nexus-core
+    # Prevent further auto-chaining by pausing workflow in nexus-arc
     workflow_plugin = get_workflow_state_plugin(
         **_WORKFLOW_STATE_PLUGIN_KWARGS,
         cache_key="workflow:state-engine",

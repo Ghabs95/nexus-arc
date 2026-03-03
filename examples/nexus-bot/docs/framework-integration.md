@@ -1,11 +1,11 @@
 # Framework vs Integration Layer
 
-This document explains the separation between **nexus-core** (the framework) and the **nexus-bot** (your integration
+This document explains the separation between **nexus-arc** (the framework) and the **nexus-bot** (your integration
 layer).
 
 ## The Analogy
 
-| Concept      | Framework (nexus-core)  | Integration (nexus-bot)             |
+| Concept      | Framework (nexus-arc)  | Integration (nexus-bot)             |
 |--------------|-------------------------|-------------------------------------|
 | Like…        | Django/Flask            | Your web application                |
 | Owns…        | Generic orchestration   | Your business logic                 |
@@ -36,7 +36,7 @@ The framework doesn't know about:
 - Your tier system (full, shortened, fast-track)
 - How you map GitHub issues to workflow IDs
 
-Someone else using nexus-core could use GitLab + Slack + completely different workflow types.
+Someone else using nexus-arc could use GitLab + Slack + completely different workflow types.
 
 ## Integration Code Locations
 
@@ -50,7 +50,7 @@ Someone else using nexus-core could use GitLab + Slack + completely different wo
 | Inbox queue (postgres)           | `integrations/inbox_queue.py`            |
 | Agent subprocess management      | `runtime/agent_launcher.py`              |
 
-## Framework Code (nexus-core)
+## Framework Code (nexus-arc)
 
 | Framework concern   | Module                            |
 |---------------------|-----------------------------------|
@@ -69,10 +69,10 @@ Someone else using nexus-core could use GitLab + Slack + completely different wo
 1. **Define your workflow steps** in `config.py` or a YAML file
 2. **Create the integration helper** in `nexus_core_helpers.py`
 3. **Wire up the Telegram command** in `telegram_bot.py`
-4. The framework handles orchestration, persistence, retries — you don't modify nexus-core.
+4. The framework handles orchestration, persistence, retries — you don't modify nexus-arc.
 
 ## Further Reading
 
-- [nexus-core/docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) — Framework architecture
-- [nexus-core/docs/PLUGINS.md](../../../docs/PLUGINS.md) — Plugin system internals
-- [nexus-core/docs/USAGE.md](../../../docs/USAGE.md) — Detailed integration patterns
+- [nexus-arc/docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) — Framework architecture
+- [nexus-arc/docs/PLUGINS.md](../../../docs/PLUGINS.md) — Plugin system internals
+- [nexus-arc/docs/USAGE.md](../../../docs/USAGE.md) — Detailed integration patterns

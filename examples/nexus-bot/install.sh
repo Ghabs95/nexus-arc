@@ -179,7 +179,7 @@ if [ "$has_core" -eq 1 ]; then
     echo "Nexus ARC works best when you have a centralized 'core' repository."
     echo "This is a single git repository where you store your '*-agent.yaml' definitions"
     echo "and 'workflow.yaml' files, effectively creating an org-chart of AI agents."
-    core_repo=$(prompt_string "What is the name of your organization's 'core' repository?" "nexus-core")
+    core_repo=$(prompt_string "What is the name of your organization's 'core' repository?" "nexus-arc")
 
     echo -e "\n[Workspaces & Projects]"
     HOME_DIR=~
@@ -195,7 +195,7 @@ if [ "$has_core" -eq 1 ]; then
 else
     echo -e "\n[Existing Core Repo]"
     HOME_DIR=~
-    bot_dir_default=$(prompt_string "What is the full path to your existing core repository?" "${HOME_DIR}/git/my-workspace/nexus-core")
+    bot_dir_default=$(prompt_string "What is the full path to your existing core repository?" "${HOME_DIR}/git/my-workspace/nexus-arc")
 fi
 
 

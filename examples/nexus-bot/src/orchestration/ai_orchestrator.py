@@ -1,4 +1,4 @@
-"""Compatibility wrapper for AI orchestrator backed by nexus-core plugin."""
+"""Compatibility wrapper for AI orchestrator backed by nexus-arc plugin."""
 
 from collections.abc import Mapping
 from typing import Any

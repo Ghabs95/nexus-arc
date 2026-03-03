@@ -2,7 +2,7 @@
 
 Requires the ``postgres`` optional extra::
 
-    pip install nexus-core[postgres]
+    pip install nexus-arc[postgres]
 
 All async methods delegate to synchronous SQLAlchemy sessions via
 ``asyncio.to_thread`` so the declared dependency (``psycopg2-binary``) is
@@ -38,7 +38,7 @@ def _require_sqlalchemy() -> None:
     if not _SA_AVAILABLE:
         raise ImportError(
             "sqlalchemy and psycopg2-binary are required for PostgreSQLStorageBackend. "
-            "Install them with: pip install nexus-core[postgres]"
+            "Install them with: pip install nexus-arc[postgres]"
         )
 
 

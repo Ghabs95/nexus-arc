@@ -286,7 +286,7 @@ async def test_continue_service_reconciles_before_launch_when_ready(monkeypatch)
     deps = SimpleNamespace(
         logger=logging.getLogger("test"),
         allowed_user_ids=[],
-        project_repo=lambda _project: "Ghabs95/nexus-core",
+        project_repo=lambda _project: "Ghabs95/nexus-arc",
         reconcile_issue_from_signals=_reconcile,
         get_direct_issue_plugin=lambda _repo: None,
         extract_structured_completion_signals=lambda _comments: [],

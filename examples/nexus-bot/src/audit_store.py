@@ -1,7 +1,7 @@
 """Dedicated audit storage utilities for Nexus.
 
 Keeps audit read/write concerns separate from generic state management.
-Delegates to nexus-core for standardized storage.
+Delegates to nexus-arc for standardized storage.
 """
 
 import asyncio
@@ -46,7 +46,7 @@ def _run_coro_sync(coro_factory, *, timeout_seconds: float = 10):
 
 
 class AuditStore:
-    """Read/write audit events using nexus-core implementation."""
+    """Read/write audit events using nexus-arc implementation."""
 
     _core_store = None
 
@@ -64,7 +64,7 @@ class AuditStore:
 
     @staticmethod
     def audit_log(issue_num: int, event: str, details: str | None = None) -> None:
-        """Log an audit event in nexus-core JSONL format."""
+        """Log an audit event in nexus-arc JSONL format."""
         from integrations.workflow_state_factory import get_workflow_state
 
         workflow_id = get_workflow_state().get_workflow_id(str(issue_num)) or "_nexus_system"

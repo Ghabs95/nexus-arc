@@ -10,8 +10,8 @@ src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-# nexus-core path
-nexus_core_path = Path(__file__).parent.parent.parent / "nexus-core"
+# nexus-arc path
+nexus_core_path = Path(__file__).parent.parent.parent / "nexus-arc"
 if str(nexus_core_path) not in sys.path:
     sys.path.insert(0, str(nexus_core_path))
 

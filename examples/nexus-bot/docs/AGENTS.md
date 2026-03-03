@@ -11,7 +11,7 @@ This file optimizes agent behavior for designing, implementing, and reviewing th
 
 ## Scope
 
-- Applies to all work in the `examples/nexus-bot/` directory and its integration with `nexus-core`.
+- Applies to all work in the `examples/nexus-bot/` directory and its integration with `nexus-arc`.
 
 ## Authority Model
 
@@ -36,14 +36,14 @@ If conflicts exist between docs, resolve explicitly or surface them.
     - Env vars and endpoints → `docs/config-reference.md`
     - Framework vs integration → `docs/framework-integration.md`
     - Live visualizer updates ADR → `ADR-083-Live-Visualizer-Updates.md`
-3. Understand the framework boundary (nexus-core ≠ nexus-bot integration).
+3. Understand the framework boundary (nexus-arc ≠ nexus-bot integration).
 4. Make atomic, scoped changes.
 5. Summarize exactly what changed and why.
 
 ## Operating Rules
 
 - **Backend-aware**: All state persistence must respect `NEXUS_STORAGE_BACKEND`. Never hardcode filesystem-only paths.
-- **Framework boundary**: Do not put integration-specific logic into `nexus-core`. Keep project-specific code in the
+- **Framework boundary**: Do not put integration-specific logic into `nexus-arc`. Keep project-specific code in the
   nexus-bot layer.
 - **Plugin pattern**: Use the plugin registry for new integrations. Don't import concrete implementations directly.
 - **Completion contract**: Agents must produce structured completion summaries (not raw log dumps).

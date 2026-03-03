@@ -33,6 +33,7 @@ from config import (
 from integrations.notifications import notify_agent_completed, emit_alert
 from orchestration.ai_orchestrator import get_orchestrator
 from orchestration.plugin_runtime import get_profiled_plugin
+from services.runtime_mode_service import is_postgres_backend
 from state_manager import HostStateManager
 
 # Nexus Core framework imports
@@ -48,10 +49,6 @@ from nexus.plugins.builtin.ai_runtime_plugin import ToolUnavailableError
 logger = logging.getLogger(__name__)
 _git_platform_cache = {}
 _launch_policy_plugin = None
-
-
-def _db_only_task_mode() -> bool:
-    return str(NEXUS_STORAGE_BACKEND or "").strip().lower() == "postgres"
 
 
 def _run_coro_sync(coro_factory):
@@ -194,7 +191,7 @@ def _load_issue_body_from_project_repo(issue_number: str, preferred_repo: str | 
 
         task_file_match = re.search(r"\*\*Task File:\*\*\s*`([^`]+)`", body)
         task_file = task_file_match.group(1) if task_file_match else ""
-        if _db_only_task_mode():
+        if is_postgres_backend(NEXUS_STORAGE_BACKEND):
             # In DB-only mode, trust project->repo binding and avoid local task-file path resolution.
             return body, repo_name, task_file
         if not task_file:
@@ -227,7 +224,7 @@ def _get_launch_policy_plugin():
 
     default_system_operations = get_system_operations(default_project) if default_project else {}
 
-    completion_backend = "postgres" if _db_only_task_mode() else "filesystem"
+    completion_backend = "postgres" if is_postgres_backend(NEXUS_STORAGE_BACKEND) else "filesystem"
     webhook_url = f"http://127.0.0.1:{WEBHOOK_PORT}"
 
     plugin = get_profiled_plugin(
@@ -1125,7 +1122,7 @@ _launch_guard = LaunchGuard(
 def is_recent_launch(issue_number: str, agent_type: str = "*") -> bool:
     """Check if an agent was recently launched for this issue.
 
-    Delegates to nexus-core's LaunchGuard (cooldown + pgrep + logfile checks).
+    Delegates to nexus-arc's LaunchGuard (cooldown + pgrep + logfile checks).
     Returns True if launched within cooldown window.
     """
     normalized_agent = str(agent_type or "*").strip() or "*"
@@ -1187,7 +1184,7 @@ def _resolve_worktree_base_repo(workspace_dir: str, issue_url: str) -> str:
     """Resolve git repo root used for worktree provisioning.
 
     For mono-workspace setups where ``workspace_dir`` is a parent folder (e.g. ``/home/.../ghabs``),
-    use repo name from issue URL to find nested checkout (e.g. ``/home/.../ghabs/nexus-core``).
+    use repo name from issue URL to find nested checkout (e.g. ``/home/.../ghabs/nexus-arc``).
     """
     base = str(workspace_dir or "").strip()
     if _is_git_repo(base):
@@ -1344,7 +1341,7 @@ def _ensure_agent_definition(
 def get_sop_tier_from_issue(issue_number, project="nexus", repo_override: str | None = None):
     """Get workflow tier from issue labels.
 
-    Delegates to nexus-core's GitPlatform.get_workflow_type_from_issue().
+    Delegates to nexus-arc's GitPlatform.get_workflow_type_from_issue().
 
     Args:
         issue_number: Git issue number
@@ -1709,7 +1706,7 @@ def launch_next_agent(
     # Find task-file metadata (optional in postgres mode)
     task_file_match = re.search(r"\*\*Task File:\*\*\s*`([^`]+)`", body)
     task_file = task_file_match.group(1) if task_file_match else (resolved_task_file or "")
-    if not task_file and not _db_only_task_mode():
+    if not task_file and not is_postgres_backend(NEXUS_STORAGE_BACKEND):
         logger.warning(f"No task file in issue #{issue_number}")
         return None, None
 
@@ -1720,15 +1717,15 @@ def launch_next_agent(
         )
     normalized_task_file = task_file.replace("\\", "/")
     is_shared_active_task_file = "/active/" in normalized_task_file
-    task_file_exists = False if _db_only_task_mode() else os.path.exists(task_file)
-    if not _db_only_task_mode() and not task_file_exists and not is_shared_active_task_file:
+    task_file_exists = False if is_postgres_backend(NEXUS_STORAGE_BACKEND) else os.path.exists(task_file)
+    if not is_postgres_backend(NEXUS_STORAGE_BACKEND) and not task_file_exists and not is_shared_active_task_file:
         logger.warning(f"Task file not found: {task_file}")
         return None, None
 
     # Get project config
     project_root = ""
     config = {}
-    if _db_only_task_mode():
+    if is_postgres_backend(NEXUS_STORAGE_BACKEND):
         project_root = _resolve_project_from_repo(resolved_repo or "")
         config = PROJECT_CONFIG.get(project_root, {}) if project_root else {}
     else:
@@ -1761,7 +1758,7 @@ def launch_next_agent(
     # Use issue body as authoritative task snapshot when Task File points to the shared
     # active path, which can be overwritten by later issues and cause cross-issue bleed.
     task_content = body
-    if _db_only_task_mode():
+    if is_postgres_backend(NEXUS_STORAGE_BACKEND):
         logger.info(
             "Postgres mode: using issue body task snapshot for issue #%s (task-file metadata: %s)",
             issue_number,

@@ -4,7 +4,7 @@ Provides :class:`HotReloadWatcher`, which monitors a directory for ``.py`` file
 changes and reloads matching plugins into a :class:`PluginRegistry` without
 restarting any core services.
 
-Requires the ``watchdog`` package (``pip install nexus-core[hotreload]``).
+Requires the ``watchdog`` package (``pip install nexus-arc[hotreload]``).
 """
 
 from __future__ import annotations
@@ -142,7 +142,7 @@ class HandoffManager:
             ]
 
 
-# Deferred import so that the rest of nexus-core stays importable even when
+# Deferred import so that the rest of nexus-arc stays importable even when
 # watchdog is not installed (hot-reload is an optional feature).
 try:
     from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -189,7 +189,7 @@ class HotReloadWatcher:
         if not _WATCHDOG_AVAILABLE:
             raise ImportError(
                 "watchdog is required for hot-reload. "
-                "Install it with: pip install 'nexus-core[hotreload]'"
+                "Install it with: pip install 'nexus-arc[hotreload]'"
             )
         from nexus.plugins.registry import PluginRegistry  # local import avoids circulars
 

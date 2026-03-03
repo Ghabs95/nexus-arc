@@ -1,8 +1,8 @@
 """
-Nexus-Core Framework Integration Helpers.
+Nexus-Arc Framework Integration Helpers.
 
 This module provides integration between the original Nexus bot
-and the nexus-core workflow framework.
+and the nexus-arc workflow framework.
 """
 
 import logging
@@ -321,7 +321,7 @@ async def create_workflow_for_issue(
     description: str = "",
 ) -> str | None:
     """
-    Create a nexus-core workflow for a Git issue.
+    Create a nexus-arc workflow for a Git issue.
 
     Args:
         issue_number: Git issue number

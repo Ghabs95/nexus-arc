@@ -1,0 +1,80 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Development Fast-Track Workflow"
+  description: "Critical path for urgent fixes with minimal stages."
+  version: "0.1.0"
+
+workflow_type: "fast-track"
+timeout_seconds: 3600
+
+steps:
+  - id: "triage"
+    name: "Emergency Triage"
+    description: "Rapid assessment of urgency and blast radius"
+    agent_type: "triage"
+    tools:
+      - github:read_issue
+      - github:add_label
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - urgency: "enum[critical|urgent]"
+      - impact: "string"
+    on_success: "develop"
+
+  - id: "develop"
+    name: "Fast-Track Implementation"
+    description: "Implement minimal safe fix"
+    agent_type: "developer"
+    tools:
+      - github:create_branch
+      - github:edit_file
+      - github:create_pr
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - pr_url: "string"
+      - rollback_plan: "string"
+    on_success: "review"
+
+  - id: "review"
+    name: "Quick Verification"
+    description: "Fast review with full CI/regression requirement"
+    agent_type: "reviewer"
+    tools:
+      - github:review_pr
+      - github:approve_pr
+      - github:request_changes
+    inputs:
+      - pr_urls: "list[string]"
+    outputs:
+      - approval_status: "enum[approved|rejected]"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Verification"
+    agent_type: "router"
+    routes:
+      - when: "approval_status == 'approved'"
+        then: "close_loop"
+      - default: "develop"
+
+  - id: "close_loop"
+    name: "Summarize & Close"
+    description: "Post fast-track summary"
+    agent_type: "summarizer"
+    tools:
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - summary: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  notify_human: true
+  require_human_merge_approval: true

@@ -344,8 +344,8 @@ NEXUS_METRICS_PORT=9090
 ### Setup
 
 ```bash
-git clone https://github.com/Ghabs95/nexus-core
-cd nexus-core
+git clone https://github.com/Ghabs95/nexus-arc
+cd nexus-arc
 python -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"

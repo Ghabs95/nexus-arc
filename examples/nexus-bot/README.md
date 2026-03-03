@@ -13,7 +13,7 @@ This folder is now the canonical home for the Telegram bot runtime that previous
 ## Quick start
 
 ```bash
-cd /opt/nexus-core/examples/nexus-bot
+cd /opt/nexus-arc/examples/nexus-bot
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -42,7 +42,7 @@ If `DEPLOY_TYPE=compose` (default), they are not used.
 
 Service files in this folder are pre-pointed to:
 
-- runtime: `/opt/nexus-core/examples/nexus-bot`
+- runtime: `/opt/nexus-arc/examples/nexus-bot`
 - env file: `/opt/nexus/.env`
 
 Copy and enable as needed:
@@ -83,7 +83,7 @@ but is not the active compose config source.
 Start:
 
 ```bash
-cd /opt/nexus-core/examples/nexus-bot
+cd /opt/nexus-arc/examples/nexus-bot
 docker compose up -d --build
 ```
 

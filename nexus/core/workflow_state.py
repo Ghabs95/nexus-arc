@@ -1,6 +1,6 @@
 """Protocol for persistent workflow state storage.
 
-Covers two concerns that belong in nexus-core:
+Covers two concerns that belong in nexus-arc:
 1. Issue → Workflow ID mapping
 2. Approval-gate state for workflow steps
 """

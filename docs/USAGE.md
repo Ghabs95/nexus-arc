@@ -850,7 +850,7 @@ application.add_handler(CommandHandler("security_audit", security_audit_handler)
 
 ## The Test
 
-**Ask yourself:** *"If I published nexus-core on PyPI, could someone use it without knowing anything about my Nexus
+**Ask yourself:** *"If I published nexus-arc on PyPI, could someone use it without knowing anything about my Nexus
 bot?"*
 
 - **Framework:** Yes ✅ (Generic workflow engine, adapters for common services)

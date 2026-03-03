@@ -1,4 +1,4 @@
-"""Built-in plugin implementations shipped with nexus-core."""
+"""Built-in plugin implementations shipped with nexus-arc."""
 
 from nexus.plugins.builtin.agent_launch_policy_plugin import (
     AgentLaunchPolicyPlugin,

@@ -8,6 +8,7 @@ from typing import Any, Callable
 from config import NEXUS_CORE_STORAGE_DIR, NEXUS_STORAGE_BACKEND
 from integrations.workflow_state_factory import get_workflow_state
 from runtime.agent_launcher import clear_launch_guard
+from services.runtime_mode_service import is_postgres_backend
 from utils.log_utils import log_unauthorized_access
 
 
@@ -46,10 +47,6 @@ def _has_agents_config(cfg: dict[str, Any] | None) -> bool:
     return bool(isinstance(cfg, dict) and cfg.get("agents_dir"))
 
 
-def _db_only_task_mode() -> bool:
-    return str(NEXUS_STORAGE_BACKEND or "").strip().lower() == "postgres"
-
-
 def _has_agents_workspace_config(cfg: dict[str, Any] | None) -> bool:
     return bool(isinstance(cfg, dict) and cfg.get("agents_dir") and cfg.get("workspace"))
 
@@ -62,7 +59,11 @@ def _load_issue_details(issue_num: Any, repo: str, deps: Any) -> dict[str, Any] 
 def _resolve_task_file_and_prefetched_issue(
     project_key: str, issue_num: Any, deps: Any
 ) -> tuple[str | None, dict[str, Any] | None]:
-    task_file = None if _db_only_task_mode() else deps.find_task_file_by_issue(issue_num)
+    task_file = (
+        None
+        if is_postgres_backend(NEXUS_STORAGE_BACKEND)
+        else deps.find_task_file_by_issue(issue_num)
+    )
     if task_file:
         return task_file, None
 
@@ -70,7 +71,7 @@ def _resolve_task_file_and_prefetched_issue(
     details = _load_issue_details(issue_num, repo, deps)
     if not details:
         return None, None
-    if _db_only_task_mode():
+    if is_postgres_backend(NEXUS_STORAGE_BACKEND):
         return None, details
     return _extract_task_file_from_issue_body(details.get("body", "")), details
 
@@ -84,7 +85,7 @@ async def _resolve_reprocess_source(
 ) -> tuple[str | None, dict[str, Any] | None, str, dict[str, Any] | None]:
     task_file, details = _resolve_task_file_and_prefetched_issue(project_key, issue_num, deps)
 
-    if (not _db_only_task_mode()) and task_file and os.path.exists(task_file):
+    if (not is_postgres_backend(NEXUS_STORAGE_BACKEND)) and task_file and os.path.exists(task_file):
         project_name, config = deps.resolve_project_config_from_task(task_file)
         if not _has_agents_config(config):
             fallback_config = _get_project_fallback_config(project_key, deps)

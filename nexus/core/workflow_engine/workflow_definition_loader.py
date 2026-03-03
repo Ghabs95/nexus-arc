@@ -142,7 +142,12 @@ def build_dry_run_report_fields(
     if not isinstance(data, dict):
         return ["Workflow definition must be a dict"], []
 
-    if not data.get("name") and not data.get("id"):
+    metadata_block = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+
+    if (
+        not metadata_block.get("name")
+        and not metadata_block.get("id")
+    ):
         errors.append("Missing required top-level field: 'name' or 'id'")
 
     steps = resolve_steps(data, workflow_type)

@@ -9,9 +9,9 @@ import pytest
 def test_extract_repo_from_issue_url_parses_owner_repo():
     from inbox_processor import _extract_repo_from_issue_url
 
-    repo = _extract_repo_from_issue_url("https://github.com/sample-org/nexus-core/issues/43")
+    repo = _extract_repo_from_issue_url("https://github.com/sample-org/nexus-arc/issues/43")
 
-    assert repo == "sample-org/nexus-core"
+    assert repo == "sample-org/nexus-arc"
 
 
 def test_extract_repo_from_gitlab_issue_url_parses_namespace_repo():
@@ -31,7 +31,7 @@ def test_resolve_repo_strict_raises_on_mismatch(monkeypatch):
         {
             "nexus": {
                 "workspace": "sample/core",
-                "git_repo": "sample-org/nexus-core",
+                "git_repo": "sample-org/nexus-arc",
             }
         },
     )
@@ -63,7 +63,7 @@ def test_reroute_webhook_task_moves_file(tmp_path, monkeypatch):
         {
             "project-b": {
                 "workspace": "workspace-b",
-                "git_repo": "sample-org/nexus-core",
+                "git_repo": "sample-org/nexus-arc",
             }
         },
     )
@@ -283,7 +283,7 @@ def test_issue_body_resolution_skips_project_probe_failures(monkeypatch):
             "nexus": {
                 "workspace": "ghabs",
                 "git_platform": "github",
-                "git_repo": "Ghabs95/nexus-core",
+                "git_repo": "Ghabs95/nexus-arc",
             },
         },
     )
@@ -315,7 +315,7 @@ def test_issue_body_resolution_skips_project_probe_failures(monkeypatch):
     body, repo, task_file = agent_launcher._load_issue_body_from_project_repo("88")
 
     assert "Nexus issue body" in body
-    assert repo == "Ghabs95/nexus-core"
+    assert repo == "Ghabs95/nexus-arc"
     assert task_file == ""
 
 

@@ -36,7 +36,7 @@ class TelegramInteractivePlugin(InteractiveClientPlugin):
         if not HAS_TELEGRAM:
             raise ImportError(
                 "python-telegram-bot is required for TelegramInteractivePlugin. "
-                "Install it with: pip install nexus-core[telegram]"
+                "Install it with: pip install nexus-arc[telegram]"
             )
 
         self.bot_token = config.get("bot_token", "")

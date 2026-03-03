@@ -87,6 +87,15 @@ def parse_project_issue_args(
     return project_key, issue_num, sanitized_args[2:]
 
 
+def issue_state_for_command(command: str, *, allow_any: bool = False) -> str:
+    command_name = str(command or "").strip().lower()
+    if command_name in {"logs", "logsfull", "tail"}:
+        return "closed"
+    if allow_any and command_name == "wfstate":
+        return "any"
+    return "open"
+
+
 async def ensure_project_issue(
     *,
     update,
@@ -111,7 +120,7 @@ async def ensure_project_issue(
         sanitized_args.append(value)
 
     project_key, issue_num, rest = parse_project_issue_args_fn(sanitized_args)
-    default_issue_state = "closed" if command in {"logs", "logsfull", "tail"} else "open"
+    default_issue_state = issue_state_for_command(command)
     if not project_key or not issue_num:
         if len(sanitized_args) == 1:
             arg = sanitized_args[0]

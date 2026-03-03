@@ -361,7 +361,7 @@ def handle_new_task(
             )
         )
         if workflow_id:
-            logger.info("✅ Created nexus-core workflow: %s", workflow_id)
+            logger.info("✅ Created nexus-arc workflow: %s", workflow_id)
             started = asyncio.run(start_workflow(workflow_id, issue_num))
             if not started:
                 logger.warning(

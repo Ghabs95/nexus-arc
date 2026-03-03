@@ -1,6 +1,6 @@
 """Analytics module for generating workflow statistics.
 
-Delegates logic to nexus-core LokiAnalyticsAdapter and Grafana.
+Delegates logic to nexus-arc LokiAnalyticsAdapter and Grafana.
 """
 
 import logging

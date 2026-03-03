@@ -8,7 +8,7 @@ def test_translate_to_markdown(capsys):
     with tempfile.TemporaryDirectory() as tmpdir:
         agent_yaml = Path(tmpdir) / "agent.yaml"
         agent_yaml.write_text("""
-apiVersion: "nexus-core/v1"
+apiVersion: "nexus-arc/v1"
 kind: "Agent"
 metadata:
   name: "Translating Agent"

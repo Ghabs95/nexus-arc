@@ -275,6 +275,9 @@ from services.command_contract import (
     validate_required_command_interface,
 )
 from services.feature_registry_service import FeatureRegistryService
+from services.git.direct_issue_plugin_service import (
+    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
+)
 from services.memory_service import (
     append_message,
     create_chat,
@@ -416,11 +419,23 @@ from services.telegram.telegram_project_logs_service import (
 from services.telegram.telegram_project_logs_service import (
     get_project_root as _svc_get_project_root,
 )
-from services.telegram.telegram_project_logs_service import (
+from services.project.project_catalog_service import (
     get_single_project_key as _svc_get_single_project_key,
 )
-from services.telegram.telegram_project_logs_service import (
+from services.project.project_catalog_service import (
     iter_project_keys as _svc_iter_project_keys,
+)
+from services.project.project_issue_command_deps_service import (
+    default_issue_url as _svc_default_issue_url,
+)
+from services.project.project_issue_command_deps_service import (
+    get_issue_details as _svc_get_issue_details,
+)
+from services.project.project_issue_command_deps_service import (
+    project_issue_url as _svc_project_issue_url,
+)
+from services.project.project_issue_command_deps_service import (
+    project_repo as _svc_project_repo,
 )
 from services.telegram.telegram_project_logs_service import (
     read_latest_log_full as _svc_read_latest_log_full,
@@ -810,22 +825,7 @@ def _hands_free_routing_handler_deps() -> HandsFreeRoutingDeps:
 
 def _get_direct_issue_plugin(repo: str):
     """Return issue plugin for direct Telegram operations."""
-    overrides = {"repo": repo}
-    cache_key = f"git:telegram:{repo}"
-    try:
-        return get_profiled_plugin(
-            "git_telegram",
-            overrides=overrides,
-            cache_key=cache_key,
-        )
-    except Exception:
-        # Legacy profile was never registered in some deployments; fall back to
-        # the shared GitHub issue CLI profile used by agent launch/recovery.
-        return get_profiled_plugin(
-            "git_agent_launcher",
-            overrides=overrides,
-            cache_key=cache_key,
-        )
+    return _svc_get_direct_issue_plugin(repo=repo, get_profiled_plugin=get_profiled_plugin)
 
 
 # --- RATE LIMITING DECORATOR ---
@@ -848,18 +848,13 @@ def save_tracked_issues(data):
 
 def get_issue_details(issue_num, repo: str = None):
     """Query GitHub API for issue details."""
-    try:
-        repo = repo or DEFAULT_REPO
-        plugin = _get_direct_issue_plugin(repo)
-        if not plugin:
-            return None
-        return plugin.get_issue(
-            str(issue_num),
-            ["number", "title", "state", "labels", "body", "updatedAt"],
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch issue {issue_num}: {e}")
-        return None
+    return _svc_get_issue_details(
+        issue_num=str(issue_num),
+        repo=repo,
+        default_repo=DEFAULT_REPO,
+        get_direct_issue_plugin=_get_direct_issue_plugin,
+        logger=logger,
+    )
 
 
 def _get_expected_running_agent_from_workflow(issue_num: str) -> str | None:
@@ -1000,23 +995,32 @@ def _get_project_logs_dir(project_key: str) -> str | None:
 
 
 def _project_repo(project_key: str) -> str:
-    config = PROJECT_CONFIG.get(project_key)
-    return resolve_repo(config if isinstance(config, dict) else None, DEFAULT_REPO)
+    return _svc_project_repo(
+        project_key=project_key,
+        project_config=PROJECT_CONFIG,
+        default_repo=DEFAULT_REPO,
+        resolve_repo=resolve_repo,
+    )
 
 
 def _project_issue_url(project_key: str, issue_num: str) -> str:
-    config = PROJECT_CONFIG.get(project_key)
-    cfg = config if isinstance(config, dict) else None
-    return build_issue_url(_project_repo(project_key), issue_num, cfg)
+    return _svc_project_issue_url(
+        project_key=project_key,
+        issue_num=issue_num,
+        project_config=PROJECT_CONFIG,
+        default_repo=DEFAULT_REPO,
+        resolve_repo=resolve_repo,
+        build_issue_url=build_issue_url,
+    )
 
 
 def _default_issue_url(issue_num: str) -> str:
-    try:
-        project_key = get_default_project()
-        return _project_issue_url(project_key, issue_num)
-    except Exception:
-        # This is strictly for the /link command, we should ideally resolve this from the repo platform
-        return f"https://github.com/{DEFAULT_REPO}/issues/{issue_num}"
+    return _svc_default_issue_url(
+        issue_num=issue_num,
+        default_repo=DEFAULT_REPO,
+        get_default_project=get_default_project,
+        project_issue_url_fn=_project_issue_url,
+    )
 
 
 def _extract_project_from_nexus_path(path: str) -> str | None:
@@ -1917,7 +1921,9 @@ def main():
                 CallbackQueryHandler(type_selected, pattern=r"^[a-z-]+$"),
                 CallbackQueryHandler(flow_close_handler, pattern=r"^flow:close$"),
             ],
-            INPUT_TASK: [MessageHandler(filters.TEXT | filters.VOICE, save_task)],
+            INPUT_TASK: [
+                MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.VOICE, save_task)
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False,

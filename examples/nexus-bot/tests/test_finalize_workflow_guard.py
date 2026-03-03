@@ -22,7 +22,7 @@ def test_finalize_workflow_skips_non_terminal_state(monkeypatch):
         "inbox_processor.emit_alert", lambda message, **kwargs: alerts.append(message) or True
     )
 
-    _finalize_workflow("55", "sample-org/nexus-core", "writer", "nexus")
+    _finalize_workflow("55", "sample-org/nexus-arc", "writer", "nexus")
 
     assert alerts
     assert "Finalization blocked" in alerts[0]

@@ -1,6 +1,6 @@
 """Agent monitoring and recovery - handles timeouts, retries, and failures.
 
-Provides host-side glue between nexus-core MonitorEngine and the
+Provides host-side glue between nexus-arc MonitorEngine and the
 runtime-ops plugin for PID management and process killing.
 
 For workflow routing, import directly from ``nexus.core.router``.

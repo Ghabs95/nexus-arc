@@ -1,0 +1,117 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Enterprise Shortened Workflow"
+  description: "Expedited enterprise delivery pipeline with rapid debug, review, and deploy."
+  version: "1.0.0"
+
+workflow_type: "shortened"
+timeout_seconds: 7200
+
+steps:
+  - id: "triage"
+    name: "Intake & Triage"
+    description: "Classify priority, scope, and affected components"
+    agent_type: "triage"
+    tools:
+      - github:read_issue
+      - github:add_comment
+      - github:add_label
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - severity: "enum[critical|high|medium|low]"
+      - priority: "enum[p0|p1|p2|p3]"
+    on_success: "debug"
+
+  - id: "debug"
+    name: "Root Cause Analysis"
+    description: "Investigate the issue and identify root cause"
+    agent_type: "debug"
+    tools:
+      - github:search_codebase
+      - github:read_file
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+      - severity: "string"
+    outputs:
+      - root_cause: "string"
+      - affected_components: "list[string]"
+      - fix_approach: "string"
+    on_success: "develop"
+
+  - id: "develop"
+    name: "Implement Change"
+    description: "Implement the change and open a PR"
+    agent_type: "developer"
+    tools:
+      - github:create_branch
+      - github:commit_changes
+      - github:create_pr
+    inputs:
+      - issue_url: "string"
+      - root_cause: "string"
+      - fix_approach: "string"
+    outputs:
+      - fix_pr_url: "string"
+      - test_coverage: "string"
+    on_success: "review"
+
+  - id: "review"
+    name: "Verify Change"
+    description: "Review the change for correctness and approve only after full regression (or equivalent full CI suite) passes"
+    agent_type: "reviewer"
+    tools:
+      - github:review_pr
+      - github:approve_pr
+      - github:add_comment
+    inputs:
+      - pr_urls: "list[string]"
+    outputs:
+      - review_status: "enum[approved|changes_requested]"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Verification"
+    agent_type: "router"
+    routes:
+      - when: "review_status == 'approved'"
+        then: "deploy"
+      - default: "develop"
+
+  - id: "deploy"
+    name: "Deploy Change"
+    description: "Merge the change and create a release"
+    agent_type: "deployer"
+    tools:
+      - github:merge_pr
+      - github:create_release
+      - github:add_comment
+    inputs:
+      - fix_pr_url: "string"
+    outputs:
+      - deployment_status: "string"
+    on_success: "close_loop"
+
+  - id: "close_loop"
+    name: "Document & Close"
+    description: "Write summary and close the issue"
+    agent_type: "writer"
+    tools:
+      - github:add_comment
+      - github:close_issue
+    inputs:
+      - issue_url: "string"
+      - root_cause: "string"
+    outputs:
+      - postmortem: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  audit_trail: "github_comments"
+  notify_human: true
+  human_approval_gates:
+    - before: "deploy"
+  require_human_merge_approval: true

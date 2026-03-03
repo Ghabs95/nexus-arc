@@ -2,11 +2,11 @@
 
 ## Context
 
-Currently, the `nexus-core` framework supports one-way notification channels (e.g., sending alerts to Telegram via raw
+Currently, the `nexus-arc` framework supports one-way notification channels (e.g., sending alerts to Telegram via raw
 HTTP requests). However, the complex, two-way interactive chat functionality (receiving messages, routing commands,
 pressing inline buttons) is heavily hardcoded in a downstream implementation (`nexus/src/telegram_bot.py`).
 
-To fulfill the vision of `nexus-core` as a turnkey AI Agency framework, users should be able to leverage chat
+To fulfill the vision of `nexus-arc` as a turnkey AI Agency framework, users should be able to leverage chat
 interfaces (Telegram, Discord, Slack) out-of-the-box. This will allow users to invoke agentic skills directly from their
 phones/clients (e.g., `/direct TechLead use @awesome-skill`).
 
@@ -65,7 +65,7 @@ class InteractiveClientPlugin(Plugin):
 ### Negative
 
 - **Dependency Weight**: Integrating official SDKs (like `python-telegram-bot` or `discord.py`) into the framework might
-  bloat `nexus-core`. We will mitigate this by using optional dependency extras (e.g.,
-  `pip install nexus-core[telegram]`).
+  bloat `nexus-arc`. We will mitigate this by using optional dependency extras (e.g.,
+  `pip install nexus-arc[telegram]`).
 - **Loss of Hyper-Specificity**: Moving the bot to the core means the framework cannot hardcode project-specific logic.
   Callbacks must be injected dynamically via configuration.

@@ -1,0 +1,117 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Development Shortened Workflow"
+  description: "Expedited development path for lower-risk or time-sensitive work."
+  version: "0.1.0"
+
+workflow_type: "shortened"
+timeout_seconds: 7200
+
+steps:
+  - id: "triage"
+    name: "Intake & Triage"
+    description: "Classify issue and priority"
+    agent_type: "triage"
+    tools:
+      - github:read_issue
+      - github:add_comment
+      - github:add_label
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - classification: "enum[bug|feature|doc|support]"
+      - priority: "enum[p0|p1|p2|p3]"
+    on_success: "route"
+
+  - id: "route"
+    name: "Route"
+    agent_type: "router"
+    routes:
+      - when: "classification == 'bug'"
+        then: "debug"
+      - when: "classification == 'doc'"
+        then: "docs_update"
+      - default: "develop"
+
+  - id: "debug"
+    name: "Root Cause Analysis"
+    description: "Identify likely root cause"
+    agent_type: "debug"
+    tools:
+      - github:search_codebase
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - root_cause: "string"
+    on_success: "develop"
+
+  - id: "develop"
+    name: "Implement Change"
+    description: "Implement and prepare PR"
+    agent_type: "developer"
+    tools:
+      - github:create_branch
+      - github:edit_file
+      - github:create_pr
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - pr_url: "string"
+      - implementation_summary: "string"
+    on_success: "review"
+
+  - id: "review"
+    name: "Review"
+    description: "Quick review with full CI/regression requirement"
+    agent_type: "reviewer"
+    tools:
+      - github:review_pr
+      - github:approve_pr
+      - github:request_changes
+    inputs:
+      - pr_urls: "list[string]"
+    outputs:
+      - approval_status: "enum[approved|changes_requested]"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Review"
+    agent_type: "router"
+    routes:
+      - when: "approval_status == 'approved'"
+        then: "close_loop"
+      - default: "develop"
+
+  - id: "docs_update"
+    name: "Update Documentation"
+    description: "Documentation-only workflow branch"
+    agent_type: "docs"
+    tools:
+      - github:read_file
+      - github:edit_file
+      - github:create_pr
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - docs_pr_url: "string"
+    on_success: "close_loop"
+
+  - id: "close_loop"
+    name: "Summarize & Close"
+    description: "Post summary and close"
+    agent_type: "summarizer"
+    tools:
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - summary: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  notify_human: true
+  require_human_merge_approval: true

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ACTION="${1:-up}"
-NEXUS_DIR="/opt/nexus-core/examples/nexus-bot"
+NEXUS_DIR="/opt/nexus-arc/examples/nexus-bot"
 ENV_FILE="$NEXUS_DIR/.env"
 
 if [[ ! -f "$ENV_FILE" ]]; then

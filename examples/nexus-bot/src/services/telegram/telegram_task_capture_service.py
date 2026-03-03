@@ -111,6 +111,10 @@ async def handle_save_task_selection(
         await update.message.reply_text("⚠️ Transcription failed. Please try again.")
         return conversation_end
 
+    if str(text).strip().lower() in {"cancel", "/cancel"}:
+        await update.message.reply_text("❌ Cancelled.")
+        return conversation_end
+
     # /new capture should be lightweight: store/queue raw user text.
     # Refinement and name generation are handled once in the processor path.
     refined_text = text

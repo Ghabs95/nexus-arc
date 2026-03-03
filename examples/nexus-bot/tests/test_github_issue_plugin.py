@@ -1,4 +1,4 @@
-"""Tests for direct nexus-core plugin imports from Nexus app."""
+"""Tests for direct nexus-arc plugin imports from Nexus app."""
 
 
 def test_github_issue_plugin_shim_exports_core_symbols():

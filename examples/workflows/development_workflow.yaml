@@ -1,163 +1,41 @@
-name: "Nexus ARC Development Workflow"
-description: "Multi-agent workflow for processing feature requests and bug reports"
-version: "0.1.0"
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Development Workflow Router"
+  description: "Router workflow for development full/shortened/fast-track tiers."
+  version: "0.1.0"
 
-# Demonstrates complete agent orchestration:
-# 1. Triage Agent - analyzes issue, suggests severity
-# 2. Design Agent - if feature, creates design proposal
-# 3. Debug Agent - root cause analysis for bugs
-# 4. Developer Agent - implements code changes
-# 5. Reviewer Agent - reviews the implementation PR
-# 6. Docs Agent - updates documentation
-# 7. Summarizer Agent - final summary
-
-workflow_type: "full"  # fast-track | shortened | full
-timeout_seconds: 10800
+workflow_type: "orchestrator"
+timeout_seconds: 3600
 
 steps:
   - id: "triage"
-    name: "Initial Routing"
-    description: "Analyze issue and classify as bug/feature/doc, suggest priority"
+    name: "Development Tier Selection"
+    description: "Classify the request and choose full, shortened, or fast-track"
     agent_type: "triage"
-    tools:
-      - github:read_issue
-      - github:add_comment
-      - github:add_label
     inputs:
       - issue_url: "string"
+      - request_context: "string"
     outputs:
-      - classification: "enum[bug|feature|doc|support]"
-      - priority: "enum[p0-critical|p1-high|p2-medium|p3-low]"
-      - recommended_assignee: "string"
-    on_success: "route_by_type"
+      - selected_workflow: "enum[development_full, development_shortened, development_fast_track]"
+      - initial_analysis: "string"
+    on_success: "dispatch"
 
-  - id: "route_by_type"
-    name: "Route to Specialist"
-    description: "Conditional routing based on issue type"
-    agent_type: "router"
+  - id: "dispatch"
+    name: "Dispatch"
+    description: "Trigger selected development sub-workflow"
+    agent_type: "triage"
+    inputs:
+      - selected_workflow: "string"
     routes:
-      - when: "classification == 'feature'"
-        then: "design"
-      - when: "classification == 'bug'"
-        then: "debug"
-      - when: "classification == 'doc'"
-        then: "docs_update"
-      - default: "close_loop"
-
-  - id: "design"
-    name: "Create Design Proposal"
-    description: "For feature requests: create design doc in PR"
-    agent_type: "design"
-    tools:
-      - github:create_branch
-      - github:create_file
-      - github:create_pr
-      - github:add_comment
-    inputs:
-      - issue_url: "string"
-      - feature_description: "string"
-      - scope: "enum[small|medium|large]"
-    outputs:
-      - design_pr_url: "string"
-      - estimated_effort: "string"
-    on_success: "develop"
-
-  - id: "debug"
-    name: "Debug & Root Cause Analysis"
-    description: "Identify root cause, reproduction steps, and propose fix architecture"
-    agent_type: "debug"
-    tools:
-      - github:add_comment
-      - github:search_codebase
-      - github:add_label
-    inputs:
-      - issue_url: "string"
-    outputs:
-      - suspected_cause: "string"
-      - reproduction_steps: "string"
-      - affected_versions: "list[string]"
-    on_success: "develop"
-
-  - id: "develop"
-    name: "Implement Changes"
-    description: "Implement code changes based on debug analysis or design proposal"
-    agent_type: "developer"
-    tools:
-      - github:read_issue
-      - github:read_comments
-      - github:add_comment
-      - github:create_branch
-      - github:edit_file
-      - github:create_file
-      - github:search_codebase
-    inputs:
-      - issue_url: "string"
-    outputs:
-      - branch_name: "string"
-      - files_changed: "list[string]"
-      - implementation_summary: "string"
-    on_success: "review"
-
-  - id: "review"
-    name: "Review Implementation"
-    description: "Review the implementation for code quality and correctness; approve only after full regression (or equivalent full CI suite) passes"
-    agent_type: "reviewer"
-    tools:
-      - github:review_pr
-      - github:suggest_changes
-      - github:add_comment
-      - github:request_changes
-      - github:approve_pr
-    inputs:
-      - pr_urls: "list[string]"
-    outputs:
-      - review_comments: "list[string]"
-      - approval_status: "enum[approved|changes_requested]"
-    on_success: "route_review"
-
-  - id: "route_review"
-    name: "Route After Review"
-    agent_type: "router"
-    routes:
-      - when: "approval_status == 'approved'"
-        then: "close_loop"
-      - default: "develop"   # Loop back if changes requested
-
-  - id: "docs_update"
-    name: "Update Documentation"
-    description: "For doc issues: update README/docs automatically"
-    agent_type: "docs"
-    tools:
-      - github:read_file
-      - github:create_branch
-      - github:edit_file
-      - github:create_pr
-    inputs:
-      - issue_url: "string"
-    outputs:
-      - docs_pr_url: "string"
-    on_success: "close_loop"
-
-  - id: "close_loop"
-    name: "Summarize & Close"
-    description: "Final summary comment on original issue"
-    agent_type: "summarizer"
-    tools:
-      - github:add_comment
-    inputs:
-      - issue_url: "string"
-    outputs:
-      - summary: "string"
-    final_step: true
+      - when: "selected_workflow == 'development_full'"
+        then: "development_full_workflow"
+      - when: "selected_workflow == 'development_shortened'"
+        then: "development_shortened_workflow"
+      - when: "selected_workflow == 'development_fast_track'"
+        then: "development_fast_track_workflow"
+      - default: "development_full_workflow"
 
 monitoring:
   log_all_decisions: true
-  audit_trail: "github_comments"
   notify_human: true
-  human_approval_gates:
-    - before: "create_pr"  # Require review before opening PR
-  
-  # PR Merge Policy: Require human approval before merging PRs
-  # Only applies when project config policy is 'workflow-based'
-  # When project config is 'always', this is ignored (human approval always enforced)
-  require_human_merge_approval: true  # Default for this workflow

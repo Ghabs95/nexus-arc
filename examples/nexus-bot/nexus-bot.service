@@ -5,12 +5,12 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/nexus-core/examples/nexus-bot
+WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
 EnvironmentFile=/opt/nexus/.env
 Environment="PYTHONUNBUFFERED=1"
 # Include system paths so system binaries (e.g. /usr/bin/gh) are available
-Environment="PATH=/opt/nexus-core/examples/nexus-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/opt/nexus-core/examples/nexus-bot/venv/bin/python src/telegram_bot.py
+Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python src/telegram_bot.py
 Restart=always
 RestartSec=10
 

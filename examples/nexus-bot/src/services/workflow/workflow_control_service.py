@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from config import NEXUS_STORAGE_BACKEND
+from services.runtime_mode_service import is_postgres_backend
 from integrations.workflow_state_factory import get_storage_backend
 
 from nexus.adapters.git.utils import build_issue_url, resolve_repo
@@ -141,9 +142,6 @@ def prepare_continue_context(
                 return issue_details, candidate_repo
         return None, None
 
-    def _db_only_task_mode() -> bool:
-        return str(NEXUS_STORAGE_BACKEND or "").strip().lower() == "postgres"
-
     def _looks_like_agent_ref(token: str) -> bool:
         value = str(token or "").strip()
         if not value:
@@ -183,7 +181,9 @@ def prepare_continue_context(
             ),
         }
 
-    task_file = None if _db_only_task_mode() else find_task_file_by_issue(issue_num)
+    task_file = (
+        None if is_postgres_backend(NEXUS_STORAGE_BACKEND) else find_task_file_by_issue(issue_num)
+    )
     details = None
     repo = None
 
@@ -196,7 +196,7 @@ def prepare_continue_context(
                 "message": (f"❌ Could not load issue #{issue_num}.\n" f"Checked repos: {checked}"),
             }
         body = details.get("body", "")
-        if not _db_only_task_mode():
+        if not is_postgres_backend(NEXUS_STORAGE_BACKEND):
             match = re.search(r"Task File:\s*`([^`]+)`", body)
             task_file = match.group(1) if match else None
 
@@ -206,7 +206,7 @@ def prepare_continue_context(
     task_type = "feature"
     local_issue_fallback = False
 
-    if (not _db_only_task_mode()) and task_file and os.path.exists(task_file):
+    if (not is_postgres_backend(NEXUS_STORAGE_BACKEND)) and task_file and os.path.exists(task_file):
         project_name, config = resolve_project_config_from_task(task_file)
         if not config or not config.get("agents_dir"):
             fallback_config = project_config.get(project_key)
@@ -304,7 +304,7 @@ def prepare_continue_context(
     workflow_already_done = False
     sync_workflow_to_agent = False
 
-    if not _db_only_task_mode():
+    if not is_postgres_backend(NEXUS_STORAGE_BACKEND):
         try:
             completions = scan_for_completions(base_dir)
             issue_completions = [c for c in completions if c.issue_number == str(issue_num)]

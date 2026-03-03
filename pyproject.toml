@@ -86,10 +86,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Ghabs95/nexus-core"
-Documentation = "https://nexus-core.readthedocs.io"
-Repository = "https://github.com/Ghabs95/nexus-core"
-Issues = "https://github.com/Ghabs95/nexus-core/issues"
+Homepage = "https://github.com/Ghabs95/nexus-arc"
+Documentation = "https://nexus-arc.readthedocs.io"
+Repository = "https://github.com/Ghabs95/nexus-arc"
+Issues = "https://github.com/Ghabs95/nexus-arc/issues"
 
 [project.scripts]
 nexus = "nexus.cli:main"

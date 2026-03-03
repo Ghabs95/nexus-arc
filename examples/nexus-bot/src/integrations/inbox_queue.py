@@ -36,7 +36,7 @@ def _require_sqlalchemy() -> None:
     if not _SA_AVAILABLE:
         raise ImportError(
             "sqlalchemy and psycopg2-binary are required for Postgres inbox queue. "
-            "Install with: pip install nexus-core[postgres]"
+            "Install with: pip install nexus-arc[postgres]"
         )
 
 

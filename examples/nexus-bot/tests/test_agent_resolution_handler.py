@@ -20,7 +20,7 @@ name: Architect
 
     # Source YAML agent in configured root dir
     (project_root / "triage-agent.yaml").write_text(
-        """apiVersion: \"nexus-core/v1\"
+        """apiVersion: \"nexus-arc/v1\"
 kind: \"Agent\"
 metadata:
   name: \"Triage\"
@@ -41,7 +41,7 @@ def test_resolve_agents_from_agents_dir_yaml_only(tmp_path):
     agents_dir.mkdir(parents=True)
 
     (agents_dir / "developer-agent.yaml").write_text(
-        """apiVersion: \"nexus-core/v1\"
+        """apiVersion: \"nexus-arc/v1\"
 kind: \"Agent\"
 metadata:
   name: \"Developer\"

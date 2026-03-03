@@ -1,5 +1,5 @@
 """
-Example usage of the built-in TelegramInteractivePlugin in nexus-core.
+Example usage of the built-in TelegramInteractivePlugin in nexus-arc.
 
 Set TELEGRAM_TOKEN to test locally:
     TELEGRAM_TOKEN=123:abc python examples/interactive_bot.py

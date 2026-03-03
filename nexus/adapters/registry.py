@@ -121,7 +121,7 @@ def _load_builtin_transcription(type_name: str) -> type[TranscriptionProvider] |
 
 
 class AdapterRegistry:
-    """Central registry and factory for all nexus-core adapter types.
+    """Central registry and factory for all nexus-arc adapter types.
 
     Builtins are registered automatically; call the ``register_*`` methods to
     add custom implementations.

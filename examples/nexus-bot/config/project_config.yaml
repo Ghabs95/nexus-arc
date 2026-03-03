@@ -1,9 +1,9 @@
 # Global workflow definition path (YAML workflow file - single source of truth)
-workflow_definition_path: nexus-core/examples/workflows/enterprise_workflow.yaml
+workflow_definition_path: nexus-arc/examples/workflows/enterprise_workflow.yaml
 
 # Shared agent YAML definitions (org-level agents used across all projects)
 # Searched as fallback when agent_type is not found in project-specific agents_dir
-shared_agents_dir: nexus-core/examples/agents
+shared_agents_dir: nexus-arc/examples/agents
 
 # VCS-agnostic inbox/tasks directory (can be .nexus, .gitlab, .gitea, etc.)
 # Relative to project workspace root
@@ -15,7 +15,7 @@ projects:
     code: nexus
     aliases:
       - nexus core
-      - nexus-core
+      - nexus-arc
 
 # Merge queue behavior (project-level enforcement)
 # review_mode:
@@ -81,11 +81,11 @@ system_operations:
 
 # Project configurations
 nexus:
-  agents_dir: ghabs/nexus-core/examples/agents
+  agents_dir: ghabs/nexus-arc/examples/agents
   workspace: nexus
-  git_repo: Ghabs95/nexus-core
+  git_repo: Ghabs95/nexus-arc
   # git_repos:
-  #  - Ghabs95/nexus-core
+  #  - Ghabs95/nexus-arc
   system_operations:
     default: triage
     launch: triage
@@ -96,7 +96,7 @@ nexus:
     inbox: triage
     chat:
       designer:
-        context_path: nexus-core/examples/nexus-bot/docs
+        context_path: nexus-arc/examples/nexus-bot/docs
         context_files:
           - AGENTS.md
         feature_ideation_context_mode: index
@@ -105,7 +105,7 @@ nexus:
       compliance: { }
       writer: { }
   # Uses the enterprise workflow (multi-tier: full/shortened/fast-track)
-  workflow_definition_path: nexus/nexus-core/examples/workflows/enterprise_workflow.yaml
+  workflow_definition_path: nexus/nexus-arc/examples/workflows/enterprise_workflow.yaml
   # AI tool preferences for enterprise workflow agent types
   model_profiles:
     fast:

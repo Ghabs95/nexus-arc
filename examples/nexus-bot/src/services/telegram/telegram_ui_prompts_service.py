@@ -1,6 +1,45 @@
 from typing import Any, Callable
 
 
+def resolve_issue_choices(
+    *,
+    list_project_issues: Callable[..., list[dict]],
+    project_key: str,
+    issue_state: str = "open",
+    include_fallback: bool = False,
+    limit: int = 25,
+) -> list[dict[str, str]]:
+    options: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    if issue_state == "open":
+        states = ["open", "closed"] if include_fallback else ["open"]
+    elif issue_state == "closed":
+        states = ["closed", "open"] if include_fallback else ["closed"]
+    else:
+        states = ["open", "closed"]
+
+    for state in states:
+        try:
+            rows = list_project_issues(project_key, state=state, limit=limit)
+        except TypeError:
+            rows = list_project_issues(project_key, state=state)
+        except Exception:
+            rows = []
+        for row in rows:
+            number = str(row.get("number") or "").strip()
+            if not number or number in seen:
+                continue
+            seen.add(number)
+            title = str(row.get("title") or "").strip()
+            row_state = str(row.get("state") or state).strip().lower() or state
+            options.append({"number": number, "title": title, "state": row_state})
+            if len(options) >= limit:
+                return options
+
+    return options
+
+
 async def prompt_issue_selection(
     *,
     update: Any,
@@ -14,10 +53,20 @@ async def prompt_issue_selection(
     issue_state: str = "open",
 ) -> None:
     """Show a list of issues for the user to pick from."""
-    issues = list_project_issues(project_key, state=issue_state)
+    issues = resolve_issue_choices(
+        list_project_issues=list_project_issues,
+        project_key=project_key,
+        issue_state=issue_state,
+        include_fallback=False,
+    )
     if not issues and command in {"logs", "logsfull", "tail"}:
         alt_state = "closed" if issue_state == "open" else "open"
-        alt_issues = list_project_issues(project_key, state=alt_state)
+        alt_issues = resolve_issue_choices(
+            list_project_issues=list_project_issues,
+            project_key=project_key,
+            issue_state=alt_state,
+            include_fallback=False,
+        )
         if alt_issues:
             issue_state = alt_state
             issues = alt_issues

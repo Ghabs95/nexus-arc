@@ -236,8 +236,13 @@ class YamlWorkflowLoader:
             errors.append(f"Workflow definition must be a mapping, got {type(data).__name__}")
             return errors, warnings
 
+        metadata_block = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+
         # Must have at least a name or id
-        if not data.get("name") and not data.get("id"):
+        if (
+            not metadata_block.get("name")
+            and not metadata_block.get("id")
+        ):
             errors.append("Missing required field: 'name' or 'id'")
 
         # Resolve steps for the selected tier

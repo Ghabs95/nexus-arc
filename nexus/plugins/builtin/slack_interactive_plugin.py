@@ -6,7 +6,7 @@ outbound-connection approach of Telegram polling and Discord gateway).
 
 Requires the ``slack`` optional extra::
 
-    pip install nexus-core[slack]
+    pip install nexus-arc[slack]
 """
 
 import asyncio
@@ -55,12 +55,12 @@ class SlackInteractivePlugin(InteractiveClientPlugin):
         if not HAS_SLACK_BOLT:
             raise ImportError(
                 "slack-bolt is required for SlackInteractivePlugin. "
-                "Install it with: pip install nexus-core[slack]"
+                "Install it with: pip install nexus-arc[slack]"
             )
         if not HAS_SLACK_SDK:
             raise ImportError(
                 "slack-sdk is required for SlackInteractivePlugin. "
-                "Install it with: pip install nexus-core[slack]"
+                "Install it with: pip install nexus-arc[slack]"
             )
 
         self._bot_token: str = config.get("bot_token", "")

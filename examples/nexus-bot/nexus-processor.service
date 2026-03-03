@@ -6,10 +6,10 @@ After=network.target
 # Adjust User/Group to match your server (e.g., ubuntu)
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/opt/nexus-core/examples/nexus-bot
+WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
 # Include virtualenv and system paths so `gh` and other system binaries are available
-Environment="PATH=/opt/nexus-core/examples/nexus-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/opt/nexus-core/examples/nexus-bot/venv/bin/python src/inbox_processor.py
+Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python src/inbox_processor.py
 Restart=always
 RestartSec=10
 # Environment variables can be loaded from file or set here

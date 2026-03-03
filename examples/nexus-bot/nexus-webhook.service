@@ -5,15 +5,15 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/nexus-core/examples/nexus-bot
-ExecStart=/opt/nexus-core/examples/nexus-bot/venv/bin/python3 /opt/nexus-core/examples/nexus-bot/src/webhook_server.py
+WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
+ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python3 /opt/nexus-arc/examples/nexus-bot/src/webhook_server.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/opt/nexus-core/examples/nexus-bot/logs/webhook.log
-StandardError=append:/opt/nexus-core/examples/nexus-bot/logs/webhook_error.log
+StandardOutput=append:/opt/nexus-arc/examples/nexus-bot/logs/webhook.log
+StandardError=append:/opt/nexus-arc/examples/nexus-bot/logs/webhook_error.log
 
 # Environment
-Environment="PATH=/opt/nexus-core/examples/nexus-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 EnvironmentFile=/opt/nexus/.env
 

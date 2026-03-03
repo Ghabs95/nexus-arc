@@ -197,6 +197,7 @@ from services.startup_recovery_service import (
 from services.startup_recovery_service import (
     reconcile_completion_signals_on_startup as _startup_reconcile_completion_signals,
 )
+from services.runtime_mode_service import is_issue_process_running, is_postgres_backend
 from services.task_archive_service import (
     archive_closed_task_files as _svc_archive_closed_task_files,
 )
@@ -298,10 +299,6 @@ _STALE_WORKTREE_MAX_AGE_HOURS = max(
 _last_stale_worktree_cleanup_ts = 0.0
 from integrations.workflow_state_factory import get_workflow_state as _get_wf_state
 from integrations.workflow_state_factory import get_storage_backend as _get_storage_backend
-
-
-def _db_only_task_mode() -> bool:
-    return str(NEXUS_STORAGE_BACKEND or "").strip().lower() == "postgres"
 
 
 _WORKFLOW_STATE_PLUGIN_KWARGS = {
@@ -496,7 +493,7 @@ def _resolve_repo_strict(project_name: str, issue_num: str) -> str:
 def _read_latest_local_completion(issue_num: str) -> dict | None:
     return _svc_read_latest_local_completion(
         issue_num=str(issue_num),
-        db_only_task_mode=_db_only_task_mode,
+        db_only_task_mode=lambda: is_postgres_backend(NEXUS_STORAGE_BACKEND),
         get_storage_backend=_get_storage_backend,
         normalize_agent_reference=_normalize_agent_reference,
         base_dir=BASE_DIR,
@@ -529,7 +526,7 @@ def reconcile_completion_signals_on_startup() -> None:
         get_workflow_state_mappings=lambda: _get_wf_state().load_all_mappings(),
         nexus_core_storage_dir=NEXUS_CORE_STORAGE_DIR,
         load_workflow_payload=_build_startup_workflow_payload_loader(
-            db_only_task_mode=_db_only_task_mode,
+            db_only_task_mode=lambda: is_postgres_backend(NEXUS_STORAGE_BACKEND),
             get_storage_backend=_get_storage_backend,
             logger=logger,
             nexus_core_storage_dir=NEXUS_CORE_STORAGE_DIR,
@@ -540,7 +537,7 @@ def reconcile_completion_signals_on_startup() -> None:
         read_latest_structured_comment=_read_latest_structured_comment,
         is_terminal_agent_reference=_is_terminal_agent_reference,
         complete_step_for_issue=complete_step_for_issue,
-        local_completions_enabled=lambda: not _db_only_task_mode(),
+        local_completions_enabled=lambda: not is_postgres_backend(NEXUS_STORAGE_BACKEND),
     )
 
 
@@ -586,13 +583,6 @@ def _resolve_git_dirs(project_name: str) -> dict[str, str]:
 
 def _workflow_policy_notify(message: str) -> None:
     emit_alert(message, severity="info", source="workflow_policy")
-
-
-def _is_issue_agent_running(issue_number: str) -> bool:
-    runtime_ops = get_runtime_ops_plugin(cache_key="runtime-ops:inbox")
-    if runtime_ops is None or not hasattr(runtime_ops, "is_issue_process_running"):
-        raise RuntimeError("runtime ops plugin is unavailable")
-    return bool(runtime_ops.is_issue_process_running(str(issue_number)))
 
 
 def _archive_closed_task_files(
@@ -689,7 +679,9 @@ def _finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name:
         cleanup_worktree_fn=lambda **kwargs: _finalize_cleanup_worktree(
             repo_dir=kwargs["repo_dir"],
             issue_number=str(kwargs["issue_number"]),
-            is_issue_agent_running_fn=_is_issue_agent_running,
+            is_issue_agent_running_fn=lambda value: is_issue_process_running(
+                value, cache_key="runtime-ops:inbox"
+            ),
         ),
         close_issue_fn=lambda **kwargs: _finalize_close_issue(
             project_name=project_name,
@@ -956,7 +948,7 @@ def _resolve_project_for_issue(issue_num: str, workflow_id: str | None = None) -
 def _find_task_file_for_issue(issue_num: str) -> str | None:
     return _svc_find_task_file_for_issue(
         issue_num=str(issue_num),
-        db_only_task_mode=_db_only_task_mode(),
+        db_only_task_mode=is_postgres_backend(NEXUS_STORAGE_BACKEND),
         base_dir=BASE_DIR,
         nexus_dir_name=get_nexus_dir_name(),
     )
@@ -978,7 +970,7 @@ def _recover_unmapped_issues_from_completions(max_relaunches: int = 20) -> int:
     This path handles cases where workflow mapping is lost after restarts but
     local completion + task context still indicates the next agent to run.
     """
-    if _db_only_task_mode():
+    if is_postgres_backend(NEXUS_STORAGE_BACKEND):
         return 0
 
     runtime = getattr(_get_process_orchestrator(), "_runtime", None)
@@ -1033,7 +1025,7 @@ def check_and_notify_pr(issue_num, project):
     """
     Check if there's a PR linked to the issue and notify user for review.
 
-    Delegates to nexus-core's GitPlatform.search_linked_prs().
+    Delegates to nexus-arc's GitPlatform.search_linked_prs().
 
     Args:
         issue_num: Git issue number
@@ -1054,7 +1046,7 @@ def check_completed_agents():
     """Monitor for completed agent steps and auto-chain to next agent.
 
     Delegates to _post_completion_comments_from_logs()
-    which uses the nexus-core framework for completion scanning and auto-chaining.
+    which uses the nexus-arc framework for completion scanning and auto-chaining.
     """
     _run_completion_monitor_cycle(
         post_completion_comments_from_logs=_post_completion_comments_from_logs,

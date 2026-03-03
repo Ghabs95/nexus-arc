@@ -34,7 +34,7 @@ class DiscordInteractivePlugin(InteractiveClientPlugin):
         if not HAS_DISCORD:
             raise ImportError(
                 "discord.py is required for DiscordInteractivePlugin. "
-                "Install it with: pip install nexus-core[discord]"
+                "Install it with: pip install nexus-arc[discord]"
             )
 
         self.bot_token = config.get("bot_token", "")

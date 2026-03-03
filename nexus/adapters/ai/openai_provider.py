@@ -2,7 +2,7 @@
 
 Requires the ``openai`` optional extra::
 
-    pip install nexus-core[openai]
+    pip install nexus-arc[openai]
 
 Uses the ``openai`` Python SDK (v1+) with async support.
 """
@@ -33,7 +33,7 @@ def _require_openai() -> None:
     if not _OPENAI_AVAILABLE:
         raise ImportError(
             "openai package is required for OpenAIProvider. "
-            "Install it with: pip install nexus-core[openai]"
+            "Install it with: pip install nexus-arc[openai]"
         )
 
 

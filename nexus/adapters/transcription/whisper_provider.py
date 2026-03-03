@@ -42,7 +42,7 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 "openai package is required for WhisperTranscriptionProvider. "
-                "Install it with: pip install nexus-core[openai]"
+                "Install it with: pip install nexus-arc[openai]"
             ) from exc
 
         self._api_key = api_key

@@ -1,8 +1,8 @@
 """Tests for dead/stuck-agent detection after Phase-3 refactor.
 
 The dead- and stuck-agent detection logic has moved to
-``nexus.core.ProcessOrchestrator`` (nexus-core repo).  The full behavioural
-test suite lives in nexus-core's ``tests/test_process_orchestrator.py``.
+``nexus.core.ProcessOrchestrator`` (nexus-arc repo).  The full behavioural
+test suite lives in nexus-arc's ``tests/test_process_orchestrator.py``.
 
 This file verifies the nexus-side integration:
   - ``NexusAgentRuntime`` correctly delegates to ``AgentMonitor``,

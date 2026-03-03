@@ -43,7 +43,7 @@ class TestNormalizeAgentKey:
 # ---------------------------------------------------------------------------
 
 AGENT_YAML_TEMPLATE = textwrap.dedent("""\
-    apiVersion: "nexus-core/v1"
+    apiVersion: "nexus-arc/v1"
     kind: "Agent"
     metadata:
       name: "{name}"
@@ -69,7 +69,7 @@ def agents_dir(tmp_path):
     )
     # A non-agent YAML (should be skipped)
     (d / "workflow.yaml").write_text(textwrap.dedent("""\
-            apiVersion: "nexus-core/v1"
+            apiVersion: "nexus-arc/v1"
             kind: "Workflow"
             metadata:
               name: "dev-workflow"

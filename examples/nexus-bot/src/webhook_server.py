@@ -79,6 +79,7 @@ from services.webhook_pr_review_service import (
     handle_pull_request_review_event as _handle_pull_request_review_event,
 )
 from services.webhook_http_service import process_webhook_request as _process_webhook_request
+from services.runtime_mode_service import is_issue_process_running
 
 # Configure logging
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -227,13 +228,6 @@ def _resolve_git_dir_for_repo(repo_name: str) -> str | None:
     return None
 
 
-def _is_issue_agent_running(issue_number: str) -> bool:
-    runtime_ops = get_runtime_ops_plugin(cache_key="runtime-ops:webhook")
-    if runtime_ops is None or not hasattr(runtime_ops, "is_issue_process_running"):
-        raise RuntimeError("runtime ops plugin is unavailable")
-    return bool(runtime_ops.is_issue_process_running(str(issue_number)))
-
-
 def _cleanup_worktree_for_issue(repo_name: str, issue_number: str) -> bool:
     git_dir = _resolve_git_dir_for_repo(repo_name)
     if not git_dir:
@@ -248,7 +242,9 @@ def _cleanup_worktree_for_issue(repo_name: str, issue_number: str) -> bool:
         WorkspaceManager.cleanup_worktree_safe(
             base_repo_path=git_dir,
             issue_number=str(issue_number),
-            is_issue_agent_running=_is_issue_agent_running,
+            is_issue_agent_running=lambda value: is_issue_process_running(
+                value, cache_key="runtime-ops:webhook"
+            ),
             require_clean=True,
         )
     )

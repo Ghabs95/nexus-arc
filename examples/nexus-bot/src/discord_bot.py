@@ -34,6 +34,7 @@ from config import (
     PROJECT_CONFIG,
     get_chat_agent_types,
     get_inbox_dir,
+    get_repos,
 )
 from project_key_utils import normalize_project_key_str as _normalize_project_key
 from services.telegram.telegram_issue_selection_service import (
@@ -109,10 +110,59 @@ from handlers.feature_registry_command_handlers import (
     feature_list_handler as feature_list_command_handler,
 )
 from orchestration.ai_orchestrator import get_orchestrator
+from orchestration.plugin_runtime import get_profiled_plugin
 from services.telegram.telegram_bootstrap_ui_service import build_help_text
+from services.telegram.telegram_issue_selection_service import (
+    issue_state_for_command as _svc_issue_state_for_command,
+)
+from services.telegram.telegram_issue_selection_service import (
+    list_project_issues as _svc_list_project_issues,
+)
+from services.callbacks.callback_menu_service import menu_section_text as _shared_menu_section_text
+from services.telegram.telegram_ui_prompts_service import resolve_issue_choices
 from services.command_contract import (
     validate_command_parity,
     validate_required_command_interface,
+)
+from services.chat.chat_context_service import chat_context_summary
+from services.git.direct_issue_plugin_service import (
+    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
+)
+from services.project.project_catalog_service import (
+    get_project_label as _svc_get_project_label,
+)
+from services.project.project_catalog_service import (
+    get_project_workspace as _svc_get_project_workspace,
+)
+from services.project.project_catalog_service import (
+    get_single_project_key as _svc_get_single_project_key,
+)
+from services.project.project_catalog_service import (
+    iter_project_keys as _svc_iter_project_keys,
+)
+from services.telegram.telegram_handler_deps_service import (
+    build_feature_ideation_handler_deps as _svc_build_feature_ideation_handler_deps,
+)
+from services.discord.discord_bridge_deps_service import (
+    feature_registry_bridge_deps as _svc_feature_registry_bridge_deps,
+)
+from services.discord.discord_bridge_deps_service import (
+    issue_bridge_deps as _svc_issue_bridge_deps,
+)
+from services.discord.discord_bridge_deps_service import (
+    monitoring_bridge_deps as _svc_monitoring_bridge_deps,
+)
+from services.discord.discord_bridge_deps_service import (
+    ops_bridge_deps as _svc_ops_bridge_deps,
+)
+from services.discord.discord_bridge_deps_service import (
+    visualize_bridge_deps as _svc_visualize_bridge_deps,
+)
+from services.discord.discord_bridge_deps_service import (
+    watch_bridge_deps as _svc_watch_bridge_deps,
+)
+from services.discord.discord_bridge_deps_service import (
+    workflow_bridge_deps as _svc_workflow_bridge_deps,
 )
 from services.memory_service import (
     append_message,
@@ -126,8 +176,6 @@ from services.memory_service import (
 )
 from state_manager import HostStateManager
 from user_manager import get_user_manager
-
-import telegram_bot as _telegram_bridge
 
 # --- SETUP BOT ---
 intents = discord.Intents.default()
@@ -229,17 +277,8 @@ class DiscordInteractiveCtx:
         return
 
 
-def _iter_project_keys() -> list[str]:
-    return sorted(_iter_configured_projects())
-
-
-def _get_single_project_key() -> str | None:
-    projects = _iter_project_keys()
-    return projects[0] if len(projects) == 1 else None
-
-
 async def _ctx_prompt_project_selection_discord(ctx: DiscordInteractiveCtx, command: str) -> None:
-    options = ", ".join(_iter_project_keys()) or "(none)"
+    options = ", ".join(_svc_iter_project_keys(project_config=PROJECT_CONFIG)) or "(none)"
     await ctx.reply_text(
         f"Usage: `/{command} <project> <issue#>`\nAvailable projects: {options}",
         parse_mode=None,
@@ -249,13 +288,13 @@ async def _ctx_prompt_project_selection_discord(ctx: DiscordInteractiveCtx, comm
 async def _ctx_ensure_project_discord(ctx: DiscordInteractiveCtx, command: str) -> str | None:
     args = list(ctx.args or [])
     if not args:
-        single = _get_single_project_key()
+        single = _svc_get_single_project_key(project_config=PROJECT_CONFIG)
         if single:
             return single
         await _ctx_prompt_project_selection_discord(ctx, command)
         return None
     candidate = _normalize_project_key(str(args[0]))
-    if candidate in _iter_project_keys():
+    if candidate in _svc_iter_project_keys(project_config=PROJECT_CONFIG):
         return candidate
     await ctx.reply_text(f"❌ Unknown project '{args[0]}'.")
     return None
@@ -272,7 +311,7 @@ async def _ctx_ensure_project_issue_discord(
     if not project_key or not issue_num:
         await _ctx_prompt_project_selection_discord(ctx, command)
         return None, None, []
-    if project_key not in _iter_project_keys():
+    if project_key not in _svc_iter_project_keys(project_config=PROJECT_CONFIG):
         await ctx.reply_text(f"❌ Unknown project '{project_key}'.")
         return None, None, []
     if not str(issue_num).isdigit():
@@ -282,57 +321,55 @@ async def _ctx_ensure_project_issue_discord(
 
 
 def _monitoring_bridge_deps():
-    deps = _telegram_bridge._monitoring_handler_deps()
-    deps.allowed_user_ids = DISCORD_ALLOWED_USER_IDS
-    deps.ensure_project = _ctx_ensure_project_discord
-    deps.ensure_project_issue = _ctx_ensure_project_issue_discord
-    return deps
+    return _svc_monitoring_bridge_deps(
+        allowed_user_ids=DISCORD_ALLOWED_USER_IDS,
+        ensure_project=_ctx_ensure_project_discord,
+        ensure_project_issue=_ctx_ensure_project_issue_discord,
+    )
 
 
 def _ops_bridge_deps():
-    deps = _telegram_bridge._ops_handler_deps()
-    deps.allowed_user_ids = DISCORD_ALLOWED_USER_IDS
-    deps.prompt_project_selection = _ctx_prompt_project_selection_discord
-    deps.ensure_project_issue = _ctx_ensure_project_issue_discord
-    return deps
+    return _svc_ops_bridge_deps(
+        allowed_user_ids=DISCORD_ALLOWED_USER_IDS,
+        prompt_project_selection=_ctx_prompt_project_selection_discord,
+        ensure_project_issue=_ctx_ensure_project_issue_discord,
+    )
 
 
 def _issue_bridge_deps():
-    deps = _telegram_bridge._issue_handler_deps()
-    deps.allowed_user_ids = DISCORD_ALLOWED_USER_IDS
-    deps.prompt_project_selection = _ctx_prompt_project_selection_discord
-    deps.ensure_project_issue = _ctx_ensure_project_issue_discord
-    return deps
+    return _svc_issue_bridge_deps(
+        allowed_user_ids=DISCORD_ALLOWED_USER_IDS,
+        prompt_project_selection=_ctx_prompt_project_selection_discord,
+        ensure_project_issue=_ctx_ensure_project_issue_discord,
+    )
 
 
 def _visualize_bridge_deps():
-    deps = _telegram_bridge._visualize_handler_deps()
-    deps.allowed_user_ids = DISCORD_ALLOWED_USER_IDS
-    deps.prompt_project_selection = _ctx_prompt_project_selection_discord
-    deps.ensure_project_issue = _ctx_ensure_project_issue_discord
-    return deps
+    return _svc_visualize_bridge_deps(
+        allowed_user_ids=DISCORD_ALLOWED_USER_IDS,
+        prompt_project_selection=_ctx_prompt_project_selection_discord,
+        ensure_project_issue=_ctx_ensure_project_issue_discord,
+    )
 
 
 def _watch_bridge_deps():
-    deps = _telegram_bridge._watch_handler_deps()
-    deps.allowed_user_ids = DISCORD_ALLOWED_USER_IDS
-    deps.prompt_project_selection = _ctx_prompt_project_selection_discord
-    deps.ensure_project_issue = _ctx_ensure_project_issue_discord
-    return deps
+    return _svc_watch_bridge_deps(
+        allowed_user_ids=DISCORD_ALLOWED_USER_IDS,
+        prompt_project_selection=_ctx_prompt_project_selection_discord,
+        ensure_project_issue=_ctx_ensure_project_issue_discord,
+    )
 
 
 def _workflow_bridge_deps():
-    deps = _telegram_bridge._workflow_handler_deps()
-    deps.allowed_user_ids = DISCORD_ALLOWED_USER_IDS
-    deps.prompt_project_selection = _ctx_prompt_project_selection_discord
-    deps.ensure_project_issue = _ctx_ensure_project_issue_discord
-    return deps
+    return _svc_workflow_bridge_deps(
+        allowed_user_ids=DISCORD_ALLOWED_USER_IDS,
+        prompt_project_selection=_ctx_prompt_project_selection_discord,
+        ensure_project_issue=_ctx_ensure_project_issue_discord,
+    )
 
 
 def _feature_registry_bridge_deps():
-    deps = _telegram_bridge._feature_registry_command_deps()
-    deps.allowed_user_ids = DISCORD_ALLOWED_USER_IDS
-    return deps
+    return _svc_feature_registry_bridge_deps(allowed_user_ids=DISCORD_ALLOWED_USER_IDS)
 
 
 async def _run_bridge_handler(
@@ -434,53 +471,14 @@ async def _send_long_interaction_text(
 
 
 def _menu_category_text(category: str) -> str:
-    sections: dict[str, str] = {
-        "chat": (
-            "🗣️ **Chat & Strategy**\n"
-            "/chat - Open chat threads and context controls\n"
-            "/chatagents [project] - Show effective ordered chat agent types\n"
-            "/help - Show full command list"
-        ),
-        "tasks": (
-            "✨ **Task Creation**\n"
-            "/menu - Open command menu\n"
-            "/new - Start a menu-driven task creation\n"
-            "/cancel - Abort the current guided process\n"
-            "\n"
-            "Hands-free:\n"
-            "Send voice note or text for automatic routing (when intent is enabled)."
-        ),
-        "monitor": (
-            "📊 **Monitoring & Tracking**\n"
-            "/status [project|all], /inboxq [limit], /active [project|all]\n"
-            "/track, /tracked, /untrack, /myissues\n"
-            "/logs, /logsfull, /tail, /tailstop, /fuse, /audit\n"
-            "/stats, /comments"
-        ),
-        "workflow": (
-            "🔁 **Recovery & Control**\n"
-            "/reprocess, /wfstate, /visualize, /watch\n"
-            "/reconcile, /continue, /forget, /kill\n"
-            "/pause, /resume, /stop, /respond"
-        ),
-        "agents": (
-            "🤝 **Agent Management**\n"
-            "/agents <project>\n"
-            "/direct <project> <@agent> <message>\n"
-            "/direct <project> <@agent> --new-chat <message>\n"
-            "\n"
-            "🧾 **Feature Registry**\n"
-            "/feature_done, /feature_list, /feature_forget"
-        ),
-        "git": (
-            "🔧 **Git Platform Management**\n"
-            "/assign <project> <issue#>\n"
-            "/implement <project> <issue#>\n"
-            "/prepare <project> <issue#>"
-        ),
-        "help": build_help_text(),
-    }
-    return sections.get(category, "⚠️ Unknown menu category.")
+    if category == "help":
+        return build_help_text()
+
+    shared_key = "github" if category == "git" else category
+    shared_text = _shared_menu_section_text(shared_key)
+    if shared_text != "Unknown menu option.":
+        return shared_text
+    return "⚠️ Unknown menu category."
 
 
 class CategoryMenuView(discord.ui.View):
@@ -558,11 +556,7 @@ class RootMenuView(discord.ui.View):
 
 
 def _command_issue_state(command_name: str) -> str:
-    if command_name in {"logs", "logsfull", "tail"}:
-        return "closed"
-    if command_name in {"wfstate"}:
-        return "any"
-    return "open"
+    return _svc_issue_state_for_command(command_name, allow_any=True)
 
 
 def _list_issue_options_for_project(
@@ -571,32 +565,24 @@ def _list_issue_options_for_project(
     issue_state: str = "open",
     limit: int = 25,
 ) -> list[dict[str, str]]:
-    options: list[dict[str, str]] = []
-    seen: set[str] = set()
-
-    if issue_state == "open":
-        states = ["open", "closed"]
-    elif issue_state == "closed":
-        states = ["closed", "open"]
-    else:
-        states = ["open", "closed"]
-    for state in states:
-        try:
-            rows = _telegram_bridge._list_project_issues(project_key, state=state, limit=limit)
-        except Exception:
-            rows = []
-        for row in rows:
-            number = str(row.get("number") or "").strip()
-            if not number or number in seen:
-                continue
-            seen.add(number)
-            title = str(row.get("title") or "").strip()
-            row_state = str(row.get("state") or state).strip().lower() or state
-            options.append({"number": number, "title": title, "state": row_state})
-            if len(options) >= limit:
-                return options
-
-    return options
+    return resolve_issue_choices(
+        list_project_issues=lambda project_key, state, limit=25: _svc_list_project_issues(
+            project_key=project_key,
+            project_config=PROJECT_CONFIG,
+            get_repos=get_repos,
+            get_direct_issue_plugin=lambda repo: _svc_get_direct_issue_plugin(
+                repo=repo,
+                get_profiled_plugin=get_profiled_plugin,
+            ),
+            logger=logger,
+            state=state,
+            limit=limit,
+        ),
+        project_key=project_key,
+        issue_state=issue_state,
+        include_fallback=True,
+        limit=limit,
+    )
 
 
 class CommandIssueSelect(discord.ui.Select):
@@ -728,10 +714,10 @@ class CommandProjectSelect(discord.ui.Select):
         self.text_modal = dict(text_modal or {})
         self.issue_state = issue_state
 
-        projects = _iter_project_keys()[:25]
+        projects = _svc_iter_project_keys(project_config=PROJECT_CONFIG)[:25]
         select_options = [
             discord.SelectOption(
-                label=_get_project_label(project_key)[:100],
+                label=_svc_get_project_label(project_key, ROUTING_PROJECTS)[:100],
                 value=project_key,
                 description=project_key,
             )
@@ -957,19 +943,16 @@ def transcribe_audio(audio_file_path: str) -> str | None:
     return orchestrator.transcribe_audio(audio_file_path)
 
 
-def _get_project_label(project_key: str) -> str:
-    return str(ROUTING_PROJECTS.get(project_key, project_key))
-
-
-def _feature_ideation_handler_deps() -> FeatureIdeationHandlerDeps:
-    return FeatureIdeationHandlerDeps(
+def _discord_feature_ideation_handler_deps() -> FeatureIdeationHandlerDeps:
+    return _svc_build_feature_ideation_handler_deps(
         logger=logger,
         allowed_user_ids=DISCORD_ALLOWED_USER_IDS,
         projects=ROUTING_PROJECTS,
-        get_project_label=_get_project_label,
+        get_project_label=lambda key: _svc_get_project_label(key, ROUTING_PROJECTS),
         orchestrator=orchestrator,
         base_dir=BASE_DIR,
         project_config=PROJECT_CONFIG,
+        process_inbox_task=process_inbox_task,
     )
 
 
@@ -983,7 +966,7 @@ def _clamp_feature_count(value: Any) -> int:
 
 def _build_feature_task_text(project_key: str, selected: dict[str, Any]) -> str:
     lines = [
-        f"New feature proposal for {_get_project_label(project_key)}",
+        f"New feature proposal for {_svc_get_project_label(project_key, ROUTING_PROJECTS)}",
         "",
         f"Title: {selected.get('title', '')}",
         f"Summary: {selected.get('summary', '')}",
@@ -1008,7 +991,7 @@ def _build_feature_task_text(project_key: str, selected: dict[str, Any]) -> str:
 
 def _feature_list_text(project_key: str, features: list[dict[str, Any]], feature_count: int) -> str:
     lines = [
-        f"💡 **Feature proposals for {_get_project_label(project_key)}**",
+        f"💡 **Feature proposals for {_svc_get_project_label(project_key, ROUTING_PROJECTS)}**",
         f"Requested: {feature_count}",
         "",
         "Reply with the feature number to start implementation:",
@@ -1059,7 +1042,9 @@ async def _begin_feature_ideation(message: discord.Message, text: str) -> bool:
         "items": [],
     }
 
-    project_label = _get_project_label(project_key) if project_key else "not selected"
+    project_label = (
+        _svc_get_project_label(project_key, ROUTING_PROJECTS) if project_key else "not selected"
+    )
     await message.channel.send(
         "🔢 How many feature proposals do you want? Reply with a number from 1 to 5.\n\n"
         f"Current project: **{project_label}**"
@@ -1095,7 +1080,7 @@ async def _handle_pending_feature_ideation(message: discord.Message, text: str) 
             )
             return True
 
-        deps = _feature_ideation_handler_deps()
+        deps = _discord_feature_ideation_handler_deps()
         features = _build_feature_suggestions(
             project_key=project_key,
             text=str(state.get("source_text") or ""),
@@ -1126,7 +1111,7 @@ async def _handle_pending_feature_ideation(message: discord.Message, text: str) 
             return True
 
         state["project"] = project_key
-        deps = _feature_ideation_handler_deps()
+        deps = _discord_feature_ideation_handler_deps()
         features = _build_feature_suggestions(
             project_key=project_key,
             text=str(state.get("source_text") or ""),
@@ -1162,7 +1147,7 @@ async def _handle_pending_feature_ideation(message: discord.Message, text: str) 
         project_candidate = _normalize_project_key(candidate_text)
         if project_candidate in ROUTING_PROJECTS:
             state["project"] = project_candidate
-            deps = _feature_ideation_handler_deps()
+            deps = _discord_feature_ideation_handler_deps()
             features = _build_feature_suggestions(
                 project_key=project_candidate,
                 text=str(state.get("source_text") or ""),
@@ -1225,23 +1210,6 @@ def _active_status(value: str) -> bool:
     return status not in {"done", "closed", "resolved", "completed", "implemented", "rejected"}
 
 
-def _iter_configured_projects() -> list[str]:
-    projects: list[str] = []
-    for key, cfg in PROJECT_CONFIG.items():
-        if isinstance(cfg, dict) and cfg.get("workspace"):
-            projects.append(str(key))
-    return projects
-
-
-def _project_workspace(project_key: str) -> str:
-    cfg = PROJECT_CONFIG.get(project_key, {})
-    if isinstance(cfg, dict):
-        workspace = cfg.get("workspace")
-        if isinstance(workspace, str) and workspace.strip():
-            return workspace.strip()
-    return project_key
-
-
 # --- DISCORD UI VIEWS (Similar to Telegram Inline Keyboards) ---
 
 
@@ -1297,6 +1265,20 @@ class ChatRenamePromptView(discord.ui.View):
         await send_chat_menu(interaction, interaction.user.id, notice="❎ Rename canceled.")
 
 
+class ChatContextView(discord.ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+    @discord.ui.button(
+        label="🔙 Back to Menu", style=discord.ButtonStyle.secondary, custom_id="chat:context:back"
+    )
+    async def back_to_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not check_permission(interaction.user.id):
+            return
+        await send_chat_menu(interaction, interaction.user.id)
+
+
 class ChatMenuView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=None)
@@ -1320,6 +1302,19 @@ class ChatMenuView(discord.ui.View):
 
         view = ChatListView(interaction.user.id)
         await interaction.response.edit_message(content="**Select a chat:**", view=view)
+
+    @discord.ui.button(
+        label="⚙️ Context", style=discord.ButtonStyle.secondary, custom_id="chat:context"
+    )
+    async def context(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not check_permission(interaction.user.id):
+            return
+
+        active_chat_id = get_active_chat(interaction.user.id)
+        active_chat = get_chat(interaction.user.id, active_chat_id)
+        text = "⚙️ **Chat Context**\n\n"
+        text += chat_context_summary(active_chat, ROUTING_PROJECTS, markdown_style="discord")
+        await interaction.response.edit_message(content=text, view=ChatContextView(interaction.user.id))
 
     @discord.ui.button(
         label="✏️ Rename", style=discord.ButtonStyle.secondary, custom_id="chat:rename"
@@ -1410,10 +1405,13 @@ async def send_chat_menu(interaction: discord.Interaction, user_id: int, notice:
             active_chat_title = c.get("title")
             break
 
+    active_chat = get_chat(user_id, active_chat_id)
+
     text = "🗣️ **Nexus Chat Menu**\n\n"
     if notice:
         text += f"{notice}\n"
     text += f"**Active Chat:** {active_chat_title}\n"
+    text += f"{chat_context_summary(active_chat, ROUTING_PROJECTS, markdown_style='discord')}\n"
     text += "_(All conversational history is saved under this thread)_"
 
     view = ChatMenuView(user_id)
@@ -2135,8 +2133,8 @@ async def chatagents_command(interaction: discord.Interaction, project: str | No
         return
 
     project_key = _normalize_project_key(project) if project else "nexus"
-    if project and project_key not in _iter_project_keys():
-        options = ", ".join(_iter_project_keys())
+    if project and project_key not in _svc_iter_project_keys(project_config=PROJECT_CONFIG):
+        options = ", ".join(_svc_iter_project_keys(project_config=PROJECT_CONFIG))
         await interaction.response.send_message(
             f"❌ Invalid project '{project}'. Valid: {options}", ephemeral=True
         )
@@ -2204,8 +2202,11 @@ async def chat_command(interaction: discord.Interaction):
             active_chat_title = c.get("title")
             break
 
+    active_chat = get_chat(user_id, active_chat_id)
+
     text = "🗣️ **Nexus Chat Menu**\n\n"
     text += f"**Active Chat:** {active_chat_title}\n"
+    text += f"{chat_context_summary(active_chat, ROUTING_PROJECTS, markdown_style='discord')}\n"
     text += "_(All conversational history is saved under this thread)_"
 
     view = ChatMenuView(user_id)
@@ -2326,7 +2327,7 @@ async def status_command(interaction: discord.Interaction, project: str | None =
         await interaction.response.send_message("🔒 Unauthorized.", ephemeral=True)
         return
 
-    projects = _iter_configured_projects()
+    projects = _svc_iter_project_keys(project_config=PROJECT_CONFIG)
     if project:
         requested = _normalize_project_key(project)
         if requested not in projects:
@@ -2341,7 +2342,10 @@ async def status_command(interaction: discord.Interaction, project: str | None =
     lines = ["📊 **Pending Inbox Tasks**", ""]
     total = 0
     for project_key in sorted(projects):
-        workspace = _project_workspace(project_key)
+        workspace = _svc_get_project_workspace(
+            project_key=project_key,
+            project_config=PROJECT_CONFIG,
+        )
         inbox_dir = get_inbox_dir(os.path.join(BASE_DIR, workspace), project_key)
         count = len(glob.glob(os.path.join(inbox_dir, "*.md"))) if os.path.isdir(inbox_dir) else 0
         total += count

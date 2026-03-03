@@ -1,4 +1,4 @@
-# Example Project Configuration for Nexus with nexus-core Framework
+# Example Project Configuration for Nexus with nexus-arc Framework
 #
 # This file demonstrates how to configure multiple projects with the nexus bot,
 # showing global defaults, per-project overrides, and how to customize workflows

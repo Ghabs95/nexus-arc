@@ -14,7 +14,7 @@ def _issue_payload(action: str) -> dict:
             "user": {"login": "alice"},
             "labels": [],
         },
-        "repository": {"full_name": "sample-org/nexus-core"},
+        "repository": {"full_name": "sample-org/nexus-arc"},
         "sender": {"login": "bob"},
     }
 
@@ -30,7 +30,7 @@ def _pr_payload(action: str, merged: bool = False) -> dict:
             "merged": merged,
             "merged_by": {"login": "maintainer"},
         },
-        "repository": {"full_name": "sample-org/nexus-core"},
+        "repository": {"full_name": "sample-org/nexus-arc"},
     }
 
 

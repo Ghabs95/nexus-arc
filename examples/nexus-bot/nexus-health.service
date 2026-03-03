@@ -6,11 +6,11 @@ Wants=nexus-bot.service nexus-processor.service
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/nexus-core/examples/nexus-bot
+WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
 EnvironmentFile=/opt/nexus/.env
 Environment="HEALTH_CHECK_PORT=8080"
 Environment="HEALTH_CHECK_HOST=127.0.0.1"
-ExecStart=/opt/nexus-core/examples/nexus-bot/venv/bin/python src/health_check.py
+ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python src/health_check.py
 Restart=always
 RestartSec=10
 

@@ -2,7 +2,7 @@
 
 Requires the ``slack`` optional extra::
 
-    pip install nexus-core[slack]
+    pip install nexus-arc[slack]
 """
 
 import logging
@@ -33,7 +33,7 @@ def _require_slack_sdk() -> None:
     if not _SLACK_SDK_AVAILABLE:
         raise ImportError(
             "slack-sdk is required for SlackNotificationChannel. "
-            "Install it with: pip install nexus-core[slack]"
+            "Install it with: pip install nexus-arc[slack]"
         )
 
 

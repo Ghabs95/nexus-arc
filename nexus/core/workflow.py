@@ -584,11 +584,25 @@ class WorkflowDefinition:
         if not isinstance(data, dict):
             raise ValueError("Workflow definition must be a dict")
 
-        name = name_override or data.get("name", "Unnamed Workflow")
-        description = description_override or data.get("description", "")
-        version = data.get("version", "1.0")
+        metadata_block = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        name = (
+            name_override
+            or metadata_block.get("name")
+            or "Unnamed Workflow"
+        )
+        description = (
+            description_override
+            or data.get("description")
+            or metadata_block.get("description")
+            or ""
+        )
+        version = data.get("version") or metadata_block.get("version") or "1.0"
 
-        resolved_id = workflow_id or WorkflowDefinition._slugify(name)
+        resolved_id = (
+            workflow_id
+            or metadata_block.get("id")
+            or WorkflowDefinition._slugify(name)
+        )
         if not resolved_id:
             raise ValueError("Workflow ID could not be resolved")
 

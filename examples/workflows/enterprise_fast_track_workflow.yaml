@@ -1,0 +1,87 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Enterprise Fast-Track Workflow"
+  description: "Critical hotfix path with emergency triage, rapid implementation, and guarded deploy."
+  version: "1.0.0"
+
+workflow_type: "fast-track"
+timeout_seconds: 3600
+
+steps:
+  - id: "triage"
+    name: "Emergency Triage"
+    description: "Rapid assessment of the critical issue"
+    agent_type: "triage"
+    tools:
+      - github:read_issue
+      - github:add_label
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+    outputs:
+      - urgency: "enum[critical|urgent]"
+      - impact: "string"
+    on_success: "develop"
+
+  - id: "develop"
+    name: "Fast-Track Implementation"
+    description: "Rapidly implement minimal change"
+    agent_type: "developer"
+    tools:
+      - github:create_branch
+      - github:commit_changes
+      - github:create_pr
+      - github:add_comment
+    inputs:
+      - issue_url: "string"
+      - urgency: "string"
+    outputs:
+      - fast_track_pr_url: "string"
+      - fix_description: "string"
+    on_success: "review"
+
+  - id: "review"
+    name: "Quick Verification"
+    description: "Rapid review of the hotfix with full regression (or equivalent full CI suite) required before approval"
+    agent_type: "reviewer"
+    tools:
+      - github:review_pr
+      - github:approve_pr
+    inputs:
+      - pr_urls: "list[string]"
+    outputs:
+      - review_status: "enum[approved|rejected]"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Verification"
+    agent_type: "router"
+    routes:
+      - when: "review_status == 'approved'"
+        then: "deploy"
+      - default: "develop"
+
+  - id: "deploy"
+    name: "Emergency Deploy"
+    description: "Merge fast-track changes and deploy immediately"
+    agent_type: "deployer"
+    tools:
+      - github:merge_pr
+      - github:create_release
+      - github:add_comment
+      - github:close_issue
+    inputs:
+      - fast_track_pr_url: "string"
+    outputs:
+      - deployment_status: "string"
+      - rollback_plan: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  audit_trail: "github_comments"
+  notify_human: true
+  human_approval_gates:
+    - before: "deploy"
+  require_human_merge_approval: true

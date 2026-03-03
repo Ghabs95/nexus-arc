@@ -486,11 +486,11 @@ class _LazyOrchestrator:
 
 ORCHESTRATOR_CONFIG = _LazyOrchestrator()
 
-# --- NEXUS-CORE FRAMEWORK CONFIGURATION ---
-# nexus-core workflow engine is mandatory
+# --- NEXUS-ARC FRAMEWORK CONFIGURATION ---
+# nexus-arc workflow engine is mandatory
 NEXUS_CORE_STORAGE_DIR = os.getenv(
     "NEXUS_CORE_STORAGE_DIR",
-    os.path.join(NEXUS_RUNTIME_DIR, "nexus-core"),
+    os.path.join(NEXUS_RUNTIME_DIR, "nexus-arc"),
 )
 WORKFLOW_ID_MAPPING_FILE = os.path.join(NEXUS_STATE_DIR, "workflow_id_mapping.json")
 APPROVAL_STATE_FILE = os.path.join(NEXUS_STATE_DIR, "approval_state.json")
@@ -817,7 +817,7 @@ def ensure_state_dir():
 
 
 def ensure_nexus_storage_dir():
-    """Ensure nexus-core file storage directory exists."""
+    """Ensure nexus-arc file storage directory exists."""
     os.makedirs(NEXUS_CORE_STORAGE_DIR, exist_ok=True)
     logger.debug(f"✅ Nexus storage directory ready: {NEXUS_CORE_STORAGE_DIR}")
 

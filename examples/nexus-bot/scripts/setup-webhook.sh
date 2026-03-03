@@ -16,7 +16,7 @@ if [[ $EUID -eq 0 ]]; then
    exit 1
 fi
 
-NEXUS_DIR="/opt/nexus-core/examples/nexus-bot"
+NEXUS_DIR="/opt/nexus-arc/examples/nexus-bot"
 NEXUS_ENV_FILE="./.env"
 SERVICE_FILE="nexus-webhook.service"
 

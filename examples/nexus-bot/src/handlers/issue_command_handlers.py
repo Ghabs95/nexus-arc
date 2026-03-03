@@ -12,11 +12,8 @@ from typing import Any
 
 from config import NEXUS_STORAGE_BACKEND
 from interactive_context import InteractiveContext
+from services.runtime_mode_service import is_postgres_backend
 from utils.log_utils import log_unauthorized_access
-
-
-def _db_only_task_mode() -> bool:
-    return str(NEXUS_STORAGE_BACKEND or "").strip().lower() == "postgres"
 
 
 @dataclass
@@ -564,15 +561,19 @@ async def respond_handler(ctx: InteractiveContext, deps: IssueHandlerDeps) -> No
     try:
         details = None
         repo = deps.project_repo(project_key)
-        task_file = None if _db_only_task_mode() else deps.find_task_file_by_issue(issue_num)
+        task_file = (
+            None
+            if is_postgres_backend(NEXUS_STORAGE_BACKEND)
+            else deps.find_task_file_by_issue(issue_num)
+        )
         if not task_file:
             details = deps.get_issue_details(issue_num, repo)
-            if details and not _db_only_task_mode():
+            if details and not is_postgres_backend(NEXUS_STORAGE_BACKEND):
                 body = details.get("body", "")
                 match = re.search(r"Task File:\s*`([^`]+)`", body)
                 task_file = match.group(1) if match else None
 
-        if _db_only_task_mode():
+        if is_postgres_backend(NEXUS_STORAGE_BACKEND):
             project_name = project_key
             project_cfg = (
                 deps.project_config.get(project_key)
@@ -621,7 +622,7 @@ async def respond_handler(ctx: InteractiveContext, deps: IssueHandlerDeps) -> No
                 )
                 return
 
-        if _db_only_task_mode():
+        if is_postgres_backend(NEXUS_STORAGE_BACKEND):
             issue_body = str(details.get("body") or "") if isinstance(details, dict) else ""
             issue_title = str(details.get("title") or "") if isinstance(details, dict) else ""
             content = (

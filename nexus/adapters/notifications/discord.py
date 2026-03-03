@@ -2,7 +2,7 @@
 
 Requires the ``discord`` optional extra::
 
-    pip install nexus-core[discord]
+    pip install nexus-arc[discord]
 """
 
 import logging
@@ -32,7 +32,7 @@ def _require_aiohttp() -> None:
     if not _AIOHTTP_AVAILABLE:
         raise ImportError(
             "aiohttp is required for DiscordNotificationChannel. "
-            "Install it with: pip install nexus-core[discord]"
+            "Install it with: pip install nexus-arc[discord]"
         )
 
 

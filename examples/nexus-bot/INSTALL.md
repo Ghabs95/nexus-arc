@@ -26,15 +26,15 @@ This guide covers two deployment scenarios for the Nexus Telegram Bot:
 ## 1. Clone & Install
 
 ```bash
-# Clone nexus-core
-git clone https://github.com/Ghabs95/nexus-core.git
-cd nexus-core
+# Clone nexus-arc
+git clone https://github.com/Ghabs95/nexus-arc.git
+cd nexus-arc
 
 # Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
 
-# Install nexus-core with all bot dependencies
+# Install nexus-arc with all bot dependencies
 pip install -e ".[nexus-bot]"
 
 # Install the nexus-bot console scripts
@@ -126,7 +126,7 @@ GITHUB_TOKEN=ghp_your_token
 NEXUS_STORAGE_BACKEND=filesystem
 BASE_DIR=/path/to/your/repos
 NEXUS_RUNTIME_DIR=/var/lib/nexus        # or any writable directory
-NEXUS_CORE_STORAGE_DIR=/var/lib/nexus/nexus-core
+NEXUS_CORE_STORAGE_DIR=/var/lib/nexus/nexus-arc
 
 # === Redis: Disabled (leave empty or comment out) ===
 # REDIS_URL=
@@ -256,10 +256,10 @@ A starter config is included at `config/project_config.yaml`. Key sections:
 
 ```yaml
 # Workflow definition (path relative to BASE_DIR)
-workflow_definition_path: nexus-core/examples/workflows/enterprise_workflow.yaml
+workflow_definition_path: nexus-arc/examples/workflows/enterprise_workflow.yaml
 
 # Shared agent definitions
-shared_agents_dir: nexus-core/examples/agents
+shared_agents_dir: nexus-arc/examples/agents
 
 # GitHub project (default platform)
 my_app:
