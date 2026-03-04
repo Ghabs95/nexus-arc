@@ -40,97 +40,103 @@ from config import (
     get_inbox_dir,
     get_repos,
 )
-from project_key_utils import normalize_project_key_str as _normalize_project_key
-from services.telegram.telegram_issue_selection_service import (
+from nexus.core.project.key_utils import normalize_project_key_str as _normalize_project_key
+from nexus.core.telegram.telegram_issue_selection_service import (
     parse_project_issue_args as _parse_project_issue_args,
 )
 
 install_secret_redaction([DISCORD_TOKEN or ""], logging.getLogger())
 
-from handlers.common_routing import (
+from nexus.core.handlers.common_routing import (
     extract_json_dict,
     parse_intent_result,
     route_task_with_context,
     run_conversation_turn,
 )
-from handlers.feature_ideation_handlers import (
+from nexus.core.handlers.feature_ideation_handlers import (
     FeatureIdeationHandlerDeps,
     _build_feature_suggestions,
     detect_feature_project,
     is_feature_ideation_request,
 )
-from handlers.inbox_routing_handler import PROJECTS as ROUTING_PROJECTS
-from handlers.inbox_routing_handler import process_inbox_task, save_resolved_task
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.inbox_routing_handler import PROJECTS as ROUTING_PROJECTS
+from nexus.core.handlers.inbox_routing_handler import process_inbox_task, save_resolved_task
+from nexus.core.handlers.monitoring_command_handlers import (
     active_handler as monitoring_active_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     fuse_handler as monitoring_fuse_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     logs_handler as monitoring_logs_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     logsfull_handler as monitoring_logsfull_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     tail_handler as monitoring_tail_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     tailstop_handler as monitoring_tailstop_handler,
 )
-from handlers.ops_command_handlers import inboxq_handler as ops_inboxq_handler
-from handlers.ops_command_handlers import audit_handler as ops_audit_handler
-from handlers.ops_command_handlers import agents_handler as ops_agents_handler
-from handlers.ops_command_handlers import direct_handler as ops_direct_handler
-from handlers.ops_command_handlers import stats_handler as ops_stats_handler
-from handlers.issue_command_handlers import assign_handler as issue_assign_handler
-from handlers.issue_command_handlers import comments_handler as issue_comments_handler
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import inboxq_handler as ops_inboxq_handler
+from nexus.core.handlers.ops_command_handlers import audit_handler as ops_audit_handler
+from nexus.core.handlers.ops_command_handlers import agents_handler as ops_agents_handler
+from nexus.core.handlers.ops_command_handlers import direct_handler as ops_direct_handler
+from nexus.core.handlers.ops_command_handlers import stats_handler as ops_stats_handler
+from nexus.core.handlers.issue_command_handlers import assign_handler as issue_assign_handler
+from nexus.core.handlers.issue_command_handlers import comments_handler as issue_comments_handler
+from nexus.core.handlers.issue_command_handlers import (
     plan_handler as issue_plan_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     prepare_handler as issue_prepare_handler,
 )
-from handlers.issue_command_handlers import respond_handler as issue_respond_handler
-from handlers.issue_command_handlers import untrack_handler as issue_untrack_handler
-from handlers.workflow_command_handlers import continue_handler as workflow_continue_handler
-from handlers.workflow_command_handlers import forget_handler as workflow_forget_handler
-from handlers.workflow_command_handlers import kill_handler as workflow_kill_handler
-from handlers.workflow_command_handlers import pause_handler as workflow_pause_handler
-from handlers.workflow_command_handlers import reconcile_handler as workflow_reconcile_handler
-from handlers.workflow_command_handlers import reprocess_handler as workflow_reprocess_handler
-from handlers.workflow_command_handlers import resume_handler as workflow_resume_handler
-from handlers.workflow_command_handlers import stop_handler as workflow_stop_handler
-from handlers.workflow_command_handlers import wfstate_handler as workflow_wfstate_handler
-from handlers.visualize_command_handlers import visualize_handler as workflow_visualize_handler
-from handlers.watch_command_handlers import watch_handler as workflow_watch_handler
-from handlers.feature_registry_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import respond_handler as issue_respond_handler
+from nexus.core.handlers.issue_command_handlers import untrack_handler as issue_untrack_handler
+from nexus.core.handlers.workflow_command_handlers import continue_handler as workflow_continue_handler
+from nexus.core.handlers.workflow_command_handlers import forget_handler as workflow_forget_handler
+from nexus.core.handlers.workflow_command_handlers import kill_handler as workflow_kill_handler
+from nexus.core.handlers.workflow_command_handlers import pause_handler as workflow_pause_handler
+from nexus.core.handlers.workflow_command_handlers import reconcile_handler as workflow_reconcile_handler
+from nexus.core.handlers.workflow_command_handlers import reprocess_handler as workflow_reprocess_handler
+from nexus.core.handlers.workflow_command_handlers import resume_handler as workflow_resume_handler
+from nexus.core.handlers.workflow_command_handlers import stop_handler as workflow_stop_handler
+from nexus.core.handlers.workflow_command_handlers import wfstate_handler as workflow_wfstate_handler
+from nexus.core.handlers.visualize_command_handlers import visualize_handler as workflow_visualize_handler
+from nexus.core.handlers.watch_command_handlers import watch_handler as workflow_watch_handler
+from nexus.core.handlers.feature_registry_command_handlers import (
     feature_done_handler as feature_done_command_handler,
 )
-from handlers.feature_registry_command_handlers import (
+from nexus.core.handlers.feature_registry_command_handlers import (
     feature_forget_handler as feature_forget_command_handler,
 )
-from handlers.feature_registry_command_handlers import (
+from nexus.core.handlers.feature_registry_command_handlers import (
     feature_list_handler as feature_list_command_handler,
 )
-from orchestration.ai_orchestrator import get_orchestrator
-from orchestration.plugin_runtime import get_profiled_plugin
-from services.telegram.telegram_bootstrap_ui_service import build_help_text
-from services.telegram.telegram_issue_selection_service import (
+from nexus.core.orchestration.ai_orchestrator import get_orchestrator
+from nexus.core.orchestration.plugin_runtime import get_profiled_plugin
+from nexus.core.telegram.telegram_bootstrap_ui_service import build_help_text
+from nexus.core.telegram.telegram_issue_selection_service import (
     issue_state_for_command as _svc_issue_state_for_command,
 )
-from services.telegram.telegram_issue_selection_service import (
+from nexus.core.telegram.telegram_issue_selection_service import (
     list_project_issues as _svc_list_project_issues,
 )
-from services.callbacks.callback_menu_service import menu_section_text as _shared_menu_section_text
-from services.telegram.telegram_ui_prompts_service import resolve_issue_choices
-from services.command_contract import (
+from nexus.core.callbacks.callback_menu_service import menu_section_text as _shared_menu_section_text
+from nexus.core.telegram.telegram_ui_prompts_service import resolve_issue_choices
+from nexus.core.command_contract import (
     validate_command_parity,
     validate_required_command_interface,
 )
-from services.chat.chat_context_service import chat_context_summary
-from services.git.direct_issue_plugin_service import (
+from nexus.core.chat.chat_context_service import (
+    CHAT_MODES,
+    agent_display_label,
+    agent_type_label,
+    available_chat_agents,
+    chat_context_summary,
+)
+from nexus.core.git.direct_issue_plugin_service import (
     get_direct_issue_plugin as _svc_get_direct_issue_plugin,
 )
 from nexus.core.project.catalog import (
@@ -145,33 +151,35 @@ from nexus.core.project.catalog import (
 from nexus.core.project.catalog import (
     iter_project_keys as _svc_iter_project_keys,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_feature_ideation_handler_deps as _svc_build_feature_ideation_handler_deps,
 )
-from services.discord.discord_bridge_deps_service import (
+from nexus.core.discord.discord_bridge_deps_service import (
     feature_registry_bridge_deps as _svc_feature_registry_bridge_deps,
 )
-from services.discord.discord_bridge_deps_service import (
+from nexus.core.discord.discord_bridge_deps_service import (
     issue_bridge_deps as _svc_issue_bridge_deps,
 )
-from services.discord.discord_bridge_deps_service import (
+from nexus.core.discord.discord_bridge_deps_service import (
     monitoring_bridge_deps as _svc_monitoring_bridge_deps,
 )
-from services.discord.discord_bridge_deps_service import (
+from nexus.core.discord.discord_bridge_deps_service import (
     ops_bridge_deps as _svc_ops_bridge_deps,
 )
-from services.discord.discord_bridge_deps_service import (
+from nexus.core.discord.discord_bridge_deps_service import (
     visualize_bridge_deps as _svc_visualize_bridge_deps,
 )
-from services.discord.discord_bridge_deps_service import (
+from nexus.core.discord.discord_bridge_deps_service import (
     watch_bridge_deps as _svc_watch_bridge_deps,
 )
-from services.discord.discord_bridge_deps_service import (
+from nexus.core.discord.discord_bridge_deps_service import (
     workflow_bridge_deps as _svc_workflow_bridge_deps,
 )
-from nexus.core.auth import create_login_session_for_user
 from nexus.core.auth import (
     check_project_access as _svc_check_project_access,
+)
+from nexus.core.auth import (
+    create_login_session_for_user as _svc_create_login_session_for_user,
 )
 from nexus.core.auth import (
     get_setup_status as _svc_get_setup_status,
@@ -188,9 +196,11 @@ from nexus.core.memory import (
     get_chat_history,
     list_chats,
     rename_chat,
+    set_active_chat,
+    update_chat_metadata,
 )
-from state_manager import HostStateManager
-from user_manager import get_user_manager
+from nexus.core.state_manager import HostStateManager
+from nexus.core.user_manager import get_user_manager
 
 # --- SETUP BOT ---
 intents = discord.Intents.default()
@@ -1383,6 +1393,45 @@ def _authorize_project_for_requester(
     return _svc_check_project_access(nexus_id, project_key)
 
 
+def _autoselect_chat_project_from_auth(user_id: int, chat_id: str) -> tuple[bool, str | None]:
+    """Auto-select chat project from auth setup when context project is missing."""
+    if not NEXUS_AUTH_ENABLED or not chat_id:
+        return False, None
+    try:
+        chat_data = get_chat(user_id, chat_id)
+        metadata = (chat_data or {}).get("metadata") or {}
+        existing_project = str(metadata.get("project_key") or "").strip().lower()
+        if existing_project:
+            return False, existing_project
+
+        nexus_id = user_manager.resolve_nexus_id("discord", str(user_id))
+        if not nexus_id:
+            return False, None
+        setup = _svc_get_setup_status(str(nexus_id))
+        raw_projects = setup.get("projects") or []
+        projects = [
+            str(item).strip().lower()
+            for item in raw_projects
+            if str(item).strip().lower() in ROUTING_PROJECTS
+        ]
+        if not projects:
+            return False, None
+
+        selected_project: str | None = None
+        if len(projects) == 1:
+            selected_project = projects[0]
+        elif "nexus" in projects:
+            selected_project = "nexus"
+        if not selected_project:
+            return False, None
+
+        updated = update_chat_metadata(user_id, chat_id, {"project_key": selected_project})
+        return bool(updated), selected_project
+    except Exception as exc:
+        logger.debug("Chat project auto-select skipped for user_id=%s: %s", user_id, exc)
+        return False, None
+
+
 def _active_status(value: str) -> bool:
     status = str(value or "").strip().lower()
     if not status:
@@ -1451,12 +1500,177 @@ class ChatContextView(discord.ui.View):
         self.user_id = user_id
 
     @discord.ui.button(
+        label="📁 Set Project", style=discord.ButtonStyle.primary, custom_id="chat:context:project"
+    )
+    async def set_project(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not check_permission(interaction.user.id):
+            return
+        await interaction.response.edit_message(
+            content="📁 **Select project for active chat:**",
+            view=ChatProjectPickerView(interaction.user.id),
+        )
+
+    @discord.ui.button(
+        label="🧭 Set Mode", style=discord.ButtonStyle.secondary, custom_id="chat:context:mode"
+    )
+    async def set_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not check_permission(interaction.user.id):
+            return
+        await interaction.response.edit_message(
+            content="🧭 **Select mode for active chat:**",
+            view=ChatModePickerView(interaction.user.id),
+        )
+
+    @discord.ui.button(
+        label="🤖 Set Primary Agent", style=discord.ButtonStyle.secondary, custom_id="chat:context:agent"
+    )
+    async def set_primary_agent(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not check_permission(interaction.user.id):
+            return
+        await interaction.response.edit_message(
+            content="🤖 **Select primary agent for active chat:**",
+            view=ChatAgentPickerView(interaction.user.id),
+        )
+
+    @discord.ui.button(
         label="🔙 Back to Menu", style=discord.ButtonStyle.secondary, custom_id="chat:context:back"
     )
     async def back_to_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_permission(interaction.user.id):
             return
         await send_chat_menu(interaction, interaction.user.id)
+
+
+class ChatProjectPickerView(discord.ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+        for project_key, project_label in sorted(ROUTING_PROJECTS.items()):
+            button = discord.ui.Button(
+                label=project_label[:80],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"chat:project:{project_key}",
+            )
+            button.callback = self.create_project_callback(project_key)
+            self.add_item(button)
+
+        back_btn = discord.ui.Button(
+            label="🔙 Back", style=discord.ButtonStyle.secondary, custom_id="chat:project:back"
+        )
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+
+    def create_project_callback(self, project_key: str):
+        async def callback(interaction: discord.Interaction):
+            active_chat_id = get_active_chat(interaction.user.id)
+            if project_key not in ROUTING_PROJECTS:
+                await send_chat_context(interaction, interaction.user.id, notice="⚠️ Invalid project.")
+                return
+            update_chat_metadata(interaction.user.id, active_chat_id, {"project_key": project_key})
+            await send_chat_context(
+                interaction,
+                interaction.user.id,
+                notice=f"✅ Project set to **{_svc_get_project_label(project_key, ROUTING_PROJECTS)}**.",
+            )
+
+        return callback
+
+    async def back_callback(self, interaction: discord.Interaction):
+        await send_chat_context(interaction, interaction.user.id)
+
+
+class ChatModePickerView(discord.ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+        for mode_key, mode_label in CHAT_MODES.items():
+            button = discord.ui.Button(
+                label=mode_label[:80],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"chat:mode:{mode_key}",
+            )
+            button.callback = self.create_mode_callback(mode_key)
+            self.add_item(button)
+
+        back_btn = discord.ui.Button(
+            label="🔙 Back", style=discord.ButtonStyle.secondary, custom_id="chat:mode:back"
+        )
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+
+    def create_mode_callback(self, mode_key: str):
+        async def callback(interaction: discord.Interaction):
+            if mode_key not in CHAT_MODES:
+                await send_chat_context(interaction, interaction.user.id, notice="⚠️ Invalid mode.")
+                return
+            active_chat_id = get_active_chat(interaction.user.id)
+            update_chat_metadata(interaction.user.id, active_chat_id, {"chat_mode": mode_key})
+            await send_chat_context(
+                interaction,
+                interaction.user.id,
+                notice=f"✅ Mode set to **{CHAT_MODES[mode_key]}**.",
+            )
+
+        return callback
+
+    async def back_callback(self, interaction: discord.Interaction):
+        await send_chat_context(interaction, interaction.user.id)
+
+
+class ChatAgentPickerView(discord.ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+        active_chat_id = get_active_chat(user_id)
+        active_chat = get_chat(user_id, active_chat_id)
+        for agent in available_chat_agents(active_chat):
+            agent_type = str(agent.get("agent_type") or "").strip().lower()
+            if not agent_type:
+                continue
+            button = discord.ui.Button(
+                label=agent_display_label(agent)[:80],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"chat:agent:{agent_type}",
+            )
+            button.callback = self.create_agent_callback(agent_type)
+            self.add_item(button)
+
+        back_btn = discord.ui.Button(
+            label="🔙 Back", style=discord.ButtonStyle.secondary, custom_id="chat:agent:back"
+        )
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+
+    def create_agent_callback(self, agent_type: str):
+        async def callback(interaction: discord.Interaction):
+            active_chat_id = get_active_chat(interaction.user.id)
+            active_chat = get_chat(interaction.user.id, active_chat_id)
+            available_types = [
+                str(item.get("agent_type") or "").strip().lower()
+                for item in available_chat_agents(active_chat)
+                if str(item.get("agent_type") or "").strip()
+            ]
+            if agent_type not in available_types:
+                await send_chat_context(
+                    interaction,
+                    interaction.user.id,
+                    notice="⚠️ Invalid primary agent.",
+                )
+                return
+            update_chat_metadata(interaction.user.id, active_chat_id, {"primary_agent_type": agent_type})
+            await send_chat_context(
+                interaction,
+                interaction.user.id,
+                notice=f"✅ Primary agent set to **{agent_type_label(agent_type)}** (`{agent_type}`).",
+            )
+
+        return callback
+
+    async def back_callback(self, interaction: discord.Interaction):
+        await send_chat_context(interaction, interaction.user.id)
 
 
 class ChatMenuView(discord.ui.View):
@@ -1490,11 +1704,7 @@ class ChatMenuView(discord.ui.View):
         if not check_permission(interaction.user.id):
             return
 
-        active_chat_id = get_active_chat(interaction.user.id)
-        active_chat = get_chat(interaction.user.id, active_chat_id)
-        text = "⚙️ **Chat Context**\n\n"
-        text += chat_context_summary(active_chat, ROUTING_PROJECTS, markdown_style="discord")
-        await interaction.response.edit_message(content=text, view=ChatContextView(interaction.user.id))
+        await send_chat_context(interaction, interaction.user.id)
 
     @discord.ui.button(
         label="✏️ Rename", style=discord.ButtonStyle.secondary, custom_id="chat:rename"
@@ -1565,7 +1775,7 @@ class ChatListView(discord.ui.View):
 
     def create_switch_callback(self, chat_id: str):
         async def callback(interaction: discord.Interaction):
-            switch_chat(interaction.user.id, chat_id)
+            set_active_chat(interaction.user.id, chat_id)
             await send_chat_menu(interaction, interaction.user.id)
 
         return callback
@@ -1577,6 +1787,7 @@ class ChatListView(discord.ui.View):
 async def send_chat_menu(interaction: discord.Interaction, user_id: int, notice: str = ""):
     """Helper to send or edit the current message with the main chat menu."""
     active_chat_id = get_active_chat(user_id)
+    auto_selected, selected_project = _autoselect_chat_project_from_auth(user_id, active_chat_id)
     chats = list_chats(user_id)
 
     active_chat_title = "Unknown"
@@ -1590,6 +1801,11 @@ async def send_chat_menu(interaction: discord.Interaction, user_id: int, notice:
     text = "🗣️ **Nexus Chat Menu**\n\n"
     if notice:
         text += f"{notice}\n"
+    if auto_selected and selected_project:
+        text += (
+            "ℹ️ Auto-selected project from your auth access: "
+            f"**{_svc_get_project_label(selected_project, ROUTING_PROJECTS)}**.\n"
+        )
     text += f"**Active Chat:** {active_chat_title}\n"
     text += f"{chat_context_summary(active_chat, ROUTING_PROJECTS, markdown_style='discord')}\n"
     text += "_(All conversational history is saved under this thread)_"
@@ -1597,6 +1813,21 @@ async def send_chat_menu(interaction: discord.Interaction, user_id: int, notice:
     view = ChatMenuView(user_id)
 
     # If this is responding to a button click, edit the message
+    if interaction.response.is_done():
+        await interaction.message.edit(content=text, view=view)
+    else:
+        await interaction.response.edit_message(content=text, view=view)
+
+
+async def send_chat_context(interaction: discord.Interaction, user_id: int, notice: str = ""):
+    active_chat_id = get_active_chat(user_id)
+    _autoselect_chat_project_from_auth(user_id, active_chat_id)
+    active_chat = get_chat(user_id, active_chat_id)
+    text = "⚙️ **Chat Context**\n\n"
+    if notice:
+        text += f"{notice}\n"
+    text += chat_context_summary(active_chat, ROUTING_PROJECTS, markdown_style="discord")
+    view = ChatContextView(user_id)
     if interaction.response.is_done():
         await interaction.message.edit(content=text, view=view)
     else:
@@ -1651,27 +1882,61 @@ async def login_command(
         return
 
     selected_provider = str(provider.value if provider else "").strip().lower()
-    if not selected_provider:
-        selected_provider = "gitlab" if NEXUS_GITLAB_CLIENT_ID else "github"
-    if selected_provider == "github" and not NEXUS_GITHUB_CLIENT_ID:
+    available_providers: list[str] = []
+    if NEXUS_GITHUB_CLIENT_ID:
+        available_providers.append("github")
+    if NEXUS_GITLAB_CLIENT_ID:
+        available_providers.append("gitlab")
+    if not available_providers:
         await interaction.response.send_message(
-            "⚠️ GitHub OAuth is not configured. Use `/login provider:gitlab`.",
-            ephemeral=True,
-        )
-        return
-    if selected_provider == "gitlab" and not NEXUS_GITLAB_CLIENT_ID:
-        await interaction.response.send_message(
-            "⚠️ GitLab OAuth is not configured. Use `/login provider:github`.",
+            "⚠️ No OAuth providers are configured. Ask an admin to configure GitHub/GitLab OAuth.",
             ephemeral=True,
         )
         return
 
     user = _get_or_create_discord_user(interaction.user)
-    session_id = create_login_session_for_user(
+    session_id = _svc_create_login_session_for_user(
         nexus_id=str(user.nexus_id),
         discord_user_id=str(interaction.user.id),
         discord_username=getattr(interaction.user, "name", None),
     )
+
+    if not selected_provider:
+        view = discord.ui.View()
+        for auth_provider in available_providers:
+            login_url = (
+                f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={auth_provider}"
+            )
+            view.add_item(
+                discord.ui.Button(
+                    label=f"Continue with {auth_provider.title()}",
+                    style=discord.ButtonStyle.link,
+                    url=login_url,
+                )
+            )
+        await interaction.response.send_message(
+            (
+                "🔐 Setup required before task execution.\n\n"
+                "Choose your Git provider to continue OAuth onboarding."
+            ),
+            view=view,
+            ephemeral=True,
+        )
+        return
+
+    if selected_provider not in {"github", "gitlab"}:
+        await interaction.response.send_message(
+            "⚠️ Invalid provider. Use `/login provider:github`, `/login provider:gitlab`, or run `/login`.",
+            ephemeral=True,
+        )
+        return
+    if selected_provider not in available_providers:
+        await interaction.response.send_message(
+            f"⚠️ {selected_provider.title()} OAuth is not configured in this environment.",
+            ephemeral=True,
+        )
+        return
+
     login_url = (
         f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={selected_provider}"
     )
@@ -1681,7 +1946,7 @@ async def login_command(
             f"1. Open: <{login_url}>\n"
             f"2. Sign in with {selected_provider.title()}\n"
             "3. Add Codex/OpenAI, Gemini, and/or Claude key, or use Copilot with linked GitHub OAuth\n"
-            "4. Run `/setup-status`"
+            "4. Use `/menu` to continue."
         ),
         ephemeral=True,
     )
@@ -2530,6 +2795,7 @@ async def chat_command(interaction: discord.Interaction):
 
     user_id = interaction.user.id
     active_chat_id = get_active_chat(user_id)
+    _autoselect_chat_project_from_auth(user_id, active_chat_id)
     chats = list_chats(user_id)
 
     active_chat_title = "Unknown"

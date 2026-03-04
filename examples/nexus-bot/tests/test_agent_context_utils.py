@@ -1,4 +1,4 @@
-from handlers.agent_context_utils import load_role_context
+from nexus.core.handlers.agent_context_utils import load_role_context
 
 
 def test_load_role_context_index_mode_prefers_compact_index(tmp_path):

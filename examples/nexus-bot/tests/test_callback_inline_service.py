@@ -1,6 +1,6 @@
 import pytest
 
-from services.callbacks import callback_inline_service as svc
+from nexus.core.callbacks import callback_inline_service as svc
 
 
 def test_parse_inline_action_requires_payload():

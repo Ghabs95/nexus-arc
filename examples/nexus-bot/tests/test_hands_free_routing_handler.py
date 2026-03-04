@@ -1,6 +1,6 @@
 import asyncio
 
-from handlers import hands_free_routing_handler as routing
+from nexus.core.handlers import hands_free_routing_handler as routing
 
 
 class _StubMessage:

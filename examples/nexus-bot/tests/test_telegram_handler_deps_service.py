@@ -1,4 +1,4 @@
-from services.telegram.telegram_handler_deps_service import build_callback_action_handlers
+from nexus.core.telegram.telegram_handler_deps_service import build_callback_action_handlers
 
 
 def test_build_callback_action_handlers_includes_plan():

@@ -1,6 +1,6 @@
 import pytest
 
-from handlers.common_routing import (
+from nexus.core.handlers.common_routing import (
     extract_json_dict,
     parse_intent_result,
     route_task_with_context,

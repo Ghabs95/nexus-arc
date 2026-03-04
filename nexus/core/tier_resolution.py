@@ -8,26 +8,26 @@ logger = logging.getLogger(__name__)
 
 def _emit_alert(*args, **kwargs):
     try:
-        from integrations.notifications import emit_alert
+        from nexus.core.integrations.notifications import emit_alert
     except Exception:
         return None
     return emit_alert(*args, **kwargs)
 
 
 def _get_git_platform(repo: str, *, project_name: str | None):
-    from orchestration.nexus_core_helpers import get_git_platform
+    from nexus.core.orchestration.nexus_core_helpers import get_git_platform
 
     return get_git_platform(repo, project_name=project_name)
 
 
 def _get_sop_tier_from_issue(issue_num: str, project_name: str, *, repo_override: str) -> str | None:
-    from runtime.agent_launcher import get_sop_tier_from_issue
+    from nexus.core.runtime.agent_launcher import get_sop_tier_from_issue
 
     return get_sop_tier_from_issue(issue_num, project_name, repo_override=repo_override)
 
 
 def _state_manager():
-    from state_manager import HostStateManager
+    from nexus.core.state_manager import HostStateManager
 
     return HostStateManager
 

@@ -65,7 +65,7 @@ class AuditStore:
     @staticmethod
     def audit_log(issue_num: int, event: str, details: str | None = None) -> None:
         """Log an audit event in nexus-arc JSONL format."""
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         workflow_id = get_workflow_state().get_workflow_id(str(issue_num)) or "_nexus_system"
 
@@ -85,7 +85,7 @@ class AuditStore:
     @staticmethod
     def get_audit_history(issue_num: int, limit: int = 50) -> list[dict]:
         """Get recent audit events for an issue."""
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         workflow_id = get_workflow_state().get_workflow_id(str(issue_num))
         if not workflow_id:

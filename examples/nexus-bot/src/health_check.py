@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from flask import Flask, jsonify
 
 from config import LOGS_DIR, NEXUS_RUNTIME_DIR
-from integrations.audit_query_factory import get_audit_query
+from nexus.core.integrations.audit_query_factory import get_audit_query
 from rate_limiter import get_rate_limiter
 
 # Configure logging

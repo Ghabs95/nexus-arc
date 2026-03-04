@@ -1,6 +1,6 @@
 import pytest
 
-from services.callbacks.callback_menu_service import handle_menu_callback, menu_section_text
+from nexus.core.callbacks.callback_menu_service import handle_menu_callback, menu_section_text
 
 
 class _Ctx:

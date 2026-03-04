@@ -17,19 +17,19 @@ _CONTEXT_SUMMARY_MAX_CHARS = int(os.getenv("AI_CONTEXT_SUMMARY_MAX_CHARS", "1200
 
 
 def _redis_url() -> str:
-    from config import REDIS_URL
+    from nexus.core.config import REDIS_URL
 
     return str(REDIS_URL)
 
 
 def _get_chat_agent_types(project_key: str) -> list[str]:
-    from config import get_chat_agent_types
+    from nexus.core.config import get_chat_agent_types
 
     return list(get_chat_agent_types(project_key) or [])
 
 
 def _get_workflow_profile(project_key: str) -> str:
-    from config import get_workflow_profile
+    from nexus.core.config import get_workflow_profile
 
     return str(get_workflow_profile(project_key) or "")
 

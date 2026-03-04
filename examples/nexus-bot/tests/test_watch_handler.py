@@ -58,7 +58,7 @@ class _FakeWatchService:
 
 
 def _make_deps(service: _FakeWatchService):
-    from handlers.watch_command_handlers import WatchHandlerDeps
+    from nexus.core.handlers.watch_command_handlers import WatchHandlerDeps
 
     return WatchHandlerDeps(
         logger=MagicMock(),
@@ -71,7 +71,7 @@ def _make_deps(service: _FakeWatchService):
 
 @pytest.mark.asyncio
 async def test_watch_prompts_project_selection_when_no_args():
-    from handlers.watch_command_handlers import watch_handler
+    from nexus.core.handlers.watch_command_handlers import watch_handler
 
     ctx = _make_ctx(args=[])
     service = _FakeWatchService()
@@ -84,7 +84,7 @@ async def test_watch_prompts_project_selection_when_no_args():
 
 @pytest.mark.asyncio
 async def test_watch_start_subscribes_issue():
-    from handlers.watch_command_handlers import watch_handler
+    from nexus.core.handlers.watch_command_handlers import watch_handler
 
     ctx = _make_ctx(args=["nexus", "106"])
     service = _FakeWatchService()
@@ -104,7 +104,7 @@ async def test_watch_start_subscribes_issue():
 
 @pytest.mark.asyncio
 async def test_watch_status_renders_active_session():
-    from handlers.watch_command_handlers import watch_handler
+    from nexus.core.handlers.watch_command_handlers import watch_handler
 
     ctx = _make_ctx(args=["status"])
     service = _FakeWatchService()
@@ -121,7 +121,7 @@ async def test_watch_status_renders_active_session():
 
 @pytest.mark.asyncio
 async def test_watch_stop_and_mermaid_toggle():
-    from handlers.watch_command_handlers import watch_handler
+    from nexus.core.handlers.watch_command_handlers import watch_handler
 
     service = _FakeWatchService()
     deps = _make_deps(service)

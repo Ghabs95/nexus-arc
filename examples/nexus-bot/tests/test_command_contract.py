@@ -1,4 +1,4 @@
-from services import command_contract
+from nexus.core import command_contract
 
 
 def test_command_parity_report_contains_expected_sections():
@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 def test_validate_command_parity_strict_raises_on_mismatch():
     mismatched = {"telegram": {"shared", "only_tg"}, "discord": {"shared", "only_dc"}}
-    with patch.dict("services.command_contract.PLATFORM_COMMANDS", mismatched):
+    with patch.dict("nexus.core.command_contract.PLATFORM_COMMANDS", mismatched):
         try:
             command_contract.validate_command_parity(strict=True)
             assert False, "Expected strict parity mismatch to raise ValueError"

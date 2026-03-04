@@ -1,6 +1,6 @@
 import pytest
 
-from handlers import inbox_routing_handler as routing
+from nexus.core.handlers import inbox_routing_handler as routing
 
 
 @pytest.fixture(autouse=True)

@@ -15,39 +15,39 @@ _MERGE_QUEUE_RUN_INTERVAL = max(30, int(os.getenv("NEXUS_MERGE_QUEUE_INTERVAL_SE
 
 
 def _project_config() -> dict:
-    from config import PROJECT_CONFIG
+    from nexus.core.config import PROJECT_CONFIG
 
     return PROJECT_CONFIG if isinstance(PROJECT_CONFIG, dict) else {}
 
 
 def _get_project_platform(project_name: str) -> str:
-    from config import get_project_platform
+    from nexus.core.config import get_project_platform
 
     return str(get_project_platform(project_name) or "").strip().lower()
 
 
 def _get_repo(project_name: str) -> str:
-    from config import get_repo
+    from nexus.core.config import get_repo
 
     return str(get_repo(project_name) or "").strip()
 
 
 def _emit_alert(*args, **kwargs):
     try:
-        from integrations.notifications import emit_alert
+        from nexus.core.integrations.notifications import emit_alert
     except Exception:
         return None
     return emit_alert(*args, **kwargs)
 
 
 def _get_git_platform(repo_key: str, *, project_name: str | None):
-    from orchestration.nexus_core_helpers import get_git_platform
+    from nexus.core.orchestration.nexus_core_helpers import get_git_platform
 
     return get_git_platform(repo_key, project_name=project_name)
 
 
 def _state_manager():
-    from state_manager import HostStateManager
+    from nexus.core.state_manager import HostStateManager
 
     return HostStateManager
 

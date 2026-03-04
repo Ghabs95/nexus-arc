@@ -58,7 +58,7 @@ def run_analysis_attempts(
         logger.error("❌ All analysis providers failed for %s: %s", task, last_error)
 
     logger.warning("⚠️  All tools failed for %s, returning default", task)
-    return get_default_analysis_result(task, text=text, **kwargs)
+    return get_default_analysis_result(task, text=text, original_text=text, **kwargs)
 
 
 def strip_cli_tool_output(text: str) -> str:

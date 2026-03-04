@@ -50,7 +50,7 @@ def broadcasting(inner: MagicMock, monkeypatch):
     config_mock.DATA_DIR = "/tmp/test"
     monkeypatch.setitem(sys.modules, "config", config_mock)
 
-    from integrations.workflow_state_factory import _BroadcastingStore
+    from nexus.core.integrations.workflow_state_factory import _BroadcastingStore
 
     return _BroadcastingStore(inner)
 
@@ -62,7 +62,7 @@ def broadcasting(inner: MagicMock, monkeypatch):
 
 class TestDelegation:
     def test_map_issue_delegates(self, broadcasting, inner: MagicMock) -> None:
-        with patch("integrations.workflow_state_factory._BroadcastingStore._emit"):
+        with patch("nexus.core.integrations.workflow_state_factory._BroadcastingStore._emit"):
             broadcasting.map_issue("10", "wf-10")
         inner.map_issue.assert_called_once_with("10", "wf-10")
 
@@ -112,7 +112,7 @@ class TestDelegation:
 
 class TestSocketIOEmit:
     def test_map_issue_emits_event(self, broadcasting, inner: MagicMock) -> None:
-        with patch("integrations.workflow_state_factory._BroadcastingStore._emit") as emit_mock:
+        with patch("nexus.core.integrations.workflow_state_factory._BroadcastingStore._emit") as emit_mock:
             broadcasting.map_issue("10", "wf-10")
         emit_mock.assert_called_once()
         args = emit_mock.call_args
@@ -129,7 +129,7 @@ class TestSocketIOEmit:
     def test_emit_calls_emitter(self, broadcasting) -> None:
         emitter = MagicMock()
         sm_mock = MagicMock(_socketio_emitter=emitter)
-        with patch.dict(sys.modules, {"state_manager": sm_mock}):
+        with patch.dict(sys.modules, {"nexus.core.state_manager": sm_mock}):
             broadcasting._emit("evt", {"k": "v"})
         emitter.assert_called_once_with("evt", {"k": "v"})
 

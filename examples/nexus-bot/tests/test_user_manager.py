@@ -2,7 +2,7 @@
 
 import json
 
-from user_manager import UserManager
+from nexus.core.user_manager import UserManager
 
 
 class TestUserManager:
@@ -218,6 +218,35 @@ class TestUserManager:
         assert nexus_id is not None
         assert manager.users[nexus_id].username == "legacy"
         assert manager.users[nexus_id].projects["proj_a"].tracked_issues == ["1"]
+
+    def test_merge_users_combines_identities_and_projects(self, tmp_path):
+        data_file = tmp_path / "users.json"
+        manager = UserManager(data_file)
+
+        tg_user = manager.get_or_create_user_by_identity("telegram", "123", "tg", "TG")
+        dc_user = manager.get_or_create_user_by_identity("discord", "999", "dc", "DC")
+        manager.track_issue_by_nexus_id(tg_user.nexus_id, "proj_a", "1")
+        manager.track_issue_by_nexus_id(dc_user.nexus_id, "proj_a", "2")
+
+        merged_id = manager.merge_users(tg_user.nexus_id, dc_user.nexus_id)
+
+        assert merged_id == tg_user.nexus_id
+        assert manager.resolve_nexus_id("telegram", "123") == merged_id
+        assert manager.resolve_nexus_id("discord", "999") == merged_id
+        tracked = manager.get_user_tracked_issues_by_nexus_id(merged_id, "proj_a")
+        assert tracked["proj_a"] == ["1", "2"]
+
+    def test_resolve_nexus_id_auto_reloads_after_external_file_change(self, tmp_path):
+        data_file = tmp_path / "users.json"
+        manager_a = UserManager(data_file)
+        manager_b = UserManager(data_file)
+
+        user_a = manager_a.get_or_create_user_by_identity("telegram", "123")
+        user_b = manager_a.get_or_create_user_by_identity("discord", "999")
+
+        manager_b.merge_users(user_a.nexus_id, user_b.nexus_id)
+
+        assert manager_a.resolve_nexus_id("discord", "999") == user_a.nexus_id
 
     def test_multi_user_isolation(self, tmp_path):
         data_file = tmp_path / "users.json"

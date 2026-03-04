@@ -7,7 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from services.mermaid_render_service import build_mermaid_diagram
+from nexus.core.mermaid_render_service import build_mermaid_diagram
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ def _make_ctx(user_id: str = "12345", args: list[str] | None = None):
 
 
 def _make_deps(logger=None):
-    from handlers.visualize_command_handlers import VisualizeHandlerDeps
+    from nexus.core.handlers.visualize_command_handlers import VisualizeHandlerDeps
 
     deps = VisualizeHandlerDeps(
         logger=logger or MagicMock(),
@@ -108,7 +108,7 @@ _SAMPLE_STEPS = [
 
 @pytest.mark.asyncio
 async def test_handler_prompts_project_selection_when_no_args():
-    from handlers.visualize_command_handlers import visualize_handler
+    from nexus.core.handlers.visualize_command_handlers import visualize_handler
 
     ctx = _make_ctx(args=[])
     deps = _make_deps()
@@ -118,8 +118,8 @@ async def test_handler_prompts_project_selection_when_no_args():
 
 @pytest.mark.asyncio
 async def test_handler_sends_mermaid_text_with_steps(tmp_path, monkeypatch):
-    import handlers.visualize_command_handlers as vch
-    from handlers.visualize_command_handlers import visualize_handler
+    import nexus.core.handlers.visualize_command_handlers as vch
+    from nexus.core.handlers.visualize_command_handlers import visualize_handler
 
     ctx = _make_ctx(args=["myproject", "42"])
     deps = _make_deps()
@@ -140,8 +140,8 @@ async def test_handler_sends_mermaid_text_with_steps(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handler_reports_no_steps_when_workflow_missing(monkeypatch):
-    import handlers.visualize_command_handlers as vch
-    from handlers.visualize_command_handlers import visualize_handler
+    import nexus.core.handlers.visualize_command_handlers as vch
+    from nexus.core.handlers.visualize_command_handlers import visualize_handler
 
     ctx = _make_ctx(args=["myproject", "42"])
     deps = _make_deps()

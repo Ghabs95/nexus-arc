@@ -290,10 +290,14 @@ class GitLabPlatform(GitPlatform):
     # ------------------------------------------------------------------
 
     def _headers(self) -> dict[str, str]:
-        return {
-            "PRIVATE-TOKEN": self._token,
-            "Content-Type": "application/json",
-        }
+        token = str(self._token or "").strip()
+        headers = {"Content-Type": "application/json"}
+        # GitLab PATs/project tokens typically use PRIVATE-TOKEN; OAuth access tokens require Bearer.
+        if token.startswith("glpat-") or token.startswith("gltok-"):
+            headers["PRIVATE-TOKEN"] = token
+        else:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
 
     def _sync_request(self, method: str, path: str, payload: dict | None = None) -> Any:
         url = f"{self._api_base}/{path.lstrip('/')}"

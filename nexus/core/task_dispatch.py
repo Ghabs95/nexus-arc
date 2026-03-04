@@ -6,7 +6,7 @@ import shutil
 from collections.abc import Callable
 from typing import Any
 
-from config_storage_capabilities import get_storage_capabilities
+from nexus.core.storage.capabilities import get_storage_capabilities
 
 
 def _local_task_files_enabled() -> bool:

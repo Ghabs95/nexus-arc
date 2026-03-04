@@ -1,11 +1,11 @@
 from unittest.mock import MagicMock, patch
 
-from report_scheduler import ReportScheduler
+from nexus.core.report_scheduler import ReportScheduler
 
 
 def test_tracked_issues_status_normalizes_legacy_entries(monkeypatch):
     # Patch get_user_manager before constructing ReportScheduler
-    with patch("report_scheduler.get_user_manager", return_value=MagicMock()):
+    with patch("nexus.core.report_scheduler.get_user_manager", return_value=MagicMock()):
         scheduler = ReportScheduler()
 
     monkeypatch.setattr(

@@ -9,10 +9,12 @@ from typing import Any
 from urllib.parse import urlencode
 
 import requests
-from services.credential_crypto import encrypt_secret
-from services.credential_store import (
+from nexus.core.auth.credential_crypto import encrypt_secret
+from nexus.core.auth.credential_store import (
     cleanup_expired_auth_sessions,
     create_auth_session,
+    find_user_credentials_by_github_identity,
+    find_user_credentials_by_gitlab_identity,
     get_auth_session,
     get_auth_session_by_state,
     get_user_credentials,
@@ -108,7 +110,7 @@ def start_oauth_flow(session_id: str, provider: str = "github") -> tuple[str, st
         update_auth_session(session_id=str(session_id), status="expired")
         raise ValueError("Session expired")
 
-    from services.credential_store import hash_oauth_state
+    from nexus.core.auth.credential_store import hash_oauth_state
 
     update_auth_session(
         session_id=str(session_id),
@@ -343,10 +345,19 @@ def complete_github_oauth(*, code: str, state: str) -> dict[str, Any]:
         )
         raise PermissionError("Your GitHub account is not in the allowed organizations")
 
+    source_nexus_id = str(session_record.nexus_id)
+    target_nexus_id = source_nexus_id
+    existing = find_user_credentials_by_github_identity(
+        github_user_id=github_user_id,
+        github_login=github_login,
+    )
+    if existing and str(existing.nexus_id) != source_nexus_id:
+        target_nexus_id = str(existing.nexus_id)
+
     encrypted_token = encrypt_secret(access_token, key_version=_key_version())
     encrypted_refresh = encrypt_secret(refresh_token, key_version=_key_version()) if refresh_token else None
     upsert_github_credentials(
-        nexus_id=session_record.nexus_id,
+        nexus_id=target_nexus_id,
         github_user_id=github_user_id,
         github_login=github_login,
         github_token_enc=encrypted_token,
@@ -358,19 +369,21 @@ def complete_github_oauth(*, code: str, state: str) -> dict[str, Any]:
     )
 
     grants_count = sync_user_project_access(
-        nexus_id=session_record.nexus_id,
+        nexus_id=target_nexus_id,
         github_token=access_token,
         github_login=github_login,
     )
     update_auth_session(
         session_id=session_record.session_id,
+        nexus_id=target_nexus_id,
         oauth_provider="github",
         status="oauth_done",
         last_error="",
     )
     return {
         "session_id": session_record.session_id,
-        "nexus_id": session_record.nexus_id,
+        "nexus_id": target_nexus_id,
+        "source_nexus_id": source_nexus_id,
         "provider": "github",
         "github_login": github_login,
         "orgs": sorted(orgs),
@@ -406,10 +419,19 @@ def complete_gitlab_oauth(*, code: str, state: str) -> dict[str, Any]:
         )
         raise PermissionError("Your GitLab account is not in the allowed groups")
 
+    source_nexus_id = str(session_record.nexus_id)
+    target_nexus_id = source_nexus_id
+    existing = find_user_credentials_by_gitlab_identity(
+        gitlab_user_id=gitlab_user_id,
+        gitlab_username=gitlab_username,
+    )
+    if existing and str(existing.nexus_id) != source_nexus_id:
+        target_nexus_id = str(existing.nexus_id)
+
     encrypted_token = encrypt_secret(access_token, key_version=_key_version())
     encrypted_refresh = encrypt_secret(refresh_token, key_version=_key_version()) if refresh_token else None
     upsert_gitlab_credentials(
-        nexus_id=session_record.nexus_id,
+        nexus_id=target_nexus_id,
         gitlab_user_id=gitlab_user_id,
         gitlab_username=gitlab_username,
         gitlab_token_enc=encrypted_token,
@@ -421,19 +443,21 @@ def complete_gitlab_oauth(*, code: str, state: str) -> dict[str, Any]:
     )
 
     grants_count = sync_user_gitlab_project_access(
-        nexus_id=session_record.nexus_id,
+        nexus_id=target_nexus_id,
         gitlab_token=access_token,
         gitlab_username=gitlab_username,
     )
     update_auth_session(
         session_id=session_record.session_id,
+        nexus_id=target_nexus_id,
         oauth_provider="gitlab",
         status="oauth_done",
         last_error="",
     )
     return {
         "session_id": session_record.session_id,
-        "nexus_id": session_record.nexus_id,
+        "nexus_id": target_nexus_id,
+        "source_nexus_id": source_nexus_id,
         "provider": "gitlab",
         "gitlab_username": gitlab_username,
         "groups": sorted(groups),

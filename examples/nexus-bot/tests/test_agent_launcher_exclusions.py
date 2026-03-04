@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 
 def test_invoke_persists_gemini_exclusion_when_rate_limited(monkeypatch):
-    from runtime import agent_launcher
+    from nexus.core.runtime import agent_launcher
 
     class _FakeOrchestrator:
         def __init__(self):
@@ -44,7 +44,7 @@ def test_invoke_persists_gemini_exclusion_when_rate_limited(monkeypatch):
 
 
 def test_tool_unavailable_persists_gemini_exclusion(monkeypatch):
-    from runtime import agent_launcher
+    from nexus.core.runtime import agent_launcher
 
     class _FakeOrchestrator:
         def __init__(self):
@@ -84,7 +84,7 @@ def test_tool_unavailable_persists_gemini_exclusion(monkeypatch):
 
 
 def test_log_indicates_any_quota_failure_detects_session_summary():
-    from runtime import agent_launcher
+    from nexus.core.runtime import agent_launcher
 
     text = (
         "402 You have no quota\n\n"
@@ -96,7 +96,7 @@ def test_log_indicates_any_quota_failure_detects_session_summary():
 
 
 def test_log_indicates_any_quota_failure_false_without_summary():
-    from runtime import agent_launcher
+    from nexus.core.runtime import agent_launcher
 
     text = "402 You have no quota"
     assert agent_launcher._log_indicates_any_quota_failure(text) is False

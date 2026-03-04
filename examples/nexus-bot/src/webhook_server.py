@@ -61,17 +61,18 @@ from config import (
     get_inbox_storage_backend,
     get_tasks_active_dir,
 )
-from integrations.inbox_queue import enqueue_task
-from integrations.notifications import (
+from nexus.core.integrations.inbox_queue import enqueue_task
+from nexus.core.integrations.notifications import (
     emit_alert,
     send_notification,
 )
-from orchestration.plugin_runtime import (
+from nexus.core.orchestration.plugin_runtime import (
     get_webhook_policy_plugin,
     get_workflow_state_plugin,
 )
-from orchestration.nexus_core_helpers import get_workflow_definition_path
-from runtime.agent_launcher import launch_next_agent
+from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
+from nexus.core.runtime.agent_launcher import launch_next_agent
+from nexus.core.user_manager import get_user_manager
 from nexus.core.webhook.issue_service import handle_issue_opened_event as _handle_issue_opened_event
 from nexus.core.webhook.comment_service import (
     handle_issue_comment_event as _handle_issue_comment_event,
@@ -155,8 +156,8 @@ def _run_acl_sync_if_due() -> None:
 def _collect_visualizer_snapshot() -> list[dict]:
     """Return a best-effort snapshot of mapped workflows for visualizer bootstrap."""
     try:
-        from integrations.workflow_state_factory import get_workflow_state
-        from orchestration.plugin_runtime import get_workflow_state_plugin
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 
         workflow_state = get_workflow_state()
         mappings = workflow_state.load_all_mappings() or {}
@@ -201,7 +202,7 @@ def _collect_visualizer_snapshot() -> list[dict]:
 
 # Register SocketIO emitter with HostStateManager for real-time transition broadcasting
 try:
-    from state_manager import set_socketio_emitter
+    from nexus.core.state_manager import set_socketio_emitter
 
     set_socketio_emitter(lambda event, data: socketio.emit(event, data, namespace="/visualizer"))
     logger.info("✅ SocketIO emitter registered with HostStateManager")
@@ -300,7 +301,7 @@ def _notify_lifecycle(message: str) -> bool:
 
 def _get_runtime_workflow_plugin():
     """Build workflow-state plugin for webhook-triggered manual resets."""
-    from integrations.workflow_state_factory import get_workflow_state
+    from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
     workflow_state = get_workflow_state()
     return get_workflow_state_plugin(
@@ -399,7 +400,7 @@ def handle_issue_comment(payload, event):
     Detects workflow completion markers in comments and chains to next agent.
     """
     policy = _get_webhook_policy()
-    from inbox_processor import check_and_notify_pr
+    from nexus.core.workflow_runtime.workflow_pr_monitor_service import check_and_notify_pr
 
     return _handle_issue_comment_event(
         event=event,
@@ -635,6 +636,19 @@ def auth_github_callback():
     except Exception as exc:
         return _render_auth_message("OAuth Error", f"{exc}", status_code=400)
 
+    source_nexus_id = str(result.get("source_nexus_id") or "").strip()
+    resolved_nexus_id = str(result.get("nexus_id") or "").strip()
+    if source_nexus_id and resolved_nexus_id and source_nexus_id != resolved_nexus_id:
+        try:
+            get_user_manager().merge_users(resolved_nexus_id, source_nexus_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to merge UNI users after GitHub OAuth (source=%s, target=%s): %s",
+                source_nexus_id,
+                resolved_nexus_id,
+                exc,
+            )
+
     session_id = str(result.get("session_id") or "").strip()
     grants_count = int(result.get("grants_count") or 0)
     github_login = str(result.get("github_login") or "").strip()
@@ -689,6 +703,19 @@ def auth_gitlab_callback():
         result = _svc_complete_gitlab_oauth(code=code, state=state)
     except Exception as exc:
         return _render_auth_message("OAuth Error", f"{exc}", status_code=400)
+
+    source_nexus_id = str(result.get("source_nexus_id") or "").strip()
+    resolved_nexus_id = str(result.get("nexus_id") or "").strip()
+    if source_nexus_id and resolved_nexus_id and source_nexus_id != resolved_nexus_id:
+        try:
+            get_user_manager().merge_users(resolved_nexus_id, source_nexus_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to merge UNI users after GitLab OAuth (source=%s, target=%s): %s",
+                source_nexus_id,
+                resolved_nexus_id,
+                exc,
+            )
 
     session_id = str(result.get("session_id") or "").strip()
     grants_count = int(result.get("grants_count") or 0)
@@ -932,7 +959,7 @@ def _get_completion_store():
         backend = NEXUS_STORAGE_BACKEND
         storage = None
         if backend == "postgres":
-            from integrations.workflow_state_factory import get_storage_backend
+            from nexus.core.integrations.workflow_state_factory import get_storage_backend
 
             storage = get_storage_backend()
 
@@ -1016,7 +1043,7 @@ def main():
 
     # Initialize event handlers (including SocketIO bridge)
     try:
-        from orchestration.nexus_core_helpers import setup_event_handlers
+        from nexus.core.orchestration.nexus_core_helpers import setup_event_handlers
 
         setup_event_handlers()
         logger.info("✅ Event handlers initialized")

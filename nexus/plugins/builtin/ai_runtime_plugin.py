@@ -615,7 +615,7 @@ class AIOrchestrator:
         system_operations = self._resolved_system_operations(project_name)
         if not isinstance(system_operations, Mapping):
             system_operations = {}
-        return resolve_analysis_tool_order_impl(
+        ordered = resolve_analysis_tool_order_impl(
             task=task,
             text=text,
             project_name=project_name,
@@ -638,6 +638,17 @@ class AIOrchestrator:
                 AIProvider.OLLAMA,
             ],
         )
+        # Keep refine-description fallback deterministic across environments:
+        # use primary + one explicit fallback rather than walking all providers.
+        if str(task or "").strip().lower() == "refine_description" and ordered:
+            primary = ordered[0]
+            if not self.fallback_enabled:
+                return [primary]
+            fallback = self.get_fallback_tool(primary)
+            if fallback and fallback != primary:
+                return [primary, fallback]
+            return [primary]
+        return ordered
 
     def _resolve_transcription_attempts(self, project_name: str | None = None) -> list[str]:
         system_operations = self._resolved_system_operations(project_name)
@@ -1444,6 +1455,9 @@ class AIOrchestrator:
                 return {"text": "generic-task"}
             return {"text": "-".join(words).lower()}
         if task == "refine_description":
+            original_text = kwargs.get("original_text")
+            if isinstance(original_text, str):
+                return {"text": original_text}
             return {"text": kwargs.get("text", "")}
         if task == "detect_intent":
             return {"intent": "task"}

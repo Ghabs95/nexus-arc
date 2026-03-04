@@ -30,12 +30,12 @@ from dependencies import (
     get_ops_handler_deps,
     get_workflow_handler_deps,
 )
-from handlers.chat_command_handlers import (
+from nexus.core.handlers.chat_command_handlers import (
     chat_agents_handler,
     chat_callback_handler,
     chat_menu_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     assign_handler,
     comments_handler,
     implement_handler,
@@ -47,7 +47,7 @@ from handlers.issue_command_handlers import (
     tracked_handler,
     untrack_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     active_handler,
     fuse_handler,
     logs_handler,
@@ -56,13 +56,13 @@ from handlers.monitoring_command_handlers import (
     tail_handler,
     tailstop_handler,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     agents_handler,
     audit_handler,
     direct_handler,
     stats_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     continue_handler,
     forget_handler,
     kill_handler,
@@ -73,7 +73,7 @@ from handlers.workflow_command_handlers import (
     stop_handler,
     wfstate_handler,
 )
-from orchestration.ai_orchestrator import get_orchestrator
+from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 
 
 async def main() -> None:
@@ -209,7 +209,7 @@ def _bind_handlers(plugin: InteractiveClientPlugin) -> None:
     plugin.register_command_handler("wfstate", lambda ctx: wfstate_handler(ctx, workflow_deps))
 
     # Catch-all text message handler
-    from handlers.inbox_routing_handler import route_hands_free_text
+    from nexus.core.handlers.inbox_routing_handler import route_hands_free_text
 
     plugin.register_message_handler(lambda ctx: route_hands_free_text(ctx, routing_deps))
 
@@ -226,7 +226,7 @@ async def dispatch_callback(ctx, callback_deps, chat_handler, feature_deps) -> N
     if data.startswith("chat:"):
         await chat_handler(ctx, callback_deps)
     elif data.startswith("feat:"):
-        from handlers.feature_ideation_handlers import feature_callback_handler
+        from nexus.core.handlers.feature_ideation_handlers import feature_callback_handler
 
         await feature_callback_handler(ctx, feature_deps)
     elif (
@@ -234,12 +234,12 @@ async def dispatch_callback(ctx, callback_deps, chat_handler, feature_deps) -> N
         or data.startswith("pickissue:")
         or data.startswith("flow:close")
     ):
-        from handlers.callback_command_handlers import core_callback_router
+        from nexus.core.handlers.callback_command_handlers import core_callback_router
 
         await core_callback_router(ctx, callback_deps)
     else:
         # Let's see if it's an action (logs_, respond_, etc)
-        from handlers.callback_command_handlers import inline_keyboard_handler
+        from nexus.core.handlers.callback_command_handlers import inline_keyboard_handler
 
         await inline_keyboard_handler(ctx, callback_deps)
 

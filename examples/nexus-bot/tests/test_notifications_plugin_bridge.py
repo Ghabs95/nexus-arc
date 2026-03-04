@@ -11,7 +11,7 @@ class _FakePlugin:
 
 
 def test_emit_alert_uses_plugin(monkeypatch):
-    import integrations.notifications as notifications
+    import nexus.core.integrations.notifications as notifications
 
     fake = _FakePlugin()
 

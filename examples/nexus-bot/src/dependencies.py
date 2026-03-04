@@ -1,14 +1,14 @@
 import logging
 
-from analytics import get_stats_report
-from audit_store import AuditStore
-from commands.workflow import (
+from nexus.core.analytics.reporting import get_stats_report
+from nexus.core.audit_store import AuditStore
+from nexus.core.runtime.workflow_commands import (
     pause_handler as workflow_pause_handler,
 )
-from commands.workflow import (
+from nexus.core.runtime.workflow_commands import (
     resume_handler as workflow_resume_handler,
 )
-from commands.workflow import (
+from nexus.core.runtime.workflow_commands import (
     stop_handler as workflow_stop_handler,
 )
 # Import configuration from centralized config module
@@ -31,52 +31,55 @@ from config import (
     get_tasks_closed_dir,
     get_track_short_projects,
 )
-from error_handling import format_error_for_user
-from handlers.inbox_routing_handler import (
+from nexus.core.error_handling import format_error_for_user
+from nexus.core.handlers.inbox_routing_handler import (
     TYPES,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     IssueHandlerDeps,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     MonitoringHandlersDeps,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     OpsHandlerDeps,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     WorkflowHandlerDeps,
 )
-from inbox_processor import _normalize_agent_reference, get_sop_tier
-from integrations.workflow_state_factory import get_workflow_state
+from nexus.core.task_flow.helpers import (
+    get_sop_tier,
+    normalize_agent_reference as _normalize_agent_reference,
+)
+from nexus.core.integrations.workflow_state_factory import get_workflow_state
 from nexus.adapters.git.utils import build_issue_url, resolve_repo
 from nexus.core.completion import scan_for_completions
 from nexus.core.utils.logging_filters import install_secret_redaction
-from orchestration.ai_orchestrator import get_orchestrator
-from orchestration.nexus_core_helpers import get_workflow_definition_path
-from orchestration.plugin_runtime import (
+from nexus.core.orchestration.ai_orchestrator import get_orchestrator
+from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
+from nexus.core.orchestration.plugin_runtime import (
     get_runtime_ops_plugin,
     get_workflow_state_plugin,
 )
-from project_key_utils import normalize_project_key_optional as _normalize_project_key
+from nexus.core.project.key_utils import normalize_project_key_optional as _normalize_project_key
 from rate_limiter import get_rate_limiter
-from runtime.agent_launcher import get_sop_tier_from_issue, invoke_ai_agent
+from nexus.core.runtime.bridge import get_sop_tier_from_issue, invoke_ai_agent
 from nexus.core.memory import (
     append_message,
     create_chat,
     get_chat_history,
 )
-from services.workflow.workflow_control_service import (
+from nexus.core.workflow_runtime.workflow_control_service import (
     kill_issue_agent,
     prepare_continue_context,
 )
-from services.workflow.workflow_ops_service import (
+from nexus.core.workflow_runtime.workflow_ops_service import (
     build_workflow_snapshot,
     fetch_workflow_state_snapshot,
     reconcile_issue_from_signals,
 )
-from state_manager import HostStateManager
-from user_manager import get_user_manager
+from nexus.core.state_manager import HostStateManager
+from nexus.core.user_manager import get_user_manager
 
 # --- LOGGING ---
 logger = logging.getLogger(__name__)
@@ -160,7 +163,7 @@ def _workflow_handler_deps() -> WorkflowHandlerDeps:
 
 
 def _monitoring_handler_deps() -> MonitoringHandlersDeps:
-    from runtime.nexus_agent_runtime import get_retry_fuse_status
+    from nexus.core.runtime.nexus_agent_runtime import get_retry_fuse_status
 
     async def _ensure_project(ctx, command: str) -> str | None:
         project_key, _issue_num, _rest = await _ensure_project_issue(ctx, command)
@@ -236,7 +239,7 @@ def _issue_handler_deps() -> IssueHandlerDeps:
 
 def _ops_handler_deps() -> OpsHandlerDeps:
     def _get_inbox_queue_overview(limit: int) -> dict[str, object]:
-        from integrations.inbox_queue import get_queue_overview
+        from nexus.core.integrations.inbox_queue import get_queue_overview
 
         return get_queue_overview(limit=limit)
 

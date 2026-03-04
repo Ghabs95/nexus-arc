@@ -1,0 +1,109 @@
+"""Dedicated audit storage utilities for Nexus.
+
+Keeps audit read/write concerns separate from generic state management.
+Delegates to nexus-arc for standardized storage.
+"""
+
+import asyncio
+import logging
+import threading
+
+from nexus.core.config import NEXUS_CORE_STORAGE_DIR
+from nexus.adapters.storage.file import FileStorage
+from nexus.adapters.storage.structured_log import StructuredLogAuditBackend
+from nexus.core.storage.audit import AuditStore as CoreAuditStore
+
+logger = logging.getLogger(__name__)
+
+
+def _run_coro_sync(coro_factory, *, timeout_seconds: float = 10):
+    """Run an async call from sync code, even if a loop is already running."""
+    try:
+        asyncio.get_running_loop()
+        in_running_loop = True
+    except RuntimeError:
+        in_running_loop = False
+
+    if not in_running_loop:
+        return asyncio.run(coro_factory())
+
+    holder = {"value": None, "error": None}
+
+    def _runner() -> None:
+        try:
+            holder["value"] = asyncio.run(coro_factory())
+        except Exception as exc:  # pragma: no cover - defensive bridge
+            holder["error"] = exc
+
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+    worker.join(timeout=timeout_seconds)
+    if worker.is_alive():
+        raise TimeoutError("Timed out running async audit operation in worker thread")
+    if holder["error"] is not None:
+        raise holder["error"]
+    return holder["value"]
+
+
+class AuditStore:
+    """Read/write audit events using nexus-arc implementation."""
+
+    _core_store = None
+
+    @classmethod
+    def _get_core_store(cls):
+        if cls._core_store is None:
+            base_storage = FileStorage(base_path=NEXUS_CORE_STORAGE_DIR)
+            storage = StructuredLogAuditBackend(
+                backend=base_storage,
+                logger_name="nexus.audit",
+                extra_labels={"app": "nexus", "env": "prod"},
+            )
+            cls._core_store = CoreAuditStore(storage=storage)
+        return cls._core_store
+
+    @staticmethod
+    def audit_log(issue_num: int, event: str, details: str | None = None) -> None:
+        """Log an audit event in nexus-arc JSONL format."""
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
+
+        workflow_id = get_workflow_state().get_workflow_id(str(issue_num)) or "_nexus_system"
+
+        store = AuditStore._get_core_store()
+        try:
+            _run_coro_sync(
+                lambda: store.log(
+                    workflow_id=workflow_id,
+                    event_type=event,
+                    data={"issue_number": issue_num, "details": details},
+                )
+            )
+            logger.debug(f"Audit: #{issue_num} {event}")
+        except Exception as e:
+            logger.error(f"Failed to write audit log: {e}")
+
+    @staticmethod
+    def get_audit_history(issue_num: int, limit: int = 50) -> list[dict]:
+        """Get recent audit events for an issue."""
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
+
+        workflow_id = get_workflow_state().get_workflow_id(str(issue_num))
+        if not workflow_id:
+            return []
+
+        store = AuditStore._get_core_store()
+        try:
+            events = _run_coro_sync(lambda: store.get_workflow_history(workflow_id, limit=limit))
+            return [
+                {
+                    "workflow_id": e.workflow_id,
+                    "timestamp": e.timestamp.isoformat(),
+                    "event_type": e.event_type,
+                    "data": e.data,
+                    "user_id": e.user_id,
+                }
+                for e in events[-limit:]
+            ]
+        except Exception as e:
+            logger.error(f"Failed to read audit log: {e}")
+            return []

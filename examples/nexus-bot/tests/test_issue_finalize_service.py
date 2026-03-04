@@ -1,7 +1,7 @@
 import types
 from unittest.mock import patch
 
-from services import issue_finalize_service as svc
+from nexus.core import issue_finalize as svc
 
 from nexus.adapters.git.base import PullRequest
 

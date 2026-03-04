@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from services import credential_store as store_svc
+from nexus.core.auth import credential_store as store_svc
 from nexus.core.auth import access_domain as access_svc
 from nexus.core.auth import oauth_onboarding_domain as auth_svc
 
@@ -224,6 +224,86 @@ def test_build_execution_env_refreshes_expired_gitlab_token_and_injects_claude(m
     assert env["CLAUDE_API_KEY"] == "sk-ant-claude-key"
     assert updates["nexus_id"] == "nexus-4"
     assert str(updates["gitlab_token_enc"]).endswith("new-access-token")
+
+
+def test_complete_github_oauth_reuses_existing_nexus_identity(monkeypatch):
+    session = SimpleNamespace(
+        session_id="sess-gh",
+        nexus_id="nexus-discord",
+        expires_at=datetime.now(tz=UTC) + timedelta(minutes=5),
+        status="pending",
+        oauth_provider="github",
+    )
+
+    monkeypatch.setattr(auth_svc, "_assert_valid_callback_session", lambda _state, _provider: session)
+    monkeypatch.setattr(
+        auth_svc,
+        "_github_exchange_code_for_token",
+        lambda _code: {"access_token": "gh-token", "refresh_token": "gh-refresh", "expires_in": 3600},
+    )
+    monkeypatch.setattr(auth_svc, "_fetch_github_profile", lambda _token: {"id": 42, "login": "Ghabs95"})
+    monkeypatch.setattr(auth_svc, "_fetch_github_org_logins", lambda _token: {"mybiohackingdata"})
+    monkeypatch.setattr(auth_svc, "_allowed_github_orgs", lambda: set())
+    monkeypatch.setattr(auth_svc, "encrypt_secret", lambda value, key_version=1: f"enc:{value}")
+
+    monkeypatch.setattr(
+        auth_svc,
+        "find_user_credentials_by_github_identity",
+        lambda **_kwargs: SimpleNamespace(nexus_id="nexus-telegram"),
+    )
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(auth_svc, "upsert_github_credentials", lambda **kwargs: captured.setdefault("upsert", kwargs))
+    monkeypatch.setattr(auth_svc, "sync_user_project_access", lambda **kwargs: captured.setdefault("sync", kwargs) or 3)
+    monkeypatch.setattr(auth_svc, "update_auth_session", lambda **kwargs: captured.setdefault("session", kwargs))
+
+    result = auth_svc.complete_github_oauth(code="abc", state="xyz")
+
+    assert result["nexus_id"] == "nexus-telegram"
+    assert result["source_nexus_id"] == "nexus-discord"
+    assert captured["upsert"]["nexus_id"] == "nexus-telegram"
+    assert captured["sync"]["nexus_id"] == "nexus-telegram"
+    assert captured["session"]["nexus_id"] == "nexus-telegram"
+
+
+def test_complete_gitlab_oauth_reuses_existing_nexus_identity(monkeypatch):
+    session = SimpleNamespace(
+        session_id="sess-gl",
+        nexus_id="nexus-discord",
+        expires_at=datetime.now(tz=UTC) + timedelta(minutes=5),
+        status="pending",
+        oauth_provider="gitlab",
+    )
+
+    monkeypatch.setattr(auth_svc, "_assert_valid_callback_session", lambda _state, _provider: session)
+    monkeypatch.setattr(
+        auth_svc,
+        "_gitlab_exchange_code_for_token",
+        lambda _code: {"access_token": "gl-token", "refresh_token": "gl-refresh", "expires_in": 3600},
+    )
+    monkeypatch.setattr(auth_svc, "_fetch_gitlab_profile", lambda _token: {"id": 99, "username": "Ghabs"})
+    monkeypatch.setattr(auth_svc, "_fetch_gitlab_group_paths", lambda _token: {"mybiohackingdata/developer"})
+    monkeypatch.setattr(auth_svc, "_allowed_gitlab_groups", lambda: set())
+    monkeypatch.setattr(auth_svc, "encrypt_secret", lambda value, key_version=1: f"enc:{value}")
+
+    monkeypatch.setattr(
+        auth_svc,
+        "find_user_credentials_by_gitlab_identity",
+        lambda **_kwargs: SimpleNamespace(nexus_id="nexus-telegram"),
+    )
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(auth_svc, "upsert_gitlab_credentials", lambda **kwargs: captured.setdefault("upsert", kwargs))
+    monkeypatch.setattr(auth_svc, "sync_user_gitlab_project_access", lambda **kwargs: captured.setdefault("sync", kwargs) or 4)
+    monkeypatch.setattr(auth_svc, "update_auth_session", lambda **kwargs: captured.setdefault("session", kwargs))
+
+    result = auth_svc.complete_gitlab_oauth(code="abc", state="xyz")
+
+    assert result["nexus_id"] == "nexus-telegram"
+    assert result["source_nexus_id"] == "nexus-discord"
+    assert captured["upsert"]["nexus_id"] == "nexus-telegram"
+    assert captured["sync"]["nexus_id"] == "nexus-telegram"
+    assert captured["session"]["nexus_id"] == "nexus-telegram"
 
 
 def test_compute_project_grants_users_only_and_team_user_intersection():

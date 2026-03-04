@@ -258,11 +258,11 @@ class TestWorkflowStateApproval:
         monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
 
         # Reset singleton so factory re-creates with tmp_path
-        import integrations.workflow_state_factory as wsf
+        import nexus.core.integrations.workflow_state_factory as wsf
 
         monkeypatch.setattr(wsf, "_instance", None)
 
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         store = get_workflow_state()
         store.set_pending_approval(
@@ -285,11 +285,11 @@ class TestWorkflowStateApproval:
 
         monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
 
-        import integrations.workflow_state_factory as wsf
+        import nexus.core.integrations.workflow_state_factory as wsf
 
         monkeypatch.setattr(wsf, "_instance", None)
 
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         assert get_workflow_state().get_pending_approval("99") is None
 
@@ -298,11 +298,11 @@ class TestWorkflowStateApproval:
 
         monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
 
-        import integrations.workflow_state_factory as wsf
+        import nexus.core.integrations.workflow_state_factory as wsf
 
         monkeypatch.setattr(wsf, "_instance", None)
 
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         store = get_workflow_state()
         store.set_pending_approval(

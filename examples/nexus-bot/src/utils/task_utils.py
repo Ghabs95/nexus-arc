@@ -4,7 +4,7 @@ import os
 import re
 
 from config import get_nexus_dir_name, BASE_DIR
-from config_storage_capabilities import get_storage_capabilities
+from nexus.core.storage.capabilities import get_storage_capabilities
 
 logger = logging.getLogger(__name__)
 

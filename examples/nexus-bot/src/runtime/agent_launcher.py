@@ -15,7 +15,7 @@ import subprocess
 import threading
 import time
 
-from audit_store import AuditStore
+from nexus.core.audit_store import AuditStore
 from config import (
     BASE_DIR,
     ORCHESTRATOR_CONFIG,
@@ -30,10 +30,10 @@ from config import (
     get_project_platform,
     get_tasks_logs_dir,
 )
-from integrations.notifications import notify_agent_completed, emit_alert
-from orchestration.ai_orchestrator import get_orchestrator
-from orchestration.plugin_runtime import get_profiled_plugin
-from services.credential_store import get_issue_requester_by_url
+from nexus.core.integrations.notifications import notify_agent_completed, emit_alert
+from nexus.core.orchestration.ai_orchestrator import get_orchestrator
+from nexus.core.orchestration.plugin_runtime import get_profiled_plugin
+from nexus.core.auth.credential_store import get_issue_requester_by_url
 from nexus.core.auth.access_domain import (
     auth_enabled,
     build_execution_env,
@@ -41,7 +41,7 @@ from nexus.core.auth.access_domain import (
     check_repo_access,
 )
 from nexus.core.runtime_mode import is_postgres_backend
-from state_manager import HostStateManager
+from nexus.core.state_manager import HostStateManager
 
 from nexus.adapters.git.utils import build_issue_url
 # Nexus Core framework imports
@@ -123,7 +123,7 @@ def _completed_agent_from_trigger(trigger_source: str) -> str | None:
 
 def _get_git_platform_client(repo: str, project_name: str | None = None):
     """Return cached abstract git platform adapter for repository."""
-    from orchestration.nexus_core_helpers import get_git_platform
+    from nexus.core.orchestration.nexus_core_helpers import get_git_platform
 
     cache_key = f"{project_name or ''}:{repo}"
     if cache_key in _git_platform_cache:
@@ -895,7 +895,7 @@ def get_sop_tier_from_issue(issue_number, project="nexus", repo_override: str | 
     """
     from nexus.adapters.git.github import GitHubPlatform
 
-    from orchestration.nexus_core_helpers import get_git_platform
+    from nexus.core.orchestration.nexus_core_helpers import get_git_platform
 
     repo = str(repo_override or "")
     try:
@@ -1012,7 +1012,7 @@ def invoke_ai_agent(
         effective_requester_nexus_id = get_issue_requester_by_url(str(issue_url))
 
     # Resolve project-specific API token
-    from orchestration.nexus_core_helpers import _get_project_config
+    from nexus.core.orchestration.nexus_core_helpers import _get_project_config
 
     project_cfg = _get_project_config().get(project_name, {}) if project_name else {}
     git_platform = project_cfg.get("git_platform", "github")
@@ -1394,7 +1394,7 @@ def launch_next_agent(
             )
 
     # Get workflow tier: launched_agents tracker → issue labels → halt if unknown
-    from state_manager import HostStateManager
+    from nexus.core.state_manager import HostStateManager
 
     repo = resolved_repo or get_repo(project_root)
     tracker_tier = HostStateManager.get_last_tier_for_issue(issue_number)

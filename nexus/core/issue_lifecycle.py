@@ -16,7 +16,7 @@ _SOURCE_MARKER_PREFIX = "nexus-inbox-source:"
 def get_project_platform(project_name: str) -> str:
     """Resolve project platform from host app configuration."""
     try:
-        from config import get_project_platform as _host_get_project_platform
+        from nexus.core.config import get_project_platform as _host_get_project_platform
     except Exception as exc:
         raise RuntimeError("Host get_project_platform is not available") from exc
     return str(_host_get_project_platform(project_name) or "").strip().lower()
@@ -30,7 +30,7 @@ def get_git_platform(
 ):
     """Resolve provider adapter from host orchestration helper."""
     try:
-        from orchestration.nexus_core_helpers import get_git_platform as _host_get_git_platform
+        from nexus.core.orchestration.nexus_core_helpers import get_git_platform as _host_get_git_platform
     except Exception as exc:
         raise RuntimeError("Host get_git_platform is not available") from exc
     return _host_get_git_platform(repo_key, project_name=project_name, token_override=token_override)

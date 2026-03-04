@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from services.monitoring.monitoring_logs_service import handle_logs, handle_logsfull, handle_tail
+from nexus.core.monitoring.monitoring_logs_service import handle_logs, handle_logsfull, handle_tail
 
 
 class _Ctx:

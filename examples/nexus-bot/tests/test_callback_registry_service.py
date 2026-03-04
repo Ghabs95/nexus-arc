@@ -1,6 +1,6 @@
 import pytest
 
-from services.callbacks.callback_registry_service import dispatch_callback_action
+from nexus.core.callbacks.callback_registry_service import dispatch_callback_action
 
 
 @pytest.mark.asyncio

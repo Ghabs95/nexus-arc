@@ -108,7 +108,7 @@ def get_retry_fuse_status(issue_number: str, now_ts: float | None = None) -> dic
     issue_key = str(issue_number)
 
     try:
-        from state_manager import HostStateManager
+        from nexus.core.state_manager import HostStateManager
 
         launched = HostStateManager.load_launched_agents(recent_only=False)
     except Exception:
@@ -208,7 +208,7 @@ class NexusAgentRuntime(AgentRuntime):
             )
             return None, "workflow-terminal"
 
-        from runtime.agent_launcher import launch_next_agent
+        from nexus.core.runtime.agent_launcher import launch_next_agent
 
         return launch_next_agent(
             issue_number=issue_number,
@@ -219,17 +219,17 @@ class NexusAgentRuntime(AgentRuntime):
         )
 
     def load_launched_agents(self, recent_only: bool = True) -> dict[str, dict]:
-        from state_manager import HostStateManager
+        from nexus.core.state_manager import HostStateManager
 
         return HostStateManager.load_launched_agents(recent_only=recent_only)
 
     def save_launched_agents(self, data: dict[str, dict]) -> None:
-        from state_manager import HostStateManager
+        from nexus.core.state_manager import HostStateManager
 
         HostStateManager.save_launched_agents(data)
 
     def clear_launch_guard(self, issue_number: str) -> None:
-        from runtime.agent_launcher import clear_launch_guard
+        from nexus.core.runtime.agent_launcher import clear_launch_guard
 
         clear_launch_guard(issue_number)
 
@@ -246,7 +246,7 @@ class NexusAgentRuntime(AgentRuntime):
             return False
 
         try:
-            from runtime.agent_monitor import AgentMonitor
+            from nexus.core.runtime.agent_monitor import AgentMonitor
 
             if not AgentMonitor.should_retry(issue_key, normalized_agent):
                 return False
@@ -254,7 +254,7 @@ class NexusAgentRuntime(AgentRuntime):
             pass
 
         try:
-            from state_manager import HostStateManager
+            from nexus.core.state_manager import HostStateManager
 
             launched = HostStateManager.load_launched_agents(recent_only=False)
             entry = launched.get(issue_key, {}) if isinstance(launched, dict) else {}
@@ -328,17 +328,17 @@ class NexusAgentRuntime(AgentRuntime):
 
                 if not alerted:
                     try:
-                        from audit_store import AuditStore
+                        from nexus.core.audit_store import AuditStore
                         from config import (
                             NEXUS_CORE_STORAGE_DIR,
                             NEXUS_STORAGE_DSN,
                             NEXUS_WORKFLOW_BACKEND,
                         )
-                        from orchestration.plugin_runtime import (
+                        from nexus.core.orchestration.plugin_runtime import (
                             get_workflow_state_plugin,
                         )
 
-                        from integrations.workflow_state_factory import get_workflow_state
+                        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
                         workflow_plugin = get_workflow_state_plugin(
                             storage_dir=NEXUS_CORE_STORAGE_DIR,
@@ -437,7 +437,7 @@ class NexusAgentRuntime(AgentRuntime):
         """Best-effort issue status check used by retry gating."""
         try:
             from config import get_default_project, get_repo
-            from integrations.workflow_state_factory import get_workflow_state
+            from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
             workflow_id = get_workflow_state().get_workflow_id(str(issue_number))
             project_hint = ""
@@ -483,7 +483,7 @@ class NexusAgentRuntime(AgentRuntime):
         return None
 
     def send_alert(self, message: str) -> bool:
-        from integrations.notifications import emit_alert
+        from nexus.core.integrations.notifications import emit_alert
 
         text = str(message or "")
         severity = "warning"
@@ -533,7 +533,7 @@ class NexusAgentRuntime(AgentRuntime):
         return False
 
     def post_completion_comment(self, issue_number: str, repo: str, body: str) -> bool:
-        from orchestration.nexus_core_helpers import get_git_platform
+        from nexus.core.orchestration.nexus_core_helpers import get_git_platform
 
         try:
             platform = get_git_platform(repo)
@@ -563,7 +563,7 @@ class NexusAgentRuntime(AgentRuntime):
         try:
             import asyncio
 
-            from orchestration.nexus_core_helpers import get_git_platform
+            from nexus.core.orchestration.nexus_core_helpers import get_git_platform
 
             platform = get_git_platform(repo)
             if not platform:
@@ -645,7 +645,7 @@ class NexusAgentRuntime(AgentRuntime):
             return None
 
     def audit_log(self, issue_number: str, event: str, details: str = "") -> None:
-        from audit_store import AuditStore
+        from nexus.core.audit_store import AuditStore
 
         AuditStore.audit_log(int(issue_number), event, details or None)
 
@@ -666,8 +666,8 @@ class NexusAgentRuntime(AgentRuntime):
     def get_workflow_state(self, issue_number: str) -> str | None:
         """Read workflow state from workflow backend via workflow plugin."""
         from config import NEXUS_CORE_STORAGE_DIR, NEXUS_STORAGE_DSN, NEXUS_WORKFLOW_BACKEND
-        from orchestration.plugin_runtime import get_workflow_state_plugin
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         workflow_id = get_workflow_state().get_workflow_id(str(issue_number))
         normalized = ""
@@ -723,7 +723,7 @@ class NexusAgentRuntime(AgentRuntime):
             None when status cannot be determined.
         """
         try:
-            from orchestration.nexus_core_helpers import get_git_platform
+            from nexus.core.orchestration.nexus_core_helpers import get_git_platform
         except Exception:
             return None
 
@@ -766,8 +766,8 @@ class NexusAgentRuntime(AgentRuntime):
     def get_expected_running_agent(self, issue_number: str) -> str | None:
         """Return the current RUNNING step agent type from workflow storage."""
         from config import NEXUS_CORE_STORAGE_DIR, NEXUS_STORAGE_DSN, NEXUS_WORKFLOW_BACKEND
-        from orchestration.plugin_runtime import get_workflow_state_plugin
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         workflow_id = get_workflow_state().get_workflow_id(str(issue_number))
         if workflow_id:
@@ -864,7 +864,7 @@ class NexusAgentRuntime(AgentRuntime):
         import json
 
         from config import NEXUS_CORE_STORAGE_DIR
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         workflow_id = get_workflow_state().get_workflow_id(str(issue_number))
         if not workflow_id:
@@ -932,7 +932,7 @@ class NexusAgentRuntime(AgentRuntime):
     def is_process_running(self, issue_number: str) -> bool:
         """Return True if an agent process is still active for this issue."""
         try:
-            from orchestration.plugin_runtime import get_runtime_ops_plugin
+            from nexus.core.orchestration.plugin_runtime import get_runtime_ops_plugin
 
             ops = get_runtime_ops_plugin(cache_key="runtime-ops:inbox")
             if ops:
@@ -944,7 +944,7 @@ class NexusAgentRuntime(AgentRuntime):
         # Fallback: rely on persisted launch PID when command-line pattern
         # matching is insufficient (e.g., wrapped CLIs or prompt-only context).
         try:
-            from state_manager import HostStateManager
+            from nexus.core.state_manager import HostStateManager
 
             launched = HostStateManager.load_launched_agents(recent_only=False) or {}
             entry = launched.get(str(issue_number), {})
@@ -966,7 +966,7 @@ class NexusAgentRuntime(AgentRuntime):
         log_file: str,
         timeout_seconds: int | None = None,
     ) -> tuple[bool, int | None]:
-        from runtime.agent_monitor import AgentMonitor
+        from nexus.core.runtime.agent_monitor import AgentMonitor
 
         resolved_timeout = timeout_seconds or self.get_agent_timeout_seconds(issue_number)
         return AgentMonitor.check_timeout(
@@ -977,7 +977,7 @@ class NexusAgentRuntime(AgentRuntime):
 
     def kill_process(self, pid: int) -> bool:
         """Delegate to AgentMonitor.kill_agent for consistent kill + cleanup."""
-        from runtime.agent_monitor import AgentMonitor
+        from nexus.core.runtime.agent_monitor import AgentMonitor
 
         # AgentMonitor.kill_agent expects an issue_num string but uses it only
         # for logging; pass empty string when we don't have it readily.
@@ -994,7 +994,7 @@ class NexusAgentRuntime(AgentRuntime):
             return
 
         try:
-            from integrations.notifications import notify_agent_timeout
+            from nexus.core.integrations.notifications import notify_agent_timeout
 
             notify_agent_timeout(issue_number, agent_type, will_retry, project="nexus")
         except Exception as exc:

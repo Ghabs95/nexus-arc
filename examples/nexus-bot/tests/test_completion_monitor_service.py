@@ -1,4 +1,4 @@
-from services.completion_monitor_service import run_completion_monitor_cycle
+from nexus.core.completion_monitor_service import run_completion_monitor_cycle
 
 
 def test_run_completion_monitor_cycle_invokes_delegate():

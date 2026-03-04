@@ -2,7 +2,7 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-from services.telegram.telegram_hands_free_service import handle_hands_free_message
+from nexus.core.telegram.telegram_hands_free_service import handle_hands_free_message
 
 
 class _Msg:

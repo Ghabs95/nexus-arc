@@ -1,4 +1,4 @@
-from runtime.agent_launcher import _completed_agent_from_trigger
+from nexus.core.runtime.agent_launcher import _completed_agent_from_trigger
 
 
 def test_returns_none_for_system_trigger_sources():

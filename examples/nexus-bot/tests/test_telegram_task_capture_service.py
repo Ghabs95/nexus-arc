@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from services.telegram.telegram_task_capture_service import (
+from nexus.core.telegram.telegram_task_capture_service import (
     handle_save_task_selection,
     handle_task_confirmation_callback,
 )

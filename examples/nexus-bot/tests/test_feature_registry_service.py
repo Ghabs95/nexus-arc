@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-import services.feature_registry_service as feature_registry_module
-from services.feature_registry_service import FeatureRegistryService
+import nexus.core.feature_registry_service as feature_registry_module
+from nexus.core.feature_registry_service import FeatureRegistryService
 
 
 def test_upsert_and_list_filesystem_registry(tmp_path):

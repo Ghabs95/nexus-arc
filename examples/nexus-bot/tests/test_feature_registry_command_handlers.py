@@ -1,7 +1,7 @@
 import logging
 
 import pytest
-from handlers.feature_registry_command_handlers import (
+from nexus.core.handlers.feature_registry_command_handlers import (
     FeatureRegistryCommandDeps,
     feature_done_handler,
     feature_forget_handler,

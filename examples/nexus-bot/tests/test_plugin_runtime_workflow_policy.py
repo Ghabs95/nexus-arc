@@ -2,7 +2,7 @@
 
 
 def test_get_workflow_policy_plugin_forwards_find_existing_pr(monkeypatch):
-    from orchestration import plugin_runtime
+    from nexus.core.orchestration import plugin_runtime
 
     captured = {}
 

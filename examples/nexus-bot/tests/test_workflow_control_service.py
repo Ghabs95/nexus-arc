@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from services.workflow import workflow_control_service as svc
+from nexus.core.workflow_runtime import workflow_control_service as svc
 
 
 def test_prepare_continue_context_prefers_recovered_next_agent_over_stale_running_step(

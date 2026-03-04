@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import integrations.inbox_queue as inbox_queue
+import nexus.core.integrations.inbox_queue as inbox_queue
 import pytest
 
 

@@ -3,18 +3,18 @@
 import asyncio
 import logging
 
-from audit_store import AuditStore
+from nexus.core.audit_store import AuditStore
 from config import NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG, TELEGRAM_ALLOWED_USER_IDS
-from integrations.workflow_state_factory import get_workflow_state
-from interactive_context import InteractiveContext
-from orchestration.nexus_core_helpers import get_git_platform
-from orchestration.plugin_runtime import (
+from nexus.core.integrations.workflow_state_factory import get_workflow_state
+from nexus.core.interactive.context import InteractiveContext
+from nexus.core.orchestration.nexus_core_helpers import get_git_platform
+from nexus.core.orchestration.plugin_runtime import (
     get_profiled_plugin,
     get_runtime_ops_plugin,
     get_workflow_state_plugin,
 )
-from project_key_utils import normalize_project_key_str as _normalize_project_key
-from state_manager import HostStateManager
+from nexus.core.project.key_utils import normalize_project_key_str as _normalize_project_key
+from nexus.core.state_manager import HostStateManager
 
 logger = logging.getLogger(__name__)
 

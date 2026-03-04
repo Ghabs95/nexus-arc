@@ -1,4 +1,4 @@
-from services.mermaid_render_service import build_mermaid_diagram
+from nexus.core.mermaid_render_service import build_mermaid_diagram
 
 
 def test_build_mermaid_diagram_basic():

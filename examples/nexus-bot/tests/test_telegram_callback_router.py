@@ -1,6 +1,6 @@
 import pytest
 
-from orchestration.telegram.telegram_callback_router import (
+from nexus.core.orchestration.telegram.telegram_callback_router import (
     call_core_callback_handler,
     call_core_chat_handler,
 )

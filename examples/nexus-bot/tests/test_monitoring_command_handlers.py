@@ -2,7 +2,7 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-from handlers.monitoring_command_handlers import fuse_handler, tailstop_handler
+from nexus.core.handlers.monitoring_command_handlers import fuse_handler, tailstop_handler
 
 
 class _Ctx:

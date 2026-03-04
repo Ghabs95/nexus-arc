@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from services.workflow.workflow_recovery_service import (
+from nexus.core.workflow_runtime.workflow_recovery_service import (
     recover_orphaned_running_agents,
     run_stuck_agents_cycle,
 )

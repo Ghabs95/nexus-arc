@@ -10,15 +10,15 @@ from typing import Any, Optional
 from urllib.parse import quote_plus
 
 import requests
-from config import (
+from nexus.core.config import (
     NEXUS_RUNTIME_DIR,
     PROJECT_CONFIG,
     get_project_platform,
     get_repo,
     normalize_project_key,
 )
-from services.credential_crypto import decrypt_secret, encrypt_secret
-from services.credential_store import (
+from nexus.core.auth.credential_crypto import decrypt_secret, encrypt_secret
+from nexus.core.auth.credential_store import (
     CredentialRecord,
     get_user_credentials,
     get_user_project_access,
@@ -809,6 +809,88 @@ def check_repo_access(
     if gl_ok:
         return True, ""
     return False, gh_err or gl_err or "Repository access check failed."
+
+
+def resolve_project_polling_git_token(project_key: str) -> tuple[str | None, str | None]:
+    """Return a git token for polling from a user authorized on the given project.
+
+    Returns:
+    - (token, nexus_id) when a usable token is found
+    - (None, None) when no eligible user token is available
+    """
+    if not auth_enabled():
+        return None, None
+
+    normalized = str(normalize_project_key(project_key) or project_key).strip().lower()
+    if not normalized:
+        return None, None
+
+    try:
+        platform = str(get_project_platform(normalized) or "").strip().lower()
+    except Exception:
+        platform = ""
+    if platform not in {"github", "gitlab"}:
+        return None, None
+
+    try:
+        repo_name = str(get_repo(normalized) or "").strip()
+    except Exception:
+        repo_name = ""
+
+    try:
+        credentials = list_credentials_for_sync(limit=1000)
+    except Exception as exc:
+        logger.warning("Could not enumerate credentials for project polling token: %s", exc)
+        return None, None
+
+    for record in credentials:
+        try:
+            nexus_id = str(record.nexus_id or "").strip()
+            if not nexus_id:
+                continue
+            if not has_user_project_access(nexus_id, normalized):
+                continue
+            if not bool(record.org_verified):
+                continue
+
+            if platform == "gitlab":
+                if not record.gitlab_token_enc:
+                    continue
+                token, token_err = _resolve_gitlab_access_token(record)
+                if not token:
+                    if token_err:
+                        logger.debug(
+                            "Skipping nexus_id=%s for project %s (gitlab token issue): %s",
+                            nexus_id,
+                            normalized,
+                            token_err,
+                        )
+                    continue
+                if repo_name:
+                    try:
+                        if not token_has_gitlab_repo_access(token, repo_name):
+                            continue
+                    except Exception:
+                        continue
+                return token, nexus_id
+
+            if not record.github_token_enc:
+                continue
+            try:
+                token = decrypt_secret(record.github_token_enc)
+            except Exception:
+                continue
+            if repo_name:
+                try:
+                    if not token_has_github_repo_access(token, repo_name):
+                        continue
+                except Exception:
+                    continue
+            return token, nexus_id
+        except Exception:
+            continue
+
+    return None, None
 
 
 def build_execution_env(nexus_id: str) -> tuple[dict[str, str], str | None]:

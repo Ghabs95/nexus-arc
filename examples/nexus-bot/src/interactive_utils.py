@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from interactive_context import InteractiveContext
+from nexus.core.interactive.context import InteractiveContext
 from nexus.adapters.notifications.base import InteractiveAction
 
 
