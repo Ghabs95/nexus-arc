@@ -4,10 +4,25 @@ import asyncio
 import logging
 import os
 
-from integrations.notifications import emit_alert
-from orchestration.nexus_core_helpers import get_git_platform
-
 logger = logging.getLogger(__name__)
+
+
+def emit_alert(*args, **kwargs):
+    """Proxy host alert emitter."""
+    try:
+        from integrations.notifications import emit_alert as _host_emit_alert
+    except Exception:
+        return None
+    return _host_emit_alert(*args, **kwargs)
+
+
+def get_git_platform(repo_key: str, *, project_name: str):
+    """Resolve provider adapter from host orchestration helper."""
+    try:
+        from orchestration.nexus_core_helpers import get_git_platform as _host_get_git_platform
+    except Exception as exc:
+        raise RuntimeError("Host get_git_platform is not available") from exc
+    return _host_get_git_platform(repo_key, project_name=project_name)
 
 
 def verify_workflow_terminal_before_finalize(

@@ -1,4 +1,4 @@
-from services.processor_runtime_state import ProcessorRuntimeState
+from nexus.core.processor_runtime_state import ProcessorRuntimeState
 
 
 def test_processor_runtime_state_defaults_are_isolated():

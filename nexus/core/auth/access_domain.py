@@ -637,9 +637,10 @@ def get_setup_status(nexus_id: str) -> dict[str, Any]:
     codex_key_set = bool(record and record.codex_api_key_enc)
     gemini_key_set = bool(record and record.gemini_api_key_enc)
     claude_key_set = bool(record and record.claude_api_key_enc)
+    copilot_token_set = bool(record and record.copilot_github_token_enc)
     ai_provider_key_set = bool(codex_key_set or gemini_key_set or claude_key_set)
-    # Copilot is available when a real GitHub OAuth token is linked.
-    copilot_ready = bool(github_linked)
+    # Copilot is available with linked GitHub OAuth or an explicit Copilot GitHub token.
+    copilot_ready = bool(github_linked or copilot_token_set)
     ai_provider_ready = bool(ai_provider_key_set or copilot_ready)
     org_verified = bool(record and record.org_verified)
     projects = sorted({grant.project_key for grant in grants})
@@ -657,6 +658,7 @@ def get_setup_status(nexus_id: str) -> dict[str, Any]:
         "codex_key_set": codex_key_set,
         "gemini_key_set": gemini_key_set,
         "claude_key_set": claude_key_set,
+        "copilot_token_set": copilot_token_set,
         "ai_provider_key_set": ai_provider_key_set,
         "copilot_ready": copilot_ready,
         "ai_provider_ready": ai_provider_ready,
@@ -694,7 +696,7 @@ def has_setup_ready_user_for_project(project_key: str) -> bool:
             ai_provider_key_set = bool(
                 record.codex_api_key_enc or record.gemini_api_key_enc or record.claude_api_key_enc
             )
-            copilot_ready = bool(github_linked)
+            copilot_ready = bool(github_linked or record.copilot_github_token_enc)
             ai_provider_ready = bool(ai_provider_key_set or copilot_ready)
             if git_provider_linked and ai_provider_ready and bool(record.org_verified):
                 return True
@@ -829,6 +831,15 @@ def build_execution_env(nexus_id: str) -> tuple[dict[str, str], str | None]:
         if not gitlab_token:
             return {}, gitlab_err or "Stored GitLab token could not be decrypted."
         env["GITLAB_TOKEN"] = gitlab_token
+
+    if record.copilot_github_token_enc:
+        try:
+            copilot_token = decrypt_secret(record.copilot_github_token_enc)
+            env["COPILOT_GITHUB_TOKEN"] = copilot_token
+            if "GITHUB_TOKEN" not in env and "GITLAB_TOKEN" not in env:
+                env["GITHUB_TOKEN"] = copilot_token
+        except Exception:
+            return {}, "Stored Copilot Token could not be decrypted."
 
     if "GITLAB_TOKEN" not in env and "GITHUB_TOKEN" in env:
         env["GITLAB_TOKEN"] = env["GITHUB_TOKEN"]

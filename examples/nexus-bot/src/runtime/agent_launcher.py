@@ -34,13 +34,13 @@ from integrations.notifications import notify_agent_completed, emit_alert
 from orchestration.ai_orchestrator import get_orchestrator
 from orchestration.plugin_runtime import get_profiled_plugin
 from services.credential_store import get_issue_requester_by_url
-from services.project_access_service import (
+from nexus.core.auth.access_domain import (
     auth_enabled,
     build_execution_env,
     check_project_access,
     check_repo_access,
 )
-from services.runtime_mode_service import is_postgres_backend
+from nexus.core.runtime_mode import is_postgres_backend
 from state_manager import HostStateManager
 
 from nexus.adapters.git.utils import build_issue_url

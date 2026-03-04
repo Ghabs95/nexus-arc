@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any
 
 import redis
-from config import REDIS_URL, get_chat_agent_types, get_workflow_profile
 
 from nexus.core.prompt_budget import apply_prompt_budget
 
@@ -17,9 +16,27 @@ _CHAT_HISTORY_MAX_CHARS = int(os.getenv("AI_CHAT_HISTORY_MAX_CHARS", "4000"))
 _CONTEXT_SUMMARY_MAX_CHARS = int(os.getenv("AI_CONTEXT_SUMMARY_MAX_CHARS", "1200"))
 
 
+def _redis_url() -> str:
+    from config import REDIS_URL
+
+    return str(REDIS_URL)
+
+
+def _get_chat_agent_types(project_key: str) -> list[str]:
+    from config import get_chat_agent_types
+
+    return list(get_chat_agent_types(project_key) or [])
+
+
+def _get_workflow_profile(project_key: str) -> str:
+    from config import get_workflow_profile
+
+    return str(get_workflow_profile(project_key) or "")
+
+
 def _resolve_project_agent_types(project_key: str | None) -> list[str]:
     try:
-        configured_types = get_chat_agent_types(project_key or "nexus") or []
+        configured_types = _get_chat_agent_types(project_key or "nexus")
     except Exception:
         configured_types = []
     if not isinstance(configured_types, list):
@@ -45,7 +62,7 @@ def _resolve_primary_agent_type(project_key: str | None, allowed_agent_types: li
 
 def _resolve_workflow_profile(project_key: str | None) -> str:
     try:
-        value = get_workflow_profile(project_key or "nexus")
+        value = _get_workflow_profile(project_key or "nexus")
         normalized = str(value).strip()
         if normalized:
             return normalized
@@ -124,10 +141,10 @@ def get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
         try:
-            _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+            _redis_client = redis.from_url(_redis_url(), decode_responses=True)
             _redis_client.ping()
         except redis.ConnectionError as e:
-            logger.error(f"Failed to connect to Redis at {REDIS_URL}: {e}")
+            logger.error(f"Failed to connect to Redis at {_redis_url()}: {e}")
             raise
     return _redis_client
 

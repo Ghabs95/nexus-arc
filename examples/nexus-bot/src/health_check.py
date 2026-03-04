@@ -1,7 +1,7 @@
 """Health check and monitoring endpoint for Nexus services.
 
 Provides HTTP endpoints for monitoring system health, status, and metrics.
-Designed to run alongside nexus-bot and nexus-processor services.
+Designed to run alongside nexus-telegram, nexus-discord, and nexus-processor services.
 """
 
 import logging
@@ -182,14 +182,16 @@ def full_status():
     Comprehensive status check of all Nexus services.
 
     Returns detailed information about:
-    - nexus-bot service status
+    - nexus-telegram service status
+    - nexus-discord service status
     - nexus-processor service status
     - Recent audit activity
     - Disk usage
     - Rate limiter stats
     """
     # Check services
-    bot_status = check_service_status("nexus-bot.service")
+    telegram_status = check_service_status("nexus-telegram.service")
+    discord_status = check_service_status("nexus-discord.service")
     processor_status = check_service_status("nexus-processor.service")
 
     # Get recent activity
@@ -203,13 +205,21 @@ def full_status():
     rate_stats = rate_limiter.get_stats()
 
     # Overall health
-    overall_healthy = bot_status.get("running", False) and processor_status.get("running", False)
+    overall_healthy = (
+        telegram_status.get("running", False)
+        and discord_status.get("running", False)
+        and processor_status.get("running", False)
+    )
 
     return jsonify(
         {
             "overall_status": "healthy" if overall_healthy else "degraded",
             "timestamp": datetime.now().isoformat(),
-            "services": {"nexus-bot": bot_status, "nexus-processor": processor_status},
+            "services": {
+                "nexus-telegram": telegram_status,
+                "nexus-discord": discord_status,
+                "nexus-processor": processor_status,
+            },
             "recent_activity": recent_activity,
             "disk_usage": disk_usage,
             "rate_limiter": rate_stats,
@@ -224,7 +234,8 @@ def metrics():
 
     Returns metrics in a format suitable for scraping by monitoring tools.
     """
-    bot_status = check_service_status("nexus-bot.service")
+    telegram_status = check_service_status("nexus-telegram.service")
+    discord_status = check_service_status("nexus-discord.service")
     processor_status = check_service_status("nexus-processor.service")
     recent_activity = get_recent_audit_activity(hours=1)
     rate_limiter = get_rate_limiter()
@@ -234,7 +245,8 @@ def metrics():
     metrics_lines = [
         "# HELP nexus_service_up Service is running (1 = up, 0 = down)",
         "# TYPE nexus_service_up gauge",
-        f"nexus_service_up{{service=\"bot\"}} {1 if bot_status.get('running') else 0}",
+        f"nexus_service_up{{service=\"telegram\"}} {1 if telegram_status.get('running') else 0}",
+        f"nexus_service_up{{service=\"discord\"}} {1 if discord_status.get('running') else 0}",
         f"nexus_service_up{{service=\"processor\"}} {1 if processor_status.get('running') else 0}",
         "",
         "# HELP nexus_audit_events_total Total audit events in last hour",

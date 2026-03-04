@@ -24,7 +24,7 @@ from config_nexus_paths import (
     get_tasks_logs_dir as _svc_get_tasks_logs_dir,
 )
 from config_paths import load_path_config_from_env
-from config_project_registry import (
+from nexus.core.project.registry import (
     get_project_aliases as _svc_get_project_aliases,
     get_project_registry as _svc_get_project_registry,
     normalize_project_key as _svc_normalize_project_key,

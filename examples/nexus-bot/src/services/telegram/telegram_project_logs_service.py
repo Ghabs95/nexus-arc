@@ -2,7 +2,7 @@ import glob
 import os
 import re
 
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     get_single_project_key as _shared_get_single_project_key,
 )
 

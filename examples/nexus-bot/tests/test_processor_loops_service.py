@@ -1,4 +1,4 @@
-from services.processor_loops_service import run_processor_loop
+from nexus.core.processor_loops import run_processor_loop
 
 
 class _FakeTime:

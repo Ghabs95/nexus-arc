@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from services import auth_session_service as auth_svc
 from services import credential_store as store_svc
-from services import project_access_service as access_svc
+from nexus.core.auth import access_domain as access_svc
+from nexus.core.auth import oauth_onboarding_domain as auth_svc
 
 
 def test_store_ai_provider_keys_accepts_claude_only(monkeypatch):
@@ -23,6 +23,18 @@ def test_store_ai_provider_keys_accepts_claude_only(monkeypatch):
     monkeypatch.setattr(auth_svc, "encrypt_secret", lambda value, key_version=1: f"enc:{value}")
     monkeypatch.setattr(auth_svc, "update_auth_session", lambda **_kwargs: None)
     monkeypatch.setattr(auth_svc, "get_setup_status", lambda _nid: {"ready": True, "project_access_count": 2})
+    monkeypatch.setattr(
+        auth_svc,
+        "get_user_credentials",
+        lambda _nid: SimpleNamespace(
+            codex_api_key_enc=None,
+            gemini_api_key_enc=None,
+            claude_api_key_enc=None,
+            copilot_github_token_enc=None,
+            github_token_enc=None,
+            github_login=None,
+        ),
+    )
 
     def _capture_upsert(**kwargs):
         captured.update(kwargs)
@@ -53,7 +65,14 @@ def test_store_ai_provider_keys_rejects_copilot_without_linked_github(monkeypatc
     monkeypatch.setattr(
         auth_svc,
         "get_user_credentials",
-        lambda _nid: SimpleNamespace(github_token_enc=None, github_login=None),
+        lambda _nid: SimpleNamespace(
+            codex_api_key_enc=None,
+            gemini_api_key_enc=None,
+            claude_api_key_enc=None,
+            copilot_github_token_enc=None,
+            github_token_enc=None,
+            github_login=None,
+        ),
     )
 
     try:
@@ -111,6 +130,7 @@ def test_get_setup_status_counts_claude_key_for_readiness(monkeypatch):
         codex_api_key_enc=None,
         gemini_api_key_enc=None,
         claude_api_key_enc="enc-claude",
+        copilot_github_token_enc=None,
         org_verified=True,
         org_verified_at=datetime.now(tz=UTC),
         last_access_sync_at=datetime.now(tz=UTC),
@@ -151,6 +171,7 @@ def test_build_execution_env_refreshes_expired_gitlab_token_and_injects_claude(m
         codex_api_key_enc=None,
         gemini_api_key_enc=None,
         claude_api_key_enc="enc-claude",
+        copilot_github_token_enc=None,
         org_verified=True,
         org_verified_at=datetime.now(tz=UTC),
         last_access_sync_at=datetime.now(tz=UTC),

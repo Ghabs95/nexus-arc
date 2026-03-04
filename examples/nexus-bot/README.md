@@ -82,7 +82,8 @@ Service files in this folder are pre-pointed to:
 Copy and enable as needed:
 
 ```bash
-sudo cp nexus-bot.service /etc/systemd/system/
+sudo cp nexus-telegram.service /etc/systemd/system/
+sudo cp nexus-discord.service /etc/systemd/system/
 sudo cp nexus-processor.service /etc/systemd/system/
 sudo cp nexus-webhook.service /etc/systemd/system/
 sudo cp nexus-health.service /etc/systemd/system/

@@ -2,7 +2,7 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from services.task_dispatch_service import handle_new_task, handle_webhook_task
+from nexus.core.task_dispatch import handle_new_task, handle_webhook_task
 
 
 def test_handle_webhook_task_reroutes_mismatched_project(tmp_path):

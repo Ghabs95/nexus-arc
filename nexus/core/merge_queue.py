@@ -6,11 +6,6 @@ import os
 import time
 from urllib.parse import urlparse
 
-from config import PROJECT_CONFIG, get_project_platform, get_repo
-from integrations.notifications import emit_alert
-from orchestration.nexus_core_helpers import get_git_platform
-from state_manager import HostStateManager
-
 from nexus.adapters.git.utils import build_issue_url
 
 logger = logging.getLogger(__name__)
@@ -19,19 +14,58 @@ _last_merge_queue_run_at = 0.0
 _MERGE_QUEUE_RUN_INTERVAL = max(30, int(os.getenv("NEXUS_MERGE_QUEUE_INTERVAL_SECONDS", "60")))
 
 
+def _project_config() -> dict:
+    from config import PROJECT_CONFIG
+
+    return PROJECT_CONFIG if isinstance(PROJECT_CONFIG, dict) else {}
+
+
+def _get_project_platform(project_name: str) -> str:
+    from config import get_project_platform
+
+    return str(get_project_platform(project_name) or "").strip().lower()
+
+
+def _get_repo(project_name: str) -> str:
+    from config import get_repo
+
+    return str(get_repo(project_name) or "").strip()
+
+
+def _emit_alert(*args, **kwargs):
+    try:
+        from integrations.notifications import emit_alert
+    except Exception:
+        return None
+    return emit_alert(*args, **kwargs)
+
+
+def _get_git_platform(repo_key: str, *, project_name: str | None):
+    from orchestration.nexus_core_helpers import get_git_platform
+
+    return get_git_platform(repo_key, project_name=project_name)
+
+
+def _state_manager():
+    from state_manager import HostStateManager
+
+    return HostStateManager
+
+
 def _normalize_merge_queue_review_mode(value: str) -> str:
     mode = str(value or "").strip().lower()
     return mode if mode in {"manual", "auto"} else "manual"
 
 
 def _resolve_merge_queue_review_mode(project_name: str) -> str:
-    project_cfg = PROJECT_CONFIG.get(project_name, {}) if project_name else {}
+    project_config = _project_config()
+    project_cfg = project_config.get(project_name, {}) if project_name else {}
     if isinstance(project_cfg, dict):
         project_merge_queue = project_cfg.get("merge_queue")
         if isinstance(project_merge_queue, dict) and "review_mode" in project_merge_queue:
             return _normalize_merge_queue_review_mode(str(project_merge_queue.get("review_mode")))
 
-    global_merge_queue = PROJECT_CONFIG.get("merge_queue")
+    global_merge_queue = project_config.get("merge_queue")
     if isinstance(global_merge_queue, dict) and "review_mode" in global_merge_queue:
         return _normalize_merge_queue_review_mode(str(global_merge_queue.get("review_mode")))
 
@@ -49,9 +83,11 @@ def enqueue_merge_queue_prs(
     """Persist PRs into merge queue and emit enqueue notification."""
     review_mode = _resolve_merge_queue_review_mode(project_name)
     queued: list[dict] = []
+    state_manager = _state_manager()
+    project_config = _project_config()
     for pr_url in pr_urls:
         try:
-            item = HostStateManager.enqueue_merge_candidate(
+            item = state_manager.enqueue_merge_candidate(
                 issue_num=str(issue_num),
                 project=str(project_name),
                 repo=str(issue_repo),
@@ -70,11 +106,11 @@ def enqueue_merge_queue_prs(
                 "label": "🔗 Issue",
                 "callback_data": "",
                 "url": build_issue_url(
-                    get_repo(project_name),
+                    _get_repo(project_name),
                     issue_num,
                     (
-                        PROJECT_CONFIG.get(project_name)
-                        if isinstance(PROJECT_CONFIG.get(project_name), dict)
+                        project_config.get(project_name)
+                        if isinstance(project_config.get(project_name), dict)
                         else None
                     ),
                 ),
@@ -103,7 +139,7 @@ def enqueue_merge_queue_prs(
                     "url": "",
                 }
             )
-        emit_alert(
+        _emit_alert(
             (
                 f"📦 Merge queue updated for issue #{issue_num} ({project_name}).\n"
                 f"Queued PRs: {len(queued)}\n"
@@ -169,7 +205,8 @@ def merge_queue_auto_merge_once() -> None:
     _last_merge_queue_run_at = now
 
     try:
-        queue = HostStateManager.load_merge_queue()
+        state_manager = _state_manager()
+        queue = state_manager.load_merge_queue()
     except Exception as exc:
         logger.warning("Could not load merge queue: %s", exc)
         return
@@ -193,7 +230,7 @@ def merge_queue_auto_merge_once() -> None:
         issue_num = str(item.get("issue") or "").strip()
         project_name = str(item.get("project") or "").strip()
         repo_name = str(item.get("repo") or "").strip()
-        platform_type = str(get_project_platform(project_name) or "github").strip().lower()
+        platform_type = str(_get_project_platform(project_name) or "github").strip().lower()
         pr_number: str | None = None
 
         if platform_type == "gitlab":
@@ -210,18 +247,18 @@ def merge_queue_auto_merge_once() -> None:
                     repo_name = parsed_repo
 
         if not pr_number:
-            HostStateManager.update_merge_candidate(
+            state_manager.update_merge_candidate(
                 pr_url,
                 status="blocked",
                 last_error="unsupported_pr_url",
             )
             continue
 
-        HostStateManager.update_merge_candidate(pr_url, status="merging", last_error="")
+        state_manager.update_merge_candidate(pr_url, status="merging", last_error="")
         try:
             if not repo_name:
                 raise RuntimeError("missing_repo")
-            platform = get_git_platform(repo_name, project_name=project_name or None)
+            platform = _get_git_platform(repo_name, project_name=project_name or None)
             merge_output = asyncio.run(
                 platform.merge_pull_request(
                     pr_number,
@@ -250,13 +287,13 @@ def merge_queue_auto_merge_once() -> None:
                 )
                 else "failed"
             )
-            HostStateManager.update_merge_candidate(
+            state_manager.update_merge_candidate(
                 pr_url,
                 status=status,
                 last_error=error_text or "merge_error",
                 merge_command=f"{platform_type}:merge_pull_request {pr_number}",
             )
-            emit_alert(
+            _emit_alert(
                 (
                     f"⚠️ Merge queue could not merge PR for issue #{issue_num}: {pr_url}\n"
                     f"Status: {status}\n"
@@ -269,7 +306,7 @@ def merge_queue_auto_merge_once() -> None:
             )
             continue
 
-        HostStateManager.update_merge_candidate(
+        state_manager.update_merge_candidate(
             pr_url,
             status="merged",
             last_error="",
@@ -278,7 +315,7 @@ def merge_queue_auto_merge_once() -> None:
             merge_command=f"{platform_type}:merge_pull_request {pr_number}",
             merge_result=(merge_output or "")[:500],
         )
-        emit_alert(
+        _emit_alert(
             f"✅ Merge queue merged PR for issue #{issue_num}: {pr_url}",
             severity="info",
             source="merge_queue",

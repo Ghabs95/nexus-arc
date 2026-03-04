@@ -133,16 +133,16 @@ from services.chat.chat_context_service import chat_context_summary
 from services.git.direct_issue_plugin_service import (
     get_direct_issue_plugin as _svc_get_direct_issue_plugin,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     get_project_label as _svc_get_project_label,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     get_project_workspace as _svc_get_project_workspace,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     get_single_project_key as _svc_get_single_project_key,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     iter_project_keys as _svc_iter_project_keys,
 )
 from services.telegram.telegram_handler_deps_service import (
@@ -169,17 +169,17 @@ from services.discord.discord_bridge_deps_service import (
 from services.discord.discord_bridge_deps_service import (
     workflow_bridge_deps as _svc_workflow_bridge_deps,
 )
-from services.auth_session_service import create_login_session_for_user
-from services.project_access_service import (
+from nexus.core.auth import create_login_session_for_user
+from nexus.core.auth import (
     check_project_access as _svc_check_project_access,
 )
-from services.project_access_service import (
+from nexus.core.auth import (
     get_setup_status as _svc_get_setup_status,
 )
-from services.project_access_service import (
+from nexus.core.auth import (
     has_project_access as _svc_has_project_access,
 )
-from services.memory_service import (
+from nexus.core.memory import (
     append_message,
     create_chat,
     delete_chat,
@@ -1678,7 +1678,7 @@ async def login_command(
     await interaction.response.send_message(
         (
             "🔐 Setup required before task execution.\n\n"
-            f"1. Open: {login_url}\n"
+            f"1. Open: <{login_url}>\n"
             f"2. Sign in with {selected_provider.title()}\n"
             "3. Add Codex/OpenAI, Gemini, and/or Claude key, or use Copilot with linked GitHub OAuth\n"
             "4. Run `/setup-status`"
@@ -1716,7 +1716,7 @@ async def setup_status_command(interaction: discord.Interaction):
         f"- Codex key set: {'✅' if status.get('codex_key_set') else '❌'}",
         f"- Gemini key set: {'✅' if status.get('gemini_key_set') else '❌'}",
         f"- Claude key set: {'✅' if status.get('claude_key_set') else '❌'}",
-        f"- Copilot ready (GitHub linked): {'✅' if status.get('copilot_ready') else '❌'}",
+        f"- Copilot ready (GitHub OAuth or Copilot Token): {'✅' if status.get('copilot_ready') else '❌'}",
         f"- Org verified: {'✅' if status.get('org_verified') else '❌'}",
         f"- Project access: `{int(status.get('project_access_count') or 0)}`",
         f"- Projects: {projects_line}",
@@ -1726,11 +1726,6 @@ async def setup_status_command(interaction: discord.Interaction):
         lines.append("")
         lines.append("Run `/login` to complete any missing steps.")
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
-
-
-@bot.tree.command(name="setup_status", description="Alias for /setup-status")
-async def setup_status_alias_command(interaction: discord.Interaction):
-    await setup_status_command(interaction)
 
 
 @bot.tree.command(name="whoami", description="Show your Discord/Nexus identity mapping")
@@ -2891,9 +2886,9 @@ async def on_ready():
 
 @bot.event
 async def setup_hook():
-    # Sync slash commands during setup properly.
-    # We sync both guild and global command trees so onboarding/read-only commands
-    # remain discoverable even when guild scoping changes.
+    # Sync slash commands during setup.
+    # If a guild is configured, keep commands guild-scoped to avoid duplicate
+    # command listings from having both global + guild registrations.
     if DISCORD_GUILD_ID:
         guild = discord.Object(id=DISCORD_GUILD_ID)
         bot.tree.copy_global_to(guild=guild)
@@ -2903,8 +2898,9 @@ async def setup_hook():
             len(guild_synced),
             DISCORD_GUILD_ID,
         )
-        global_synced = await bot.tree.sync()
-        logger.info("Synced %s slash commands globally", len(global_synced))
+        bot.tree.clear_commands(guild=None)
+        cleared_global = await bot.tree.sync()
+        logger.info("Cleared global slash commands (remaining count=%s)", len(cleared_global))
         return
 
     global_synced = await bot.tree.sync()

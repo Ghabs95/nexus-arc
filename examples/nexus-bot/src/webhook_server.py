@@ -72,37 +72,34 @@ from orchestration.plugin_runtime import (
 )
 from orchestration.nexus_core_helpers import get_workflow_definition_path
 from runtime.agent_launcher import launch_next_agent
-from services.webhook_issue_service import handle_issue_opened_event as _handle_issue_opened_event
-from services.webhook_comment_service import (
+from nexus.core.webhook.issue_service import handle_issue_opened_event as _handle_issue_opened_event
+from nexus.core.webhook.comment_service import (
     handle_issue_comment_event as _handle_issue_comment_event,
 )
-from services.webhook_pr_service import handle_pull_request_event as _handle_pull_request_event
-from services.webhook_pr_review_service import (
+from nexus.core.webhook.pr_service import handle_pull_request_event as _handle_pull_request_event
+from nexus.core.webhook.pr_review_service import (
     handle_pull_request_review_event as _handle_pull_request_review_event,
 )
-from services.webhook_http_service import process_webhook_request as _process_webhook_request
-from services.auth_session_service import (
+from nexus.core.webhook.http_service import process_webhook_request as _process_webhook_request
+from nexus.core.auth import (
     complete_github_oauth as _svc_complete_github_oauth,
 )
-from services.auth_session_service import (
+from nexus.core.auth import (
     complete_gitlab_oauth as _svc_complete_gitlab_oauth,
 )
-from services.auth_session_service import (
+from nexus.core.auth import (
     get_session_and_setup_status as _svc_get_session_and_setup_status,
 )
-from services.auth_session_service import (
-    start_oauth_flow as _svc_start_oauth_flow,
-)
-from services.auth_session_service import (
-    store_ai_provider_keys as _svc_store_ai_provider_keys,
-)
-from services.auth_session_service import (
-    store_codex_api_key as _svc_store_codex_api_key,
-)
-from services.project_access_service import (
+from nexus.core.auth import (
     refresh_stale_access_grants as _svc_refresh_stale_access_grants,
 )
-from services.runtime_mode_service import is_issue_process_running
+from nexus.core.auth import (
+    start_oauth_flow as _svc_start_oauth_flow,
+)
+from nexus.core.auth import (
+    store_ai_provider_keys as _svc_store_ai_provider_keys,
+)
+from nexus.core.runtime_mode import is_issue_process_running
 
 # Configure logging
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -446,8 +443,15 @@ def _render_auth_message(title: str, body: str, *, status_code: int = 200):
       main {{ max-width: 720px; margin: 0 auto; }}
       .card {{ border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.2rem; background: #f8fafc; }}
       code {{ background: #e2e8f0; padding: 0.1rem 0.3rem; border-radius: 4px; }}
-      input[type=text] {{ width: 100%; padding: 0.6rem; border-radius: 8px; border: 1px solid #94a3b8; }}
-      button {{ margin-top: 0.8rem; background: #0f766e; color: white; border: none; padding: 0.7rem 1rem; border-radius: 8px; cursor: pointer; }}
+      input[type=text], input[type=password] {{ width: 100%; padding: 0.6rem; border-radius: 8px; border: 1px solid #94a3b8; box-sizing: border-box; }}
+      .field-row {{ display: grid; grid-template-columns: 1fr 110px; gap: 0.6rem; align-items: center; }}
+      .field-action-spacer {{ visibility: hidden; }}
+      button {{ background: #0f766e; color: white; border: none; padding: 0.7rem 1rem; border-radius: 8px; cursor: pointer; }}
+      .inline-reset {{ margin-top: 0; width: 100%; }}
+      .form-submit {{ margin-top: 0.8rem; }}
+      @media (max-width: 720px) {{
+        .field-row {{ grid-template-columns: 1fr; }}
+      }}
       small {{ color: #475569; }}
     </style>
   </head>
@@ -459,6 +463,134 @@ def _render_auth_message(title: str, body: str, *, status_code: int = 200):
   </body>
 </html>"""
     return html, status_code, {"Content-Type": "text/html; charset=utf-8"}
+
+
+def _render_ai_key_form(
+    *,
+    session_id: str,
+    copilot_checked: bool,
+    show_copilot_option: bool,
+    copilot_token_set: bool,
+    codex_key_set: bool,
+    gemini_key_set: bool,
+    claude_key_set: bool,
+    existing_keys_note: str,
+) -> str:
+    checked_attr = " checked" if copilot_checked else ""
+    codex_field = """
+  <label for="codex_api_key"><strong>Codex/OpenAI API Key (optional)</strong></label>
+  <div class="field-row">
+    <input id="codex_api_key" name="codex_api_key" type="password" placeholder="sk-..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
+    <button type="button" class="field-action-spacer" disabled>Reset</button>
+  </div>
+""" if not codex_key_set else """
+  <label><strong>Codex/OpenAI API Key (optional)</strong></label>
+  <div id="codex_api_key_saved" class="field-row">
+    <input type="text" value="********" disabled />
+    <button type="button" class="inline-reset" onclick="enableProviderField('codex_api_key')">Reset</button>
+  </div>
+  <div id="codex_api_key_editor" style="display:none;">
+    <div class="field-row">
+      <input id="codex_api_key" name="codex_api_key" type="password" placeholder="Leave empty to clear, or paste new key" autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" disabled />
+      <button type="button" class="field-action-spacer" disabled>Reset</button>
+    </div>
+    <small>Leave empty and save to clear this key.</small>
+  </div>
+"""
+    gemini_field = """
+  <label for="gemini_api_key"><strong>Gemini API Key (optional)</strong></label>
+  <div class="field-row">
+    <input id="gemini_api_key" name="gemini_api_key" type="password" placeholder="AIza..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
+    <button type="button" class="field-action-spacer" disabled>Reset</button>
+  </div>
+""" if not gemini_key_set else """
+  <label><strong>Gemini API Key (optional)</strong></label>
+  <div id="gemini_api_key_saved" class="field-row">
+    <input type="text" value="********" disabled />
+    <button type="button" class="inline-reset" onclick="enableProviderField('gemini_api_key')">Reset</button>
+  </div>
+  <div id="gemini_api_key_editor" style="display:none;">
+    <div class="field-row">
+      <input id="gemini_api_key" name="gemini_api_key" type="password" placeholder="Leave empty to clear, or paste new key" autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" disabled />
+      <button type="button" class="field-action-spacer" disabled>Reset</button>
+    </div>
+    <small>Leave empty and save to clear this key.</small>
+  </div>
+"""
+    claude_field = """
+  <label for="claude_api_key"><strong>Claude API Key (optional)</strong></label>
+  <div class="field-row">
+    <input id="claude_api_key" name="claude_api_key" type="password" placeholder="sk-ant-..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
+    <button type="button" class="field-action-spacer" disabled>Reset</button>
+  </div>
+""" if not claude_key_set else """
+  <label><strong>Claude API Key (optional)</strong></label>
+  <div id="claude_api_key_saved" class="field-row">
+    <input type="text" value="********" disabled />
+    <button type="button" class="inline-reset" onclick="enableProviderField('claude_api_key')">Reset</button>
+  </div>
+  <div id="claude_api_key_editor" style="display:none;">
+    <div class="field-row">
+      <input id="claude_api_key" name="claude_api_key" type="password" placeholder="Leave empty to clear, or paste new key" autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" disabled />
+      <button type="button" class="field-action-spacer" disabled>Reset</button>
+    </div>
+    <small>Leave empty and save to clear this key.</small>
+  </div>
+"""
+    copilot_token_field = """
+  <label for="copilot_github_token"><strong>Copilot Token (optional)</strong></label>
+  <div class="field-row">
+    <input id="copilot_github_token" name="copilot_github_token" type="password" placeholder="ghp_..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
+    <button type="button" class="field-action-spacer" disabled>Reset</button>
+  </div>
+""" if not copilot_token_set else """
+  <label><strong>Copilot Token (optional)</strong></label>
+  <div id="copilot_github_token_saved" class="field-row">
+    <input type="text" value="********" disabled />
+    <button type="button" class="inline-reset" onclick="enableProviderField('copilot_github_token')">Reset</button>
+  </div>
+  <div id="copilot_github_token_editor" style="display:none;">
+    <div class="field-row">
+      <input id="copilot_github_token" name="copilot_github_token" type="password" placeholder="Leave empty to clear, or paste new token" autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" disabled />
+      <button type="button" class="field-action-spacer" disabled>Reset</button>
+    </div>
+    <small>Leave empty and save to clear this token.</small>
+  </div>
+"""
+    copilot_html = (
+        f"""
+  <label style="display:block; margin-top:0.8rem;">
+    <input type="checkbox" name="use_copilot" value="1"{checked_attr} />
+    Use Copilot with a linked GitHub account (no separate Copilot API key)
+  </label>
+"""
+        if show_copilot_option
+        else ""
+    )
+    return f"""
+<form method="post" action="/auth/ai-keys" autocomplete="off">
+  <input type="hidden" name="session_id" value="{session_id}" />
+  {codex_field}
+  {gemini_field}
+  {claude_field}
+  {copilot_token_field}
+  {copilot_html}
+  <button type="submit" class="form-submit">Save Keys</button>
+  <p><small>{existing_keys_note}</small></p>
+</form>
+<script>
+function enableProviderField(fieldName) {{
+  var saved = document.getElementById(fieldName + "_saved");
+  var editor = document.getElementById(fieldName + "_editor");
+  if (saved) saved.style.display = "none";
+  if (editor) {{
+    editor.style.display = "block";
+    var input = editor.querySelector('input[name="' + fieldName + '"]');
+    if (input) input.disabled = false;
+  }}
+}}
+</script>
+"""
 
 
 @app.route("/auth/start", methods=["GET"])
@@ -506,25 +638,34 @@ def auth_github_callback():
     session_id = str(result.get("session_id") or "").strip()
     grants_count = int(result.get("grants_count") or 0)
     github_login = str(result.get("github_login") or "").strip()
+    setup_payload = _svc_get_session_and_setup_status(session_id)
+    setup = setup_payload.get("setup") if isinstance(setup_payload, dict) else {}
+    has_existing_keys = bool(
+        isinstance(setup, dict)
+        and (setup.get("codex_key_set") or setup.get("gemini_key_set") or setup.get("claude_key_set"))
+    )
     form_body = f"""
 <p>GitHub login linked successfully as <strong>{github_login or "unknown"}</strong>.</p>
 <p>Project grants resolved: <strong>{grants_count}</strong>.</p>
-<form method="post" action="/auth/ai-keys">
-  <input type="hidden" name="session_id" value="{session_id}" />
-  <label for="codex_api_key"><strong>Codex/OpenAI API Key</strong></label>
-  <input id="codex_api_key" name="codex_api_key" type="text" placeholder="sk-..." />
-  <label for="gemini_api_key"><strong>Gemini API Key (optional)</strong></label>
-  <input id="gemini_api_key" name="gemini_api_key" type="text" placeholder="AIza..." />
-  <label for="claude_api_key"><strong>Claude API Key (optional)</strong></label>
-  <input id="claude_api_key" name="claude_api_key" type="text" placeholder="sk-ant-..." />
-  <label style="display:block; margin-top:0.8rem;">
-    <input type="checkbox" name="use_copilot" value="1" checked />
-    Use Copilot with this GitHub account (no extra key)
-  </label>
-  <button type="submit">Save Keys</button>
-  <p><small>Add at least one key (Codex/Gemini/Claude), or keep Copilot enabled. Keys are encrypted at rest and used only for your own task execution.</small></p>
-</form>
-"""
+    """ + _render_ai_key_form(
+        session_id=session_id,
+        copilot_checked=True,
+        show_copilot_option=True,
+        copilot_token_set=bool(isinstance(setup, dict) and setup.get("copilot_token_set")),
+        codex_key_set=bool(isinstance(setup, dict) and setup.get("codex_key_set")),
+        gemini_key_set=bool(isinstance(setup, dict) and setup.get("gemini_key_set")),
+        claude_key_set=bool(isinstance(setup, dict) and setup.get("claude_key_set")),
+        existing_keys_note=(
+            "All fields are optional. Leave fields blank to keep previously saved values unchanged. "
+            + (
+                "Existing provider keys are already saved for this account. "
+                if has_existing_keys
+                else ""
+            )
+            + "Use Reset to clear a saved value. If all provider credentials are cleared, setup may show as not ready until one is added again. "
+            + "Keys/tokens are encrypted at rest and used only for your own task execution."
+        ),
+    )
     return _render_auth_message("Complete Setup", form_body, status_code=200)
 
 
@@ -552,63 +693,36 @@ def auth_gitlab_callback():
     session_id = str(result.get("session_id") or "").strip()
     grants_count = int(result.get("grants_count") or 0)
     gitlab_username = str(result.get("gitlab_username") or "").strip()
+    setup_payload = _svc_get_session_and_setup_status(session_id)
+    setup = setup_payload.get("setup") if isinstance(setup_payload, dict) else {}
+    has_existing_keys = bool(
+        isinstance(setup, dict)
+        and (setup.get("codex_key_set") or setup.get("gemini_key_set") or setup.get("claude_key_set"))
+    )
+    copilot_ready = bool(isinstance(setup, dict) and setup.get("copilot_ready"))
     form_body = f"""
 <p>GitLab account linked successfully as <strong>{gitlab_username or "unknown"}</strong>.</p>
 <p>Project grants resolved: <strong>{grants_count}</strong>.</p>
-<form method="post" action="/auth/ai-keys">
-  <input type="hidden" name="session_id" value="{session_id}" />
-  <label for="codex_api_key"><strong>Codex/OpenAI API Key</strong></label>
-  <input id="codex_api_key" name="codex_api_key" type="text" placeholder="sk-..." />
-  <label for="gemini_api_key"><strong>Gemini API Key (optional)</strong></label>
-  <input id="gemini_api_key" name="gemini_api_key" type="text" placeholder="AIza..." />
-  <label for="claude_api_key"><strong>Claude API Key (optional)</strong></label>
-  <input id="claude_api_key" name="claude_api_key" type="text" placeholder="sk-ant-..." />
-  <label style="display:block; margin-top:0.8rem;">
-    <input type="checkbox" name="use_copilot" value="1" />
-    Use Copilot with a linked GitHub account (optional)
-  </label>
-  <button type="submit">Save Keys</button>
-  <p><small>Add at least one key (Codex/Gemini/Claude), or enable Copilot if your GitHub account is linked. Keys are encrypted at rest and used only for your own task execution.</small></p>
-</form>
-"""
+    """ + _render_ai_key_form(
+        session_id=session_id,
+        copilot_checked=copilot_ready,
+        show_copilot_option=False,
+        copilot_token_set=bool(isinstance(setup, dict) and setup.get("copilot_token_set")),
+        codex_key_set=bool(isinstance(setup, dict) and setup.get("codex_key_set")),
+        gemini_key_set=bool(isinstance(setup, dict) and setup.get("gemini_key_set")),
+        claude_key_set=bool(isinstance(setup, dict) and setup.get("claude_key_set")),
+        existing_keys_note=(
+            "All fields are optional. Leave fields blank to keep previously saved values unchanged. "
+            + (
+                "Existing provider keys are already saved for this account. "
+                if has_existing_keys
+                else ""
+            )
+            + "Use Reset to clear a saved value. If all provider credentials are cleared, setup may show as not ready until one is added again. "
+            + "Keys/tokens are encrypted at rest and used only for your own task execution."
+        ),
+    )
     return _render_auth_message("Complete Setup", form_body, status_code=200)
-
-
-@app.route("/auth/codex-key", methods=["POST"])
-def auth_codex_key():
-    if not NEXUS_AUTH_ENABLED:
-        return _render_auth_message(
-            "Auth Disabled",
-            "Auth onboarding is disabled in this environment.",
-            status_code=404,
-        )
-    payload = request.get_json(silent=True) if request.is_json else {}
-    payload = payload if isinstance(payload, dict) else {}
-    session_id = str(request.form.get("session_id") or payload.get("session_id") or "").strip()
-    api_key = str(request.form.get("api_key") or payload.get("api_key") or "").strip()
-    if not session_id or not api_key:
-        return _render_auth_message(
-            "Invalid Request",
-            "Both <code>session_id</code> and <code>api_key</code> are required.",
-            status_code=400,
-        )
-    try:
-        result = _svc_store_codex_api_key(session_id=session_id, api_key=api_key)
-    except Exception as exc:
-        return _render_auth_message("Credential Error", f"{exc}", status_code=400)
-
-    ready = bool(result.get("ready"))
-    grants = int(result.get("project_access_count") or 0)
-    body = (
-        "<p>✅ Setup completed successfully.</p>"
-        if ready
-        else "<p>⚠️ Credentials saved, but setup is not fully ready yet.</p>"
-    )
-    body += (
-        f"<p>Project access count: <strong>{grants}</strong>.</p>"
-        "<p>Go back to Discord or Telegram and run <code>/setup-status</code> or <code>/setup_status</code>.</p>"
-    )
-    return _render_auth_message("Setup Complete", body, status_code=200)
 
 
 @app.route("/auth/ai-keys", methods=["POST"])
@@ -629,6 +743,9 @@ def auth_ai_keys():
     claude_api_key = str(
         request.form.get("claude_api_key") or payload.get("claude_api_key") or ""
     ).strip()
+    copilot_github_token = str(
+        request.form.get("copilot_github_token") or payload.get("copilot_github_token") or ""
+    ).strip()
     raw_use_copilot = request.form.get("use_copilot")
     if raw_use_copilot is None:
         raw_use_copilot = payload.get("use_copilot")
@@ -637,6 +754,18 @@ def auth_ai_keys():
         use_copilot = raw_use_copilot
     elif raw_use_copilot is not None:
         use_copilot = str(raw_use_copilot).strip().lower() in {"1", "true", "yes", "on"}
+    codex_supplied = ("codex_api_key" in request.form) or (
+        isinstance(payload, dict) and "codex_api_key" in payload
+    )
+    gemini_supplied = ("gemini_api_key" in request.form) or (
+        isinstance(payload, dict) and "gemini_api_key" in payload
+    )
+    claude_supplied = ("claude_api_key" in request.form) or (
+        isinstance(payload, dict) and "claude_api_key" in payload
+    )
+    copilot_token_supplied = ("copilot_github_token" in request.form) or (
+        isinstance(payload, dict) and "copilot_github_token" in payload
+    )
     if not session_id:
         return _render_auth_message(
             "Invalid Request",
@@ -646,9 +775,10 @@ def auth_ai_keys():
     try:
         result = _svc_store_ai_provider_keys(
             session_id=session_id,
-            codex_api_key=codex_api_key or None,
-            gemini_api_key=gemini_api_key or None,
-            claude_api_key=claude_api_key or None,
+            codex_api_key=(codex_api_key if codex_supplied else None),
+            gemini_api_key=(gemini_api_key if gemini_supplied else None),
+            claude_api_key=(claude_api_key if claude_supplied else None),
+            copilot_github_token=(copilot_github_token if copilot_token_supplied else None),
             allow_copilot=use_copilot,
         )
     except Exception as exc:
@@ -663,7 +793,8 @@ def auth_ai_keys():
     )
     body += (
         f"<p>Project access count: <strong>{grants}</strong>.</p>"
-        "<p>Go back to Discord or Telegram and run <code>/setup-status</code> or <code>/setup_status</code>.</p>"
+        "<p>Go back to your chat app and run the matching command:"
+        " Discord <code>/setup-status</code>, Telegram <code>/setup_status</code>.</p>"
     )
     return _render_auth_message("Setup Complete", body, status_code=200)
 
@@ -839,7 +970,7 @@ def index():
     return (
         jsonify(
             {
-                "service": "Nexus Nexus Webhook Server",
+                "service": "Nexus Webhook Server",
                 "version": "1.0.0",
                 "endpoints": {
                     "/webhook": "POST - Git webhook events",
@@ -848,7 +979,6 @@ def index():
                     "/auth/start": "GET - Begin OAuth onboarding (GitHub/GitLab)",
                     "/auth/github/callback": "GET - GitHub OAuth callback",
                     "/auth/gitlab/callback": "GET - GitLab OAuth callback",
-                    "/auth/codex-key": "POST - Save user Codex key",
                     "/auth/ai-keys": "POST - Save user AI provider keys",
                     "/auth/result": "GET - Onboarding session status",
                 },
@@ -905,6 +1035,7 @@ def main():
         host="0.0.0.0",
         port=port,
         debug=False,
+        allow_unsafe_werkzeug=True,
     )
 
 

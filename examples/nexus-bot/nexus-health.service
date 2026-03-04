@@ -1,7 +1,7 @@
 [Unit]
 Description=Nexus Health Check Endpoint
-After=network.target nexus-bot.service nexus-processor.service
-Wants=nexus-bot.service nexus-processor.service
+After=network.target nexus-telegram.service nexus-discord.service nexus-processor.service
+Wants=nexus-telegram.service nexus-discord.service nexus-processor.service
 
 [Service]
 Type=simple

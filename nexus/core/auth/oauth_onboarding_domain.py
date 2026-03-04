@@ -21,7 +21,7 @@ from services.credential_store import (
     upsert_github_credentials,
     upsert_gitlab_credentials,
 )
-from services.project_access_service import (
+from nexus.core.auth.access_domain import (
     get_setup_status,
     sync_user_gitlab_project_access,
     sync_user_project_access,
@@ -159,7 +159,18 @@ def _github_exchange_code_for_token(code: str) -> dict[str, Any]:
         timeout=15,
     )
     if response.status_code != 200:
-        raise RuntimeError(f"OAuth exchange failed ({response.status_code})")
+        detail = ""
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                msg = str(payload.get("error_description") or payload.get("error") or "").strip()
+                if msg:
+                    detail = f": {msg}"
+        except Exception:
+            text = str(response.text or "").strip().replace("\n", " ")
+            if text:
+                detail = f": {text[:200]}"
+        raise RuntimeError(f"OAuth exchange failed ({response.status_code}){detail}")
     payload = response.json()
     if not isinstance(payload, dict):
         raise RuntimeError("OAuth exchange returned invalid payload")
@@ -185,7 +196,18 @@ def _gitlab_exchange_code_for_token(code: str) -> dict[str, Any]:
         timeout=15,
     )
     if response.status_code != 200:
-        raise RuntimeError(f"OAuth exchange failed ({response.status_code})")
+        detail = ""
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                msg = str(payload.get("error_description") or payload.get("error") or "").strip()
+                if msg:
+                    detail = f": {msg}"
+        except Exception:
+            text = str(response.text or "").strip().replace("\n", " ")
+            if text:
+                detail = f": {text[:200]}"
+        raise RuntimeError(f"OAuth exchange failed ({response.status_code}){detail}")
     payload = response.json()
     if not isinstance(payload, dict):
         raise RuntimeError("OAuth exchange returned invalid payload")
@@ -470,6 +492,7 @@ def store_ai_provider_keys(
     codex_api_key: str | None = None,
     gemini_api_key: str | None = None,
     claude_api_key: str | None = None,
+    copilot_github_token: str | None = None,
     allow_copilot: bool = False,
 ) -> dict[str, Any]:
     session_record = get_auth_session(str(session_id))
@@ -481,28 +504,43 @@ def store_ai_provider_keys(
     if session_record.status not in {"oauth_done", "completed"}:
         raise ValueError("OAuth step is not complete yet")
 
+    codex_provided = codex_api_key is not None
+    gemini_provided = gemini_api_key is not None
+    claude_provided = claude_api_key is not None
+    copilot_provided = copilot_github_token is not None
     codex_candidate = str(codex_api_key or "").strip()
     gemini_candidate = str(gemini_api_key or "").strip()
     claude_candidate = str(claude_api_key or "").strip()
-    if not codex_candidate and not gemini_candidate and not claude_candidate:
-        if not allow_copilot:
+    copilot_candidate = str(copilot_github_token or "").strip()
+    record = get_user_credentials(session_record.nexus_id)
+    existing_ai_key_set = bool(
+        record
+        and (
+            record.codex_api_key_enc
+            or record.gemini_api_key_enc
+            or record.claude_api_key_enc
+        )
+    )
+    has_github_for_copilot = bool(record and record.github_token_enc and record.github_login)
+    has_stored_copilot_token = bool(record and record.copilot_github_token_enc)
+    if not codex_candidate and not gemini_candidate and not claude_candidate and allow_copilot:
+        copilot_available = bool(
+            has_github_for_copilot or has_stored_copilot_token or (copilot_provided and copilot_candidate)
+        )
+        if not copilot_available:
             raise ValueError(
-                "Provide at least one AI provider key (Codex/OpenAI, Gemini, or Claude), "
-                "or choose Copilot with GitHub OAuth."
-            )
-        record = get_user_credentials(session_record.nexus_id)
-        has_github_for_copilot = bool(record and record.github_token_enc and record.github_login)
-        if not has_github_for_copilot:
-            raise ValueError(
-                "Copilot requires a linked GitHub account. "
-                "Run `/login github` or provide a Codex/OpenAI, Gemini, or Claude key."
+                "Copilot requires a linked GitHub account or Copilot Token. "
+                "Run `/login github`, provide Copilot Token, or disable Copilot."
             )
 
     codex_encrypted: str | None = None
     gemini_encrypted: str | None = None
     claude_encrypted: str | None = None
+    copilot_encrypted: str | None = None
 
-    if codex_candidate:
+    if codex_provided and not codex_candidate:
+        codex_encrypted = ""
+    elif codex_candidate:
         if len(codex_candidate) < 16:
             raise ValueError("Codex API key is too short")
         valid, error_message = _validate_codex_api_key_with_provider(codex_candidate)
@@ -510,7 +548,9 @@ def store_ai_provider_keys(
             raise ValueError(error_message or "Invalid Codex API key")
         codex_encrypted = encrypt_secret(codex_candidate, key_version=_key_version())
 
-    if gemini_candidate:
+    if gemini_provided and not gemini_candidate:
+        gemini_encrypted = ""
+    elif gemini_candidate:
         if len(gemini_candidate) < 16:
             raise ValueError("Gemini API key is too short")
         valid, error_message = _validate_gemini_api_key_with_provider(gemini_candidate)
@@ -518,7 +558,9 @@ def store_ai_provider_keys(
             raise ValueError(error_message or "Invalid Gemini API key")
         gemini_encrypted = encrypt_secret(gemini_candidate, key_version=_key_version())
 
-    if claude_candidate:
+    if claude_provided and not claude_candidate:
+        claude_encrypted = ""
+    elif claude_candidate:
         if len(claude_candidate) < 16:
             raise ValueError("Claude API key is too short")
         valid, error_message = _validate_claude_api_key_with_provider(claude_candidate)
@@ -526,11 +568,19 @@ def store_ai_provider_keys(
             raise ValueError(error_message or "Invalid Claude API key")
         claude_encrypted = encrypt_secret(claude_candidate, key_version=_key_version())
 
+    if copilot_provided and not copilot_candidate:
+        copilot_encrypted = ""
+    elif copilot_candidate:
+        if len(copilot_candidate) < 16:
+            raise ValueError("Copilot Token is too short")
+        copilot_encrypted = encrypt_secret(copilot_candidate, key_version=_key_version())
+
     upsert_ai_provider_keys(
         nexus_id=session_record.nexus_id,
         codex_api_key_enc=codex_encrypted,
         gemini_api_key_enc=gemini_encrypted,
         claude_api_key_enc=claude_encrypted,
+        copilot_github_token_enc=copilot_encrypted,
         key_version=_key_version(),
     )
 
@@ -548,11 +598,6 @@ def store_ai_provider_keys(
         "ready": bool(status.get("ready")),
         "project_access_count": int(status.get("project_access_count") or 0),
     }
-
-
-def store_codex_api_key(*, session_id: str, api_key: str) -> dict[str, Any]:
-    """Backward-compatible wrapper for older clients."""
-    return store_ai_provider_keys(session_id=session_id, codex_api_key=api_key)
 
 
 def get_session_and_setup_status(session_id: str) -> dict[str, Any]:

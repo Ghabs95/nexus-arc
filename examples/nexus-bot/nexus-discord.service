@@ -1,5 +1,5 @@
 [Unit]
-Description=Nexus Inbox Processor
+Description=Nexus Discord Bot
 After=network.target
 
 [Service]
@@ -8,9 +8,9 @@ User=ubuntu
 WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
 EnvironmentFile=/opt/nexus/.env
 Environment="PYTHONUNBUFFERED=1"
-# Include virtualenv and system paths so `gh` and other system binaries are available
+# Include system paths so system binaries (e.g. /usr/bin/gh) are available
 Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python src/inbox_processor.py
+ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python src/discord_bot.py
 Restart=always
 RestartSec=10
 

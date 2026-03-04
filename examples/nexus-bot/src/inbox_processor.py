@@ -77,147 +77,147 @@ from services.completion_monitor_service import (
 )
 from services.credential_store import bind_issue_requester as _bind_issue_requester
 from services.feature_registry_service import FeatureRegistryService
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.inbox.inbox_issue_context_service import (
     find_task_file_for_issue as _svc_find_task_file_for_issue,
 )
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.inbox.inbox_issue_context_service import (
     get_initial_agent_from_workflow as _svc_get_initial_agent_from_workflow,
 )
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.inbox.inbox_issue_context_service import (
     resolve_project_for_issue as _svc_resolve_project_for_issue,
 )
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.inbox.inbox_issue_context_service import (
     resolve_project_from_task_file as _svc_resolve_project_from_task_file,
 )
-from services.inbox.inbox_persistence_service import (
+from nexus.core.inbox.inbox_persistence_service import (
     get_completion_replay_window_seconds as _svc_get_completion_replay_window_seconds,
 )
-from services.inbox.inbox_persistence_service import (
+from nexus.core.inbox.inbox_persistence_service import (
     load_json_state_file as _svc_load_json_state_file,
 )
-from services.inbox.inbox_persistence_service import (
+from nexus.core.inbox.inbox_persistence_service import (
     save_json_state_file as _svc_save_json_state_file,
 )
-from services.inbox.inbox_processor_entry_service import (
+from nexus.core.inbox.inbox_processor_entry_service import (
     drain_postgres_inbox_queue_once as _svc_drain_postgres_inbox_queue_once,
 )
-from services.inbox.inbox_processor_entry_service import (
+from nexus.core.inbox.inbox_processor_entry_service import (
     run_inbox_processor_main as _svc_run_inbox_processor_main,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     extract_repo_from_issue_url as _svc_extract_repo_from_issue_url,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     reroute_webhook_task_to_project as _svc_reroute_webhook_task_to_project,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_git_dir as _svc_resolve_git_dir,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_git_dir_for_repo as _svc_resolve_git_dir_for_repo,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_git_dirs as _svc_resolve_git_dirs,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_project_for_repo as _svc_resolve_project_for_repo,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_project_from_path as _svc_resolve_project_from_path,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_repo_strict as _svc_resolve_repo_strict,
 )
-from services.inbox.inbox_runtime_singletons_service import (
+from nexus.core.inbox.inbox_runtime_singletons_service import (
     get_completion_store as _svc_get_completion_store,
 )
-from services.inbox.inbox_runtime_singletons_service import (
+from nexus.core.inbox.inbox_runtime_singletons_service import (
     get_process_orchestrator as _svc_get_process_orchestrator,
 )
-from services.inbox.inbox_signal_probe_service import (
+from nexus.core.inbox.inbox_signal_probe_service import (
     read_latest_local_completion as _svc_read_latest_local_completion,
 )
-from services.inbox.inbox_signal_probe_service import (
+from nexus.core.inbox.inbox_signal_probe_service import (
     read_latest_structured_comment as _svc_read_latest_structured_comment,
 )
-from services.inbox.inbox_sop_naming_service import (
+from nexus.core.inbox.inbox_sop_naming_service import (
     generate_issue_name_with_ai as _svc_generate_issue_name_with_ai,
     get_sop_tier_for_task as _svc_get_sop_tier_for_task,
     refine_issue_content_with_ai as _svc_refine_issue_content_with_ai,
     render_checklist_from_workflow as _svc_render_checklist_from_workflow,
     render_fallback_checklist as _svc_render_fallback_checklist,
 )
-from services.inbox.inbox_task_processor_service import (
+from nexus.core.inbox.inbox_task_processor_service import (
     process_task_context as _svc_process_task_context,
 )
-from services.inbox.inbox_task_processor_service import (
+from nexus.core.inbox.inbox_task_processor_service import (
     process_task_payload as _svc_process_task_payload,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     cleanup_worktree as _finalize_cleanup_worktree,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     close_issue as _finalize_close_issue,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     create_pr_from_changes as _finalize_create_pr_from_changes,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     finalize_workflow as _svc_finalize_workflow,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     find_existing_pr as _finalize_find_existing_pr,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     verify_workflow_terminal_before_finalize as _verify_workflow_terminal_before_finalize,
 )
-from services.issue_lifecycle_service import (
+from nexus.core.issue_lifecycle import (
     create_issue as _create_issue,
 )
-from services.issue_lifecycle_service import (
+from nexus.core.issue_lifecycle import (
     rename_task_file_and_sync_issue_body as _rename_task_file_and_sync_issue_body,
 )
-from services.merge_queue_service import (
+from nexus.core.merge_queue import (
     enqueue_merge_queue_prs as _enqueue_merge_queue_prs,
 )
-from services.merge_queue_service import (
+from nexus.core.merge_queue import (
     merge_queue_auto_merge_once as _merge_queue_auto_merge_once,
 )
-from services.processor_loops_service import (
+from nexus.core.processor_loops import (
     run_processor_loop as _run_processor_loop,
 )
-from services.processor_runtime_state import (
+from nexus.core.processor_runtime_state import (
     ProcessorRuntimeState,
 )
-from services.project_access_service import (
+from nexus.core.auth.access_domain import (
     auth_enabled as _auth_enabled,
     check_project_access as _check_project_access,
     check_repo_access as _check_repo_access,
     has_setup_ready_user_for_project as _has_setup_ready_user_for_project,
 )
-from services.repo_resolution_service import (
+from nexus.core.project.repo_resolution import (
     resolve_repo_for_issue as _service_resolve_repo_for_issue,
 )
-from services.runtime_mode_service import is_issue_process_running, is_postgres_backend
-from services.startup_recovery_service import (
+from nexus.core.runtime_mode import is_issue_process_running, is_postgres_backend
+from nexus.core.startup_recovery import (
     build_startup_workflow_payload_loader as _build_startup_workflow_payload_loader,
 )
-from services.startup_recovery_service import (
+from nexus.core.startup_recovery import (
     reconcile_completion_signals_on_startup as _startup_reconcile_completion_signals,
 )
-from services.task_archive_service import (
+from nexus.core.task_archive import (
     archive_closed_task_files as _svc_archive_closed_task_files,
 )
-from services.task_context_service import (
+from nexus.core.task_context import (
     load_task_context as _load_task_context,
 )
-from services.task_dispatch_service import (
+from nexus.core.task_dispatch import (
     handle_new_task as _handle_new_task,
 )
-from services.task_dispatch_service import (
+from nexus.core.task_dispatch import (
     handle_webhook_task as _handle_webhook_task,
 )
-from services.tier_resolution_service import (
+from nexus.core.tier_resolution import (
     resolve_tier_for_issue as _resolve_tier_for_issue,
 )
 from services.workflow.workflow_pr_monitor_service import (

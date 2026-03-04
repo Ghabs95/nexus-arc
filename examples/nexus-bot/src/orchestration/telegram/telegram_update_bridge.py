@@ -3,7 +3,7 @@ import re
 from types import SimpleNamespace
 from typing import Any
 
-from orchestration.common.formatting import (
+from nexus.core.utils.message_formatting import (
     clip_message_text,
     flatten_markdown_table,
     normalize_markdown_headers,

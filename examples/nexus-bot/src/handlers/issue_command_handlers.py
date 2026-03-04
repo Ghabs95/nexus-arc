@@ -12,7 +12,7 @@ from typing import Any
 
 from config import NEXUS_STORAGE_BACKEND
 from interactive_context import InteractiveContext
-from services.runtime_mode_service import is_postgres_backend
+from nexus.core.runtime_mode import is_postgres_backend
 from utils.log_utils import log_unauthorized_access
 
 

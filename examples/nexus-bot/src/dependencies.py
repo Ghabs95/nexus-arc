@@ -61,7 +61,7 @@ from orchestration.plugin_runtime import (
 from project_key_utils import normalize_project_key_optional as _normalize_project_key
 from rate_limiter import get_rate_limiter
 from runtime.agent_launcher import get_sop_tier_from_issue, invoke_ai_agent
-from services.memory_service import (
+from nexus.core.memory import (
     append_message,
     create_chat,
     get_chat_history,

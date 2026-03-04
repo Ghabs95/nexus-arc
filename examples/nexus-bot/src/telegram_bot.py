@@ -277,7 +277,13 @@ from project_key_utils import normalize_project_key_optional as _normalize_proje
 from rate_limiter import RateLimit, get_rate_limiter
 from report_scheduler import ReportScheduler
 from runtime.agent_launcher import get_sop_tier_from_issue, invoke_ai_agent
-from services.auth_session_service import create_login_session_for_user
+from nexus.core.auth import (
+    check_project_access as _svc_check_project_access,
+)
+from nexus.core.auth import create_login_session_for_user
+from nexus.core.auth import (
+    get_setup_status as _svc_get_setup_status,
+)
 from services.command_contract import (
     validate_command_parity,
     validate_required_command_interface,
@@ -286,7 +292,7 @@ from services.feature_registry_service import FeatureRegistryService
 from services.git.direct_issue_plugin_service import (
     get_direct_issue_plugin as _svc_get_direct_issue_plugin,
 )
-from services.memory_service import (
+from nexus.core.memory import (
     append_message,
     create_chat,
     get_active_chat,
@@ -294,29 +300,23 @@ from services.memory_service import (
     get_chat_history,
     rename_chat,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     get_single_project_key as _svc_get_single_project_key,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     iter_project_keys as _svc_iter_project_keys,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     default_issue_url as _svc_default_issue_url,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     get_issue_details as _svc_get_issue_details,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     project_issue_url as _svc_project_issue_url,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     project_repo as _svc_project_repo,
-)
-from services.project_access_service import (
-    check_project_access as _svc_check_project_access,
-)
-from services.project_access_service import (
-    get_setup_status as _svc_get_setup_status,
 )
 from services.telegram.telegram_bootstrap_ui_service import (
     build_menu_keyboard as _svc_build_menu_keyboard,
@@ -1571,6 +1571,7 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "3. Add Codex/OpenAI, Gemini, and/or Claude key, or use Copilot with linked GitHub OAuth\n"
             "4. Run `/setup_status`"
         ),
+        disable_web_page_preview=True,
     )
 
 
@@ -1593,7 +1594,7 @@ async def setup_status_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         f"- Codex key set: {'✅' if status.get('codex_key_set') else '❌'}",
         f"- Gemini key set: {'✅' if status.get('gemini_key_set') else '❌'}",
         f"- Claude key set: {'✅' if status.get('claude_key_set') else '❌'}",
-        f"- Copilot ready (GitHub linked): {'✅' if status.get('copilot_ready') else '❌'}",
+        f"- Copilot ready (GitHub OAuth or Copilot Token): {'✅' if status.get('copilot_ready') else '❌'}",
         f"- Org/group verified: {'✅' if status.get('org_verified') else '❌'}",
         f"- Project access: `{int(status.get('project_access_count') or 0)}`",
         f"- Projects: {projects_line}",

@@ -1,4 +1,4 @@
-from orchestration.common.router import normalize_command_args
+from nexus.core.utils.command_args import normalize_command_args
 
 
 def test_normalize_command_args_issue_command():

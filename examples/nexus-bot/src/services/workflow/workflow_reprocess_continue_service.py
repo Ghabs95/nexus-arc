@@ -8,7 +8,7 @@ from typing import Any, Callable
 from config import NEXUS_CORE_STORAGE_DIR, NEXUS_STORAGE_BACKEND
 from integrations.workflow_state_factory import get_workflow_state
 from runtime.agent_launcher import clear_launch_guard
-from services.runtime_mode_service import is_postgres_backend
+from nexus.core.runtime_mode import is_postgres_backend
 from utils.log_utils import log_unauthorized_access
 
 

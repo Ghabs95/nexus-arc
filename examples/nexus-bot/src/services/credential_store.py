@@ -101,6 +101,7 @@ if _SA_AVAILABLE:
         codex_api_key_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
         gemini_api_key_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
         claude_api_key_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
+        copilot_github_token_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
         org_verified: sa.orm.Mapped[bool] = sa.orm.mapped_column(sa.Boolean, nullable=False, default=False)
         org_verified_at: sa.orm.Mapped[datetime | None] = sa.orm.mapped_column(sa.DateTime(timezone=True))
         last_access_sync_at: sa.orm.Mapped[datetime | None] = sa.orm.mapped_column(
@@ -174,6 +175,7 @@ class CredentialRecord:
     codex_api_key_enc: str | None
     gemini_api_key_enc: str | None
     claude_api_key_enc: str | None
+    copilot_github_token_enc: str | None
     org_verified: bool
     org_verified_at: datetime | None
     last_access_sync_at: datetime | None
@@ -224,6 +226,7 @@ def _run_schema_migrations(engine: Any) -> None:
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS codex_api_key_enc TEXT",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS gemini_api_key_enc TEXT",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS claude_api_key_enc TEXT",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS copilot_github_token_enc TEXT",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS last_access_sync_at TIMESTAMPTZ",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS key_version INTEGER",
         "UPDATE nexus_user_credentials SET key_version = 1 WHERE key_version IS NULL OR key_version < 1",
@@ -329,6 +332,7 @@ def _row_to_credential(row: Any) -> CredentialRecord:
         codex_api_key_enc=row.codex_api_key_enc,
         gemini_api_key_enc=row.gemini_api_key_enc,
         claude_api_key_enc=row.claude_api_key_enc,
+        copilot_github_token_enc=row.copilot_github_token_enc,
         org_verified=bool(row.org_verified),
         org_verified_at=row.org_verified_at,
         last_access_sync_at=row.last_access_sync_at,
@@ -503,6 +507,7 @@ def upsert_ai_provider_keys(
     codex_api_key_enc: str | None = None,
     gemini_api_key_enc: str | None = None,
     claude_api_key_enc: str | None = None,
+    copilot_github_token_enc: str | None = None,
     key_version: int = 1,
 ) -> None:
     engine = _get_engine()
@@ -522,6 +527,8 @@ def upsert_ai_provider_keys(
             row.gemini_api_key_enc = str(gemini_api_key_enc or "").strip() or None
         if claude_api_key_enc is not None:
             row.claude_api_key_enc = str(claude_api_key_enc or "").strip() or None
+        if copilot_github_token_enc is not None:
+            row.copilot_github_token_enc = str(copilot_github_token_enc or "").strip() or None
         row.key_version = max(1, int(key_version or 1))
         row.updated_at = now
         session.commit()

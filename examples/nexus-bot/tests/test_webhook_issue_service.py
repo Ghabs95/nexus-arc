@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from services.webhook_issue_service import handle_issue_opened_event
+from nexus.core.webhook.issue_service import handle_issue_opened_event
 
 
 class _Policy:

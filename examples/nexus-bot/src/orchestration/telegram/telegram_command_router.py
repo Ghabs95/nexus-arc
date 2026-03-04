@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from orchestration.common.router import normalize_command_args
+from nexus.core.utils.command_args import normalize_command_args
 
 
 async def dispatch_command(

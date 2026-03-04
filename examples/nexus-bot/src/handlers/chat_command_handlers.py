@@ -10,7 +10,7 @@ from services.chat.chat_context_service import (
     available_primary_agent_types,
     chat_context_summary,
 )
-from services.memory_service import (
+from nexus.core.memory import (
     create_chat,
     delete_chat,
     get_active_chat,

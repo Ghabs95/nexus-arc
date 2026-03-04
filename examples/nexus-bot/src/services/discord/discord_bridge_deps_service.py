@@ -53,23 +53,23 @@ from services.feature_registry_service import FeatureRegistryService
 from services.git.direct_issue_plugin_service import (
     get_direct_issue_plugin as _svc_get_direct_issue_plugin,
 )
-from services.memory_service import append_message, create_chat, get_chat_history
-from services.project.project_catalog_service import (
+from nexus.core.memory import append_message, create_chat, get_chat_history
+from nexus.core.project.catalog import (
     get_project_label as _svc_get_project_label,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     iter_project_keys as _svc_iter_project_keys,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     default_issue_url as _svc_default_issue_url,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     get_issue_details as _svc_get_issue_details,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     project_issue_url as _svc_project_issue_url,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     project_repo as _svc_project_repo,
 )
 from services.telegram.telegram_handler_deps_service import (

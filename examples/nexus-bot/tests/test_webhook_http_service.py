@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from services.webhook_http_service import process_webhook_request
+from nexus.core.webhook.http_service import process_webhook_request
 
 
 class _Policy:

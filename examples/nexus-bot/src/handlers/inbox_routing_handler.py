@@ -12,7 +12,7 @@ from config import (
 )
 from handlers.common_routing import extract_json_dict
 from integrations.inbox_queue import enqueue_task
-from services.inbox.inbox_routing_service import (
+from nexus.core.inbox.inbox_routing_service import (
     process_inbox_task_request,
     save_resolved_inbox_task_request,
 )
