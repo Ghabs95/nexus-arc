@@ -39,6 +39,7 @@ def run_comment_monitor_cycle(
     notified_comments: set[Any],
     clear_polling_failures: Callable[[str], None],
     record_polling_failure: Callable[[str, Exception], None],
+    should_poll_project: Callable[[str], bool] | None = None,
     bot_author: str = "Ghabs",
 ) -> None:
     """Monitor issue comments and notify on agent blockers/questions."""
@@ -55,8 +56,16 @@ def run_comment_monitor_cycle(
                 )
                 continue
 
-            repo = get_repo(project_name)
             list_scope = f"agent-comments:list-issues:{project_name}"
+            if callable(should_poll_project) and not should_poll_project(str(project_name)):
+                logger.info(
+                    "Skipping issue polling for project %s: no setup-ready users with access.",
+                    project_name,
+                )
+                clear_polling_failures(list_scope)
+                continue
+
+            repo = get_repo(project_name)
             try:
                 for issue_number in list_workflow_issue_numbers(project_name, repo):
                     all_issue_nums.append((issue_number, project_name, repo))

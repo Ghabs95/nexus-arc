@@ -1728,6 +1728,11 @@ async def setup_status_command(interaction: discord.Interaction):
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
+@bot.tree.command(name="setup_status", description="Alias for /setup-status")
+async def setup_status_alias_command(interaction: discord.Interaction):
+    await setup_status_command(interaction)
+
+
 @bot.tree.command(name="whoami", description="Show your Discord/Nexus identity mapping")
 async def whoami_command(interaction: discord.Interaction):
     if not check_permission_for_action(interaction.user.id, action="readonly"):
@@ -2886,15 +2891,24 @@ async def on_ready():
 
 @bot.event
 async def setup_hook():
-    # Sync slash commands during setup properly
+    # Sync slash commands during setup properly.
+    # We sync both guild and global command trees so onboarding/read-only commands
+    # remain discoverable even when guild scoping changes.
     if DISCORD_GUILD_ID:
         guild = discord.Object(id=DISCORD_GUILD_ID)
         bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
-        logger.info(f"Synced slash commands to guild {DISCORD_GUILD_ID}")
-    else:
-        await bot.tree.sync()
-        logger.info("Synced slash commands globally")
+        guild_synced = await bot.tree.sync(guild=guild)
+        logger.info(
+            "Synced %s slash commands to guild %s",
+            len(guild_synced),
+            DISCORD_GUILD_ID,
+        )
+        global_synced = await bot.tree.sync()
+        logger.info("Synced %s slash commands globally", len(global_synced))
+        return
+
+    global_synced = await bot.tree.sync()
+    logger.info("Synced %s slash commands globally", len(global_synced))
 
 
 if __name__ == "__main__":

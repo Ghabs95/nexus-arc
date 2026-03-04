@@ -668,6 +668,41 @@ def get_setup_status(nexus_id: str) -> dict[str, Any]:
     }
 
 
+def has_setup_ready_user_for_project(project_key: str) -> bool:
+    """Return True if at least one configured user can execute on a project."""
+    if not auth_enabled():
+        return True
+
+    normalized = str(normalize_project_key(project_key) or project_key).strip().lower()
+    if not normalized:
+        return False
+
+    try:
+        credentials = list_credentials_for_sync(limit=1000)
+    except Exception as exc:
+        logger.warning("Could not enumerate credentials for polling gate: %s", exc)
+        return False
+
+    for record in credentials:
+        try:
+            if not has_user_project_access(str(record.nexus_id), normalized):
+                continue
+
+            github_linked = bool(record.github_token_enc and record.github_login)
+            gitlab_linked = bool(record.gitlab_token_enc and record.gitlab_username)
+            git_provider_linked = bool(github_linked or gitlab_linked)
+            ai_provider_key_set = bool(
+                record.codex_api_key_enc or record.gemini_api_key_enc or record.claude_api_key_enc
+            )
+            copilot_ready = bool(github_linked)
+            ai_provider_ready = bool(ai_provider_key_set or copilot_ready)
+            if git_provider_linked and ai_provider_ready and bool(record.org_verified):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def has_project_access(nexus_id: str, project_key: str, *, auto_sync: bool = True) -> bool:
     if not auth_enabled():
         return True

@@ -193,6 +193,7 @@ from services.project_access_service import (
     auth_enabled as _auth_enabled,
     check_project_access as _check_project_access,
     check_repo_access as _check_repo_access,
+    has_setup_ready_user_for_project as _has_setup_ready_user_for_project,
 )
 from services.repo_resolution_service import (
     resolve_repo_for_issue as _service_resolve_repo_for_issue,
@@ -1024,6 +1025,7 @@ def check_agent_comments():
         notified_comments=PROCESSOR_RUNTIME_STATE.notified_comments,
         clear_polling_failures=_clear_polling_failures,
         record_polling_failure=_record_polling_failure,
+        should_poll_project=_has_setup_ready_user_for_project if _auth_enabled() else None,
     )
 
 

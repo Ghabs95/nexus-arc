@@ -66,3 +66,28 @@ def test_run_comment_monitor_cycle_records_list_failure():
     )
 
     assert recorded == [("agent-comments:list-issues:ghproj", "list boom")]
+
+
+def test_run_comment_monitor_cycle_skips_project_when_polling_gate_denies():
+    listed: list[tuple[str, str]] = []
+    cleared: list[str] = []
+    recorded: list[tuple[str, str]] = []
+    project_key = "project-alpha"
+
+    run_comment_monitor_cycle(
+        logger=MagicMock(),
+        iter_projects=lambda: [(project_key, {})],
+        get_project_platform=lambda _p: "github",
+        get_repo=lambda _p: f"acme/{project_key}",
+        list_workflow_issue_numbers=lambda project, repo: listed.append((project, repo)) or [1],
+        get_bot_comments=lambda *_args: [],
+        notify_agent_needs_input=lambda *args, **kwargs: True,
+        notified_comments=set(),
+        clear_polling_failures=lambda scope: cleared.append(scope),
+        record_polling_failure=lambda scope, exc: recorded.append((scope, str(exc))),
+        should_poll_project=lambda _project: False,
+    )
+
+    assert listed == []
+    assert recorded == []
+    assert f"agent-comments:list-issues:{project_key}" in cleared
