@@ -1,11 +1,13 @@
 """Task dispatch helpers extracted from inbox_processor."""
 
+import asyncio
 import os
 import re
 import shutil
 from collections.abc import Callable
 from typing import Any
 
+from nexus.core.git_sync.workflow_start_sync_service import sync_project_repos_on_workflow_start
 from nexus.core.storage.capabilities import get_storage_capabilities
 
 
@@ -255,6 +257,11 @@ def handle_new_task(
     start_workflow: Callable[[str, str], Any],
     get_initial_agent_from_workflow: Callable[[str], str],
     invoke_ai_agent: Callable[..., tuple[int | None, str | None]],
+    get_repos_for_project: Callable[[str], list[str]] | None = None,
+    get_repo_branch_for_project: Callable[[str, str], str] | None = None,
+    resolve_git_dir_for_project: Callable[[str], str | None] | None = None,
+    resolve_git_dirs_for_project: Callable[[str], dict[str, str]] | None = None,
+    run_workflow_start_git_sync: Callable[..., dict[str, Any]] | None = None,
     requester_nexus_id: str | None = None,
     bind_issue_requester: Callable[..., None] | None = None,
     ensure_project_and_repo_access: Callable[[str, str, str], tuple[bool, str]] | None = None,
@@ -356,6 +363,7 @@ def handle_new_task(
 
     issue_num = ""
     workflow_id = ""
+    workflow_plugin = None
     if issue_url:
         issue_match = re.search(r"/issues/(\\d+)(?:$|[/?#])", str(issue_url))
         if issue_match:
@@ -417,7 +425,6 @@ def handle_new_task(
             repo_key=repo_key,
             cache_key="workflow:state-engine",
         )
-        import asyncio
 
         workflow_id = asyncio.run(
             workflow_plugin.create_workflow_for_issue(
@@ -480,6 +487,139 @@ def handle_new_task(
             emit_alert(
                 f"Stopping launch: missing workflow definition for {project_name}",
                 severity="error",
+                source="inbox_processor",
+                issue_number=str(issue_num),
+                project_key=project_name,
+            )
+            return
+
+        configured_repos: list[str] = []
+        if callable(get_repos_for_project):
+            try:
+                configured_repos = [str(item).strip() for item in get_repos_for_project(project_name)]
+                configured_repos = [item for item in configured_repos if item]
+            except Exception:
+                configured_repos = []
+        if not configured_repos:
+            primary_repo = str(config.get("git_repo") or "").strip()
+            if primary_repo:
+                configured_repos.append(primary_repo)
+            repo_list = config.get("git_repos")
+            if isinstance(repo_list, list):
+                for repo_name in repo_list:
+                    value = str(repo_name or "").strip()
+                    if value and value not in configured_repos:
+                        configured_repos.append(value)
+
+        def _resolve_branch(repo_slug: str) -> str:
+            if callable(get_repo_branch_for_project):
+                try:
+                    value = str(get_repo_branch_for_project(project_name, repo_slug) or "").strip()
+                    if value:
+                        return value
+                except Exception:
+                    pass
+
+            branch_cfg = config.get("git_branches")
+            if isinstance(branch_cfg, dict):
+                per_repo = branch_cfg.get("repos")
+                if isinstance(per_repo, dict):
+                    candidate = per_repo.get(repo_slug)
+                    if isinstance(candidate, str) and candidate.strip():
+                        return candidate.strip()
+                default_branch = branch_cfg.get("default")
+                if isinstance(default_branch, str) and default_branch.strip():
+                    return default_branch.strip()
+            return "main"
+
+        def _resolve_single_git_dir(_project: str) -> str | None:
+            if callable(resolve_git_dir_for_project):
+                try:
+                    return resolve_git_dir_for_project(_project)
+                except Exception:
+                    return None
+            if os.path.isdir(os.path.join(project_root, ".git")):
+                return project_root
+            if configured_repos:
+                repo_name = configured_repos[0].split("/")[-1]
+                candidate = os.path.join(project_root, repo_name)
+                if os.path.isdir(os.path.join(candidate, ".git")):
+                    return candidate
+            return None
+
+        def _resolve_multi_git_dirs(_project: str) -> dict[str, str]:
+            if callable(resolve_git_dirs_for_project):
+                try:
+                    resolved = resolve_git_dirs_for_project(_project)
+                    if isinstance(resolved, dict):
+                        return {
+                            str(repo_slug): str(path)
+                            for repo_slug, path in resolved.items()
+                            if str(repo_slug).strip() and str(path).strip()
+                        }
+                except Exception:
+                    pass
+
+            resolved: dict[str, str] = {}
+            workspace_abs = project_root
+            workspace_is_repo = os.path.isdir(os.path.join(workspace_abs, ".git"))
+            workspace_name = os.path.basename(str(workspace_abs).rstrip(os.sep))
+
+            for repo_slug in configured_repos:
+                repo_base = repo_slug.split("/")[-1]
+                if workspace_is_repo and workspace_name == repo_base:
+                    resolved[repo_slug] = workspace_abs
+                    continue
+                candidate = os.path.join(workspace_abs, repo_base)
+                if os.path.isdir(os.path.join(candidate, ".git")):
+                    resolved[repo_slug] = candidate
+            return resolved
+
+        def _get_repos(_project: str) -> list[str]:
+            return list(configured_repos)
+
+        def _should_block_launch(_issue_num: str, _project_name: str) -> bool:
+            if workflow_plugin is None:
+                return False
+            try:
+                status = asyncio.run(workflow_plugin.get_workflow_status(str(_issue_num)))
+            except Exception:
+                return False
+            state = str((status or {}).get("state", "")).strip().lower()
+            return state in {"paused", "cancelled", "completed", "failed"}
+
+        sync_runner = run_workflow_start_git_sync or sync_project_repos_on_workflow_start
+        try:
+            sync_result = sync_runner(
+                issue_number=str(issue_num or ""),
+                project_name=str(project_name),
+                project_cfg=config,
+                resolve_git_dirs=_resolve_multi_git_dirs,
+                resolve_git_dir=_resolve_single_git_dir,
+                get_repos=_get_repos,
+                get_repo_branch=lambda project, repo_slug: _resolve_branch(str(repo_slug)),
+                emit_alert=emit_alert,
+                logger=logger,
+                should_block_launch=_should_block_launch,
+            )
+        except Exception as sync_exc:
+            logger.warning(
+                "Workflow-start git sync failed unexpectedly for issue #%s: %s",
+                issue_num,
+                sync_exc,
+            )
+            sync_result = {"enabled": True, "skipped": True, "reason": "sync_error"}
+        if bool((sync_result or {}).get("blocked")):
+            logger.warning(
+                "Initial launch blocked after workflow-start git sync decision for issue #%s",
+                issue_num,
+            )
+            emit_alert(
+                (
+                    f"🚫 Initial launch blocked for issue #{issue_num} after git-sync decision.\n"
+                    "Use /continue when ready."
+                ),
+                severity="warning",
                 source="inbox_processor",
                 issue_number=str(issue_num),
                 project_key=project_name,

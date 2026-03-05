@@ -91,6 +91,15 @@ project_a:
   agents_dir: project-a/agents
   workspace: project_a
   git_repo: acme/project-a
+  git_branches:
+    default: develop
+    repos:
+      acme/project-a: main
+  git_sync:
+    on_workflow_start: true
+    network_auth_retries: 3
+    retry_backoff_seconds: 5
+    decision_timeout_seconds: 120
 
 # Example: Project B (uses global defaults)
 project_b:
@@ -110,6 +119,13 @@ custom_project:
   agents_dir: custom-project/agents
   workspace: custom_project
   git_repo: acme/custom-project
+  git_repos:
+    - acme/custom-project
+    - acme/custom-project-shared
+  git_branches:
+    default: develop
+    repos:
+      acme/custom-project: main
 
   # Optional per-project overrides for operation task routing.
   system_operations:

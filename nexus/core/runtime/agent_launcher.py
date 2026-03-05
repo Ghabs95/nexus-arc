@@ -31,6 +31,7 @@ from nexus.core.config import (
     PROJECT_CONFIG,
     WEBHOOK_PORT,
     get_default_project,
+    get_repo_branch,
     get_system_operations,
     get_repo,
     get_repos,
@@ -40,6 +41,9 @@ from nexus.core.config import (
 )
 # Nexus Core framework imports
 from nexus.core.guards import LaunchGuard
+from nexus.core.inbox.inbox_repo_path_service import (
+    extract_repo_from_issue_url as _extract_repo_from_issue_url,
+)
 from nexus.core.integrations.notifications import notify_agent_completed, emit_alert
 from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 from nexus.core.orchestration.plugin_runtime import get_profiled_plugin
@@ -936,7 +940,6 @@ def get_sop_tier_from_issue(issue_number, project="nexus", repo_override: str | 
 
     Returns: tier_name (full/shortened/fast-track) or None
     """
-    from nexus.adapters.git.github import GitHubPlatform
 
     from nexus.core.orchestration.nexus_core_helpers import get_git_platform
 
@@ -1131,6 +1134,7 @@ def invoke_ai_agent(
         # Extract issue number for tracking
         issue_match = re.search(r"/issues/(\d+)", issue_url or "")
         issue_num = issue_match.group(1) if issue_match else "unknown"
+        issue_repo_slug = _extract_repo_from_issue_url(str(issue_url or ""))
 
         worktree_base_repo = _resolve_worktree_base_repo(workspace_dir, issue_url)
         isolated_workspace = worktree_base_repo
@@ -1139,11 +1143,7 @@ def invoke_ai_agent(
         target_branch = None
         if issue_url and issue_num != "unknown":
             try:
-                repo_match = re.search(
-                    r"https?://[^/]+/([^/]+/[^/]+)/issues/\d+",
-                    str(issue_url or ""),
-                )
-                preferred_repo = repo_match.group(1) if repo_match else None
+                preferred_repo = _extract_repo_from_issue_url(str(issue_url or "")) or None
                 body, _, _ = _load_issue_body_from_project_repo(
                     issue_num,
                     preferred_repo=preferred_repo,
@@ -1169,8 +1169,19 @@ def invoke_ai_agent(
             )
 
         if issue_num != "unknown" and _is_git_repo(worktree_base_repo):
+            start_ref = None
+            if project_name and issue_repo_slug:
+                try:
+                    base_branch = get_repo_branch(project_name, issue_repo_slug)
+                except Exception:
+                    base_branch = "main"
+                normalized_base = str(base_branch or "").strip() or "main"
+                start_ref = f"origin/{normalized_base}"
             isolated_workspace = WorkspaceManager.provision_worktree(
-                worktree_base_repo, issue_num, branch_name=branch_for_worktree
+                worktree_base_repo,
+                issue_num,
+                branch_name=branch_for_worktree,
+                start_ref=start_ref,
             )
         elif issue_num != "unknown":
             logger.warning(

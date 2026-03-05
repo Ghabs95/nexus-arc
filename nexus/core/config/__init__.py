@@ -36,8 +36,10 @@ from nexus.core.config.projects import (
 )
 from nexus.core.config.repos import (
     get_default_repo as _svc_get_default_repo,
+    get_git_sync_settings as _svc_get_git_sync_settings,
     get_gitlab_base_url as _svc_get_gitlab_base_url,
     get_project_platform as _svc_get_project_platform,
+    get_repo_branch as _svc_get_repo_branch,
     get_repo as _svc_get_repo,
     get_repos as _svc_get_repos,
 )
@@ -663,6 +665,16 @@ def get_repo(project: str) -> str:
         KeyError: If project not found in PROJECT_CONFIG
     """
     return _svc_get_repo(get_repos, project)
+
+
+def get_repo_branch(project: str, repo_slug: str) -> str:
+    """Resolve base branch for a project's repository slug."""
+    return _svc_get_repo_branch(_get_project_config, project, repo_slug)
+
+
+def get_git_sync_settings(project: str) -> dict[str, Any]:
+    """Get normalized git-sync settings for a project."""
+    return _svc_get_git_sync_settings(_get_project_config, project)
 
 
 def get_nexus_dir_name() -> str:

@@ -73,6 +73,15 @@ my_project:
   git_repos: # Additional repos for multi-repo projects
     - "org/my-project"
     - "org/my-shared-lib"
+  git_branches: # Optional base branch policy
+    default: "develop"                # Fallback branch for repos not overridden below
+    repos:
+      "org/my-project": "main"        # Per-repo base branch override
+  git_sync: # Optional workflow-start git sync behavior
+    on_workflow_start: true
+    network_auth_retries: 3
+    retry_backoff_seconds: 5
+    decision_timeout_seconds: 120
 
 another_project:
   workspace: "../another-project"
@@ -93,6 +102,9 @@ ai_tool_preferences:
     provider: "claude"
     profile: "balanced"
 ```
+
+`git_branches` applies to both startup sync and PR/MR base branch selection.
+When omitted, the runtime falls back to `main`.
 
 ## State Files (filesystem backend)
 

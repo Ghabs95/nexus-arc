@@ -301,6 +301,7 @@ def get_workflow_policy_plugin(
     resolve_git_dir: Callable[[str], str | None] | None = None,
     resolve_git_dirs: Callable[[str], dict[str, str]] | None = None,
     create_pr_from_changes: Callable[..., str | None] | None = None,
+    resolve_repo_branch: Callable[..., str | None] | None = None,
     find_existing_pr: Callable[..., str | None] | None = None,
     cleanup_worktree: Callable[..., bool] | None = None,
     close_issue: Callable[..., bool] | None = None,
@@ -316,6 +317,8 @@ def get_workflow_policy_plugin(
         overrides["resolve_git_dirs"] = resolve_git_dirs
     if create_pr_from_changes is not None:
         overrides["create_pr_from_changes"] = create_pr_from_changes
+    if resolve_repo_branch is not None:
+        overrides["resolve_repo_branch"] = resolve_repo_branch
     if find_existing_pr is not None:
         overrides["find_existing_pr"] = find_existing_pr
     if cleanup_worktree is not None:

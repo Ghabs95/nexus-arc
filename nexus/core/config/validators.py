@@ -111,6 +111,19 @@ def _validate_profile_provider_priority_block(
             seen.add(normalized_provider)
 
 
+def _configured_project_repos(proj_config: dict[str, Any]) -> set[str]:
+    repos: set[str] = set()
+    primary = proj_config.get("git_repo")
+    if isinstance(primary, str) and primary.strip():
+        repos.add(primary.strip())
+    repo_list = proj_config.get("git_repos")
+    if isinstance(repo_list, list):
+        for repo_name in repo_list:
+            if isinstance(repo_name, str) and repo_name.strip():
+                repos.add(repo_name.strip())
+    return repos
+
+
 def validate_project_config(config: dict[str, Any]) -> None:
     """Validate project configuration dict."""
     if not config:
@@ -157,6 +170,65 @@ def validate_project_config(config: dict[str, Any]) -> None:
                 if not isinstance(repo_name, str) or not repo_name.strip():
                     raise ValueError(
                         f"PROJECT_CONFIG['{project}']['git_repos'] contains invalid repo entry"
+                    )
+
+        git_branches = proj_config.get("git_branches")
+        if git_branches is not None:
+            if not isinstance(git_branches, dict):
+                raise ValueError(f"PROJECT_CONFIG['{project}']['git_branches'] must be a mapping")
+
+            default_branch = git_branches.get("default")
+            if default_branch is not None and (
+                not isinstance(default_branch, str) or not default_branch.strip()
+            ):
+                raise ValueError(
+                    f"PROJECT_CONFIG['{project}']['git_branches']['default'] must be a non-empty string"
+                )
+
+            per_repo = git_branches.get("repos")
+            if per_repo is not None:
+                if not isinstance(per_repo, dict):
+                    raise ValueError(
+                        f"PROJECT_CONFIG['{project}']['git_branches']['repos'] must be a mapping"
+                    )
+                configured_repos = _configured_project_repos(proj_config)
+                for repo_key, branch_name in per_repo.items():
+                    normalized_repo = str(repo_key or "").strip()
+                    if not normalized_repo:
+                        raise ValueError(
+                            f"PROJECT_CONFIG['{project}']['git_branches']['repos'] contains empty repo key"
+                        )
+                    if normalized_repo not in configured_repos:
+                        raise ValueError(
+                            f"PROJECT_CONFIG['{project}']['git_branches']['repos']['{normalized_repo}'] references unknown configured repo"
+                        )
+                    if not isinstance(branch_name, str) or not branch_name.strip():
+                        raise ValueError(
+                            f"PROJECT_CONFIG['{project}']['git_branches']['repos']['{normalized_repo}'] must be a non-empty string"
+                        )
+
+        git_sync = proj_config.get("git_sync")
+        if git_sync is not None:
+            if not isinstance(git_sync, dict):
+                raise ValueError(f"PROJECT_CONFIG['{project}']['git_sync'] must be a mapping")
+
+            on_workflow_start = git_sync.get("on_workflow_start")
+            if on_workflow_start is not None and not isinstance(on_workflow_start, bool):
+                raise ValueError(
+                    f"PROJECT_CONFIG['{project}']['git_sync']['on_workflow_start'] must be a boolean"
+                )
+
+            for key in (
+                "network_auth_retries",
+                "retry_backoff_seconds",
+                "decision_timeout_seconds",
+            ):
+                value = git_sync.get(key)
+                if value is None:
+                    continue
+                if not isinstance(value, int) or value <= 0:
+                    raise ValueError(
+                        f"PROJECT_CONFIG['{project}']['git_sync']['{key}'] must be a positive integer"
                     )
 
         git_platform = str(proj_config.get("git_platform", "github")).lower().strip()

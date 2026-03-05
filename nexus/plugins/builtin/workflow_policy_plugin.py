@@ -92,6 +92,7 @@ class WorkflowPolicyPlugin:
         issue_number: str,
         last_agent: str,
         issue_repo: str | None = None,
+        base_branch: str | None = None,
     ) -> str | None:
         creator = self._callback("create_pr_from_changes")
         if not creator:
@@ -111,8 +112,20 @@ class WorkflowPolicyPlugin:
             title=title,
             body=body,
             issue_repo=issue_repo or repo,
+            base_branch=str(base_branch or "").strip() or None,
         )
         return str(pr_link) if pr_link else None
+
+    def _resolve_repo_branch(self, *, project_name: str, repo: str) -> str | None:
+        resolver = self._callback("resolve_repo_branch")
+        if not resolver:
+            return None
+        try:
+            value = resolver(project_name=project_name, repo=repo)
+        except TypeError:
+            value = resolver(project_name, repo)
+        branch = str(value or "").strip()
+        return branch or None
 
     def _find_existing_pr(self, *, repo: str, issue_number: str) -> str | None:
         finder = self._callback("find_existing_pr")
@@ -238,12 +251,17 @@ class WorkflowPolicyPlugin:
                     continue
 
                 try:
+                    base_branch = self._resolve_repo_branch(
+                        project_name=project_name,
+                        repo=target_repo,
+                    )
                     created_pr_url = self._create_pr(
                         repo=target_repo,
                         repo_dir=git_dir,
                         issue_number=issue_number,
                         last_agent=last_agent,
                         issue_repo=repo,
+                        base_branch=base_branch,
                     )
                     if created_pr_url:
                         result["pr_urls"].append(created_pr_url)

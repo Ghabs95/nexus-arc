@@ -1,5 +1,6 @@
 import types
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 from nexus.core.task_dispatch import handle_new_task, handle_webhook_task
@@ -61,7 +62,11 @@ def test_handle_new_task_happy_path_smoke(tmp_path):
 
     workflow_plugin.create_workflow_for_issue = _create_workflow_for_issue
 
-    captured = {"create_issue_called": False, "rename_called": False, "create_issue_kwargs": None}
+    captured: dict[str, Any] = {
+        "create_issue_called": False,
+        "rename_called": False,
+        "create_issue_kwargs": None,
+    }
 
     def _create_issue(**kwargs):
         captured["create_issue_called"] = True
@@ -81,7 +86,7 @@ def test_handle_new_task_happy_path_smoke(tmp_path):
     def _get_workflow_state_plugin(**kwargs):
         return workflow_plugin
 
-    pid_tool = {"pid": None}
+    pid_tool: dict[str, int | None] = {"pid": None}
 
     def _invoke_ai_agent(**kwargs):
         pid_tool["pid"] = 1234
@@ -128,3 +133,112 @@ def test_handle_new_task_happy_path_smoke(tmp_path):
     assert kwargs["severity"] == "info"
     assert kwargs["issue_number"] == "77"
     assert kwargs["project_key"] == "proj-a"
+
+
+def test_handle_new_task_runs_workflow_start_sync_once(tmp_path):
+    inbox_file = tmp_path / "feature_123.md"
+    inbox_file.write_text("placeholder")
+    active_dir = tmp_path / "active"
+    active_dir.mkdir()
+
+    logger = MagicMock()
+    emit_alert = MagicMock()
+
+    async def _create_workflow_for_issue(**_kwargs):
+        return "wf-1"
+
+    workflow_plugin = types.SimpleNamespace(create_workflow_for_issue=_create_workflow_for_issue)
+
+    sync_calls: dict[str, int] = {"count": 0}
+
+    def _sync_runner(**_kwargs):
+        sync_calls["count"] += 1
+        return {"enabled": True, "blocked": False, "synced": [], "failures": []}
+
+    async def _start_workflow(_workflow_id: str, _issue_number: str):
+        return True
+
+    handle_new_task(
+        filepath=str(inbox_file),
+        content="Implement feature",
+        task_type="feature",
+        project_name="proj-a",
+        project_root=str(tmp_path),
+        config={"workspace": "ws", "agents_dir": "agents"},
+        base_dir=str(tmp_path),
+        logger=logger,
+        emit_alert=emit_alert,
+        get_repo_for_project=lambda _p: "acme/repo",
+        get_tasks_active_dir=lambda _root, _proj: str(active_dir),
+        refine_issue_content=lambda content, _p: content,
+        extract_inline_task_name=lambda _c: "Nice feature",
+        slugify=lambda _s: "nice-feature",
+        generate_issue_name=lambda _c, _p: "fallback-name",
+        get_sop_tier=lambda **kwargs: ("full", "SOP", "workflow:full"),
+        render_checklist_from_workflow=lambda _p, _t: "",
+        render_fallback_checklist=lambda _t: "- [ ] do thing",
+        create_issue=lambda **_kwargs: "https://github.com/acme/repo/issues/77",
+        rename_task_file_and_sync_issue_body=lambda **kwargs: kwargs["task_file_path"],
+        get_workflow_state_plugin=lambda **_kwargs: workflow_plugin,
+        workflow_state_plugin_kwargs={},
+        start_workflow=_start_workflow,
+        get_initial_agent_from_workflow=lambda _p: "triage",
+        invoke_ai_agent=lambda **_kwargs: (1234, "copilot"),
+        run_workflow_start_git_sync=_sync_runner,
+    )
+
+    assert sync_calls["count"] == 1
+
+
+def test_handle_new_task_blocks_initial_launch_when_sync_blocks(tmp_path):
+    inbox_file = tmp_path / "feature_123.md"
+    inbox_file.write_text("placeholder")
+    active_dir = tmp_path / "active"
+    active_dir.mkdir()
+
+    logger = MagicMock()
+    emit_alert = MagicMock()
+    invoked: dict[str, int] = {"count": 0}
+
+    async def _create_workflow_for_issue(**_kwargs):
+        return "wf-1"
+
+    workflow_plugin = types.SimpleNamespace(create_workflow_for_issue=_create_workflow_for_issue)
+
+    def _invoke_ai_agent(**_kwargs):
+        invoked["count"] += 1
+        return 1234, "copilot"
+
+    async def _start_workflow(_workflow_id: str, _issue_number: str):
+        return True
+
+    handle_new_task(
+        filepath=str(inbox_file),
+        content="Implement feature",
+        task_type="feature",
+        project_name="proj-a",
+        project_root=str(tmp_path),
+        config={"workspace": "ws", "agents_dir": "agents"},
+        base_dir=str(tmp_path),
+        logger=logger,
+        emit_alert=emit_alert,
+        get_repo_for_project=lambda _p: "acme/repo",
+        get_tasks_active_dir=lambda _root, _proj: str(active_dir),
+        refine_issue_content=lambda content, _p: content,
+        extract_inline_task_name=lambda _c: "Nice feature",
+        slugify=lambda _s: "nice-feature",
+        generate_issue_name=lambda _c, _p: "fallback-name",
+        get_sop_tier=lambda **kwargs: ("full", "SOP", "workflow:full"),
+        render_checklist_from_workflow=lambda _p, _t: "",
+        render_fallback_checklist=lambda _t: "- [ ] do thing",
+        create_issue=lambda **_kwargs: "https://github.com/acme/repo/issues/77",
+        rename_task_file_and_sync_issue_body=lambda **kwargs: kwargs["task_file_path"],
+        get_workflow_state_plugin=lambda **_kwargs: workflow_plugin,
+        workflow_state_plugin_kwargs={},
+        start_workflow=_start_workflow,
+        get_initial_agent_from_workflow=lambda _p: "triage",
+        invoke_ai_agent=_invoke_ai_agent,
+        run_workflow_start_git_sync=lambda **_kwargs: {"blocked": True},
+    )
+
+    assert invoked["count"] == 0

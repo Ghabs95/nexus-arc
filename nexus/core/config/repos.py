@@ -1,7 +1,7 @@
 import os
 import subprocess
 import urllib.parse
-from typing import Callable
+from typing import Any, Callable
 
 
 def repo_slug_from_remote_url(remote_url: str) -> str:
@@ -108,6 +108,73 @@ def get_repos(
         )
 
     return repos
+
+
+def get_repo_branch(
+    get_project_config: Callable[[], dict],
+    project: str,
+    repo_slug: str,
+) -> str:
+    """Resolve base branch for a project repository.
+
+    Resolution order:
+    1. project.git_branches.repos[repo_slug]
+    2. project.git_branches.default
+    3. ``main``
+    """
+    config = get_project_config()
+    project_cfg = config.get(project, {}) if isinstance(config, dict) else {}
+    if not isinstance(project_cfg, dict):
+        raise KeyError(f"Project '{project}' not found in PROJECT_CONFIG")
+
+    repo_key = str(repo_slug or "").strip()
+    git_branches = project_cfg.get("git_branches")
+    if isinstance(git_branches, dict):
+        per_repo = git_branches.get("repos")
+        if isinstance(per_repo, dict) and repo_key:
+            candidate = per_repo.get(repo_key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+
+        default_branch = git_branches.get("default")
+        if isinstance(default_branch, str) and default_branch.strip():
+            return default_branch.strip()
+
+    return "main"
+
+
+def get_git_sync_settings(
+    get_project_config: Callable[[], dict],
+    project: str,
+) -> dict[str, Any]:
+    """Return normalized git-sync settings for a project."""
+    config = get_project_config()
+    project_cfg = config.get(project, {}) if isinstance(config, dict) else {}
+    if not isinstance(project_cfg, dict):
+        raise KeyError(f"Project '{project}' not found in PROJECT_CONFIG")
+
+    raw = project_cfg.get("git_sync")
+    if not isinstance(raw, dict):
+        return {}
+
+    settings: dict[str, Any] = {}
+    enabled = raw.get("on_workflow_start")
+    if isinstance(enabled, bool):
+        settings["on_workflow_start"] = enabled
+
+    retries = raw.get("network_auth_retries")
+    if isinstance(retries, int):
+        settings["network_auth_retries"] = retries
+
+    backoff = raw.get("retry_backoff_seconds")
+    if isinstance(backoff, int):
+        settings["retry_backoff_seconds"] = backoff
+
+    timeout = raw.get("decision_timeout_seconds")
+    if isinstance(timeout, int):
+        settings["decision_timeout_seconds"] = timeout
+
+    return settings
 
 
 def get_project_platform(get_project_config: Callable[[], dict], project: str) -> str:

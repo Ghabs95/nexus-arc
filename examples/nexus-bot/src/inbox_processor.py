@@ -26,6 +26,7 @@ from nexus.core.config import (
     PROJECT_CONFIG,
     SLEEP_INTERVAL,
     get_default_project,
+    get_repo_branch,
     get_repo,
     get_repos,
     get_inbox_storage_backend,
@@ -60,6 +61,9 @@ from nexus.core.completion_monitor_service import (
 )
 from nexus.core.completion_store import CompletionStore
 from nexus.core.feature_registry_service import FeatureRegistryService
+from nexus.core.git_sync.workflow_start_sync_service import (
+    sync_project_repos_on_workflow_start as _sync_project_repos_on_workflow_start,
+)
 from nexus.core.inbox.inbox_issue_context_service import (
     find_task_file_for_issue as _svc_find_task_file_for_issue,
 )
@@ -711,6 +715,11 @@ def _finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name:
                 kwargs["repo"],
                 str(kwargs["issue_number"]),
             ),
+            base_branch=kwargs.get("base_branch"),
+        ),
+        resolve_repo_branch_fn=lambda **kwargs: get_repo_branch(
+            project_name,
+            str(kwargs.get("repo", "")),
         ),
         find_existing_pr_fn=lambda **kwargs: _finalize_find_existing_pr(
             project_name=project_name,
@@ -1371,7 +1380,6 @@ def _process_task_context(*, task_ctx: dict[str, object], filepath: str) -> bool
             "base_dir": BASE_DIR,
             "logger": logger,
             "emit_alert": emit_alert,
-            "get_repos_for_project": get_repos,
             "extract_repo_from_issue_url": _extract_repo_from_issue_url,
             "resolve_project_for_repo": _resolve_project_for_repo,
             "reroute_webhook_task_to_project": _reroute_webhook_task_to_project,
@@ -1379,6 +1387,11 @@ def _process_task_context(*, task_ctx: dict[str, object], filepath: str) -> bool
             "is_recent_launch": is_recent_launch,
             "get_initial_agent_from_workflow": _get_initial_agent_from_workflow,
             "get_repo_for_project": get_repo,
+            "get_repos_for_project": get_repos,
+            "get_repo_branch_for_project": get_repo_branch,
+            "resolve_git_dir_for_project": _resolve_git_dir,
+            "resolve_git_dirs_for_project": _resolve_git_dirs,
+            "run_workflow_start_git_sync": _sync_project_repos_on_workflow_start,
             "resolve_tier_for_issue": _resolve_tier_for_issue_scoped,
             "invoke_ai_agent": invoke_ai_agent,
             "handle_webhook_task": _handle_webhook_task,

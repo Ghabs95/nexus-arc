@@ -1,5 +1,7 @@
 """Tests for workflow policy plugin."""
 
+from typing import Any
+
 from nexus.plugins.builtin.workflow_policy_plugin import WorkflowPolicyPlugin
 
 
@@ -32,7 +34,7 @@ def test_workflow_policy_builders():
 
 
 def test_workflow_policy_finalize_workflow():
-    captured = {"notify": None, "pr_kwargs": None, "cleanup_kwargs": None}
+    captured: dict[str, Any] = {"notify": None, "pr_kwargs": None, "cleanup_kwargs": None}
 
     def _resolve_git_dir(_project_name):
         return "/tmp/repo"
@@ -77,7 +79,7 @@ def test_workflow_policy_finalize_workflow():
 
 
 def test_workflow_policy_finalize_workflow_reuses_existing_pr():
-    captured = {"created": False, "closed_kwargs": None, "cleanup_called": False}
+    captured: dict[str, Any] = {"created": False, "closed_kwargs": None, "cleanup_called": False}
 
     def _resolve_git_dir(_project_name):
         return "/tmp/repo"
@@ -118,3 +120,35 @@ def test_workflow_policy_finalize_workflow_reuses_existing_pr():
     assert captured["created"] is False
     assert captured["cleanup_called"] is True
     assert "https://github.com/org/repo/pull/50" in captured["closed_kwargs"]["comment"]
+
+
+def test_workflow_policy_finalize_uses_resolved_base_branch():
+    captured: dict[str, Any] = {"pr_kwargs": None}
+
+    def _resolve_git_dir(_project_name):
+        return "/tmp/repo"
+
+    def _resolve_repo_branch(_project_name, _repo):
+        return "develop"
+
+    def _create_pr_from_changes(**kwargs):
+        captured["pr_kwargs"] = kwargs
+        return "https://github.com/org/repo/pull/10"
+
+    plugin = WorkflowPolicyPlugin(
+        {
+            "resolve_git_dir": _resolve_git_dir,
+            "resolve_repo_branch": _resolve_repo_branch,
+            "create_pr_from_changes": _create_pr_from_changes,
+            "close_issue": lambda **_kwargs: False,
+        }
+    )
+
+    plugin.finalize_workflow(
+        issue_number="42",
+        repo="org/repo",
+        last_agent="developer",
+        project_name="nexus",
+    )
+
+    assert captured["pr_kwargs"]["base_branch"] == "develop"

@@ -97,6 +97,30 @@ class TestProvisionWorktreeCustomBranch:
             os.path.join(base, ".nexus", "worktrees", "issue-42"),
         ]
 
+    @mock.patch("nexus.core.workspace.subprocess.run", side_effect=_mock_subprocess_run_ok)
+    @mock.patch("os.makedirs")
+    @mock.patch("os.path.isdir", return_value=False)
+    def test_start_ref_is_used_for_new_branch(self, mock_isdir, mock_makedirs, mock_run, tmp_path):
+        base = str(tmp_path)
+        WorkspaceManager.provision_worktree(
+            base,
+            "42",
+            branch_name="feat/my-feature",
+            start_ref="origin/develop",
+        )
+
+        worktree_call = mock_run.call_args_list[-1]
+        cmd = worktree_call[0][0]
+        assert cmd == [
+            "git",
+            "worktree",
+            "add",
+            "-b",
+            "feat/my-feature",
+            os.path.join(base, ".nexus", "worktrees", "issue-42"),
+            "origin/develop",
+        ]
+
 
 class TestCleanupWorktreeSafety:
     @mock.patch("nexus.core.workspace.WorkspaceManager.cleanup_worktree", return_value=True)

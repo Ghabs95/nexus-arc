@@ -3,6 +3,9 @@
 import asyncio
 import logging
 
+from services.credential_store import get_issue_requester
+from services.project_access_service import build_execution_env
+
 from nexus.core.audit_store import AuditStore
 from nexus.core.config import NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG, TELEGRAM_ALLOWED_USER_IDS
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
@@ -14,8 +17,6 @@ from nexus.core.orchestration.plugin_runtime import (
     get_workflow_state_plugin,
 )
 from nexus.core.project.key_utils import normalize_project_key_str as _normalize_project_key
-from services.credential_store import get_issue_requester
-from services.project_access_service import build_execution_env
 from nexus.core.state_manager import HostStateManager
 
 logger = logging.getLogger(__name__)

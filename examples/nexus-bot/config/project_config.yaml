@@ -98,6 +98,13 @@ nexus:
   git_repo: Ghabs95/nexus-arc
   git_repos:
     - Ghabs95/nexus-arc
+  git_branches:
+    default: main
+  git_sync:
+    on_workflow_start: true
+    network_auth_retries: 3
+    retry_backoff_seconds: 5
+    decision_timeout_seconds: 120
   access_control:
     github_teams:
       - Ghabs95/nexus-team
@@ -157,6 +164,15 @@ atlas:
   git_repos:
     - demo-org/atlas
     - demo-org/atlas-shared
+  git_branches:
+    default: develop
+    repos:
+      demo-org/atlas: main
+  git_sync:
+    on_workflow_start: true
+    network_auth_retries: 3
+    retry_backoff_seconds: 5
+    decision_timeout_seconds: 120
   access_control:
     gitlab_groups:
       - demo-org/atlas-team
@@ -172,6 +188,15 @@ orion:
   git_repos:
     - demo-org/orion
     - demo-org/orion-shared
+  git_branches:
+    default: develop
+    repos:
+      demo-org/orion: main
+  git_sync:
+    on_workflow_start: true
+    network_auth_retries: 3
+    retry_backoff_seconds: 5
+    decision_timeout_seconds: 120
   access_control:
     github_teams:
       - demo-org/orion-team

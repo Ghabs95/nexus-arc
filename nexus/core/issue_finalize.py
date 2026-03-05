@@ -16,13 +16,22 @@ def emit_alert(*args, **kwargs):
     return _host_emit_alert(*args, **kwargs)
 
 
-def get_git_platform(repo_key: str, *, project_name: str):
+def get_git_platform(
+    repo_key: str,
+    *,
+    project_name: str,
+    token_override: str | None = None,
+):
     """Resolve provider adapter from host orchestration helper."""
     try:
         from nexus.core.orchestration.nexus_core_helpers import get_git_platform as _host_get_git_platform
     except Exception as exc:
         raise RuntimeError("Host get_git_platform is not available") from exc
-    return _host_get_git_platform(repo_key, project_name=project_name)
+    return _host_get_git_platform(
+        repo_key,
+        project_name=project_name,
+        token_override=token_override,
+    )
 
 
 def verify_workflow_terminal_before_finalize(
@@ -71,6 +80,7 @@ def create_pr_from_changes(
     body: str,
     issue_repo: str | None = None,
     token_override: str | None = None,
+    base_branch: str | None = None,
 ) -> str | None:
     issue_worktree_dir = os.path.join(
         str(repo_dir),
@@ -98,6 +108,7 @@ def create_pr_from_changes(
             title=title,
             body=body,
             issue_repo=issue_repo,
+            base_branch=str(base_branch or "").strip() or "main",
         )
     )
     return pr_result.url if pr_result else None
@@ -171,6 +182,7 @@ def finalize_workflow(
     resolve_git_dir,
     resolve_git_dirs,
     create_pr_from_changes_fn,
+    resolve_repo_branch_fn,
     find_existing_pr_fn,
     cleanup_worktree_fn,
     close_issue_fn,
@@ -205,6 +217,7 @@ def finalize_workflow(
         resolve_git_dir=resolve_git_dir,
         resolve_git_dirs=resolve_git_dirs,
         create_pr_from_changes=create_pr_from_changes_fn,
+        resolve_repo_branch=resolve_repo_branch_fn,
         find_existing_pr=find_existing_pr_fn,
         cleanup_worktree=cleanup_worktree_fn,
         close_issue=close_issue_fn,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from nexus.core.config import BASE_DIR, NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG
+from nexus.core.config import BASE_DIR, NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG, get_repo_branch
 from nexus.core.config import get_tasks_active_dir, get_tasks_closed_dir
 from nexus.core.inbox.inbox_repo_path_service import resolve_git_dir, resolve_git_dirs
 from nexus.core.inbox.inbox_sop_naming_service import get_sop_tier_for_task
@@ -84,6 +84,11 @@ def finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: 
             title=kwargs["title"],
             body=kwargs["body"],
             issue_repo=kwargs.get("issue_repo"),
+            base_branch=kwargs.get("base_branch"),
+        ),
+        resolve_repo_branch_fn=lambda **kwargs: get_repo_branch(
+            project_name,
+            str(kwargs.get("repo", "")),
         ),
         find_existing_pr_fn=lambda **kwargs: _find_existing_pr(
             project_name=project_name,

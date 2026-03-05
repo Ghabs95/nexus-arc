@@ -70,6 +70,8 @@ def test_finalize_provider_helpers_delegate_to_git_platform():
     assert found.endswith("/pull/1")
     assert closed is False  # helper wraps None -> False
     assert any(c[0] == "create_pr_from_changes" for c in platform.calls)
+    create_call = next(c for c in platform.calls if c[0] == "create_pr_from_changes")
+    assert create_call[1]["base_branch"] == "main"
     assert any(c[0] == "search_linked_prs" for c in platform.calls)
     assert any(c[0] == "close_issue" for c in platform.calls)
 

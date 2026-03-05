@@ -46,7 +46,10 @@ class WorkspaceManager:
 
     @staticmethod
     def provision_worktree(
-        base_repo_path: str, issue_number: str, branch_name: str | None = None
+        base_repo_path: str,
+        issue_number: str,
+        branch_name: str | None = None,
+        start_ref: str | None = None,
     ) -> str:
         """
         Provision an isolated Git worktree for the given issue.
@@ -60,6 +63,9 @@ class WorkspaceManager:
             branch_name: Optional branch name to use (e.g. from the issue's
                 Target Branch field). Falls back to ``nexus/issue-{N}`` when
                 not provided.
+            start_ref: Optional git ref used when creating a new branch.
+                Useful for creating issue worktrees from project-specific
+                integration branches (for example ``origin/develop``).
 
         Returns:
             The absolute path to the provisioned worktree directory.
@@ -113,8 +119,12 @@ class WorkspaceManager:
                 logger.info(f"Adding worktree using existing branch {branch_name}")
             else:
                 # Add worktree and create the branch simultaneously
+                command = ["git", "worktree", "add", "-b", branch_name, worktree_dir]
+                normalized_start_ref = str(start_ref or "").strip()
+                if normalized_start_ref:
+                    command.append(normalized_start_ref)
                 subprocess.run(
-                    ["git", "worktree", "add", "-b", branch_name, worktree_dir],
+                    command,
                     cwd=base_repo_path,
                     check=True,
                     capture_output=True,

@@ -179,3 +179,39 @@ def test_get_chat_agents_reads_list_shape(monkeypatch):
     assert [item["agent_type"] for item in agents] == ["business", "marketing"]
     assert agents[0]["context_path"] == "sample-business-os"
     assert agents[1]["context_path"] == "sample-marketing-os"
+
+
+def test_get_repo_branch_prefers_repo_override(monkeypatch):
+    monkeypatch.setattr(
+        config,
+        "_get_project_config",
+        lambda: {
+            "sampleco": {
+                "workspace": "sampleco",
+                "git_repo": "sample-org/backend",
+                "git_repos": ["sample-org/backend", "sample-org/mobile"],
+                "git_branches": {
+                    "default": "develop",
+                    "repos": {"sample-org/mobile": "release"},
+                },
+            }
+        },
+    )
+
+    assert config.get_repo_branch("sampleco", "sample-org/mobile") == "release"
+    assert config.get_repo_branch("sampleco", "sample-org/backend") == "develop"
+
+
+def test_get_repo_branch_defaults_to_main(monkeypatch):
+    monkeypatch.setattr(
+        config,
+        "_get_project_config",
+        lambda: {
+            "sampleco": {
+                "workspace": "sampleco",
+                "git_repo": "sample-org/backend",
+            }
+        },
+    )
+
+    assert config.get_repo_branch("sampleco", "sample-org/backend") == "main"

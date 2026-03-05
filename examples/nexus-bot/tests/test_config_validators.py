@@ -82,3 +82,60 @@ def test_validate_project_config_accepts_top_level_gitlab_group():
         }
     }
     validate_project_config(payload)
+
+
+def test_validate_project_config_accepts_git_branches_and_git_sync():
+    payload = {
+        "nexus": {
+            "workspace": "x",
+            "agents_dir": "a",
+            "git_platform": "github",
+            "git_repo": "acme/workflow",
+            "git_repos": ["acme/workflow", "acme/backend"],
+            "git_branches": {
+                "default": "develop",
+                "repos": {"acme/workflow": "main", "acme/backend": "release"},
+            },
+            "git_sync": {
+                "on_workflow_start": True,
+                "network_auth_retries": 3,
+                "retry_backoff_seconds": 5,
+                "decision_timeout_seconds": 120,
+            },
+        }
+    }
+    validate_project_config(payload)
+
+
+def test_validate_project_config_rejects_git_branches_unknown_repo():
+    payload = {
+        "nexus": {
+            "workspace": "x",
+            "agents_dir": "a",
+            "git_platform": "github",
+            "git_repo": "acme/workflow",
+            "git_branches": {
+                "default": "main",
+                "repos": {"acme/unknown": "develop"},
+            },
+        }
+    }
+    with pytest.raises(ValueError):
+        validate_project_config(payload)
+
+
+def test_validate_project_config_rejects_invalid_git_sync_numeric():
+    payload = {
+        "nexus": {
+            "workspace": "x",
+            "agents_dir": "a",
+            "git_platform": "github",
+            "git_repo": "acme/workflow",
+            "git_sync": {
+                "on_workflow_start": True,
+                "network_auth_retries": 0,
+            },
+        }
+    }
+    with pytest.raises(ValueError):
+        validate_project_config(payload)
