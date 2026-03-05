@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from nexus.adapters.notifications.base import Button
 from nexus.core.monitoring.monitoring_logs_service import (
     handle_logs as _service_handle_logs,
     handle_logsfull as _service_handle_logsfull,
@@ -17,8 +18,6 @@ from nexus.core.monitoring.monitoring_status_active_service import (
     handle_status as _service_handle_status,
 )
 from nexus.core.utils.log_utils import log_unauthorized_access
-
-from nexus.adapters.notifications.base import Button
 
 if TYPE_CHECKING:
     from nexus.core.interactive.context import InteractiveContext
@@ -99,13 +98,22 @@ async def tailstop_handler(
         log_unauthorized_access(getattr(deps, "logger", None), int(ctx.user_id))
         return
 
-    session_key = (ctx.chat_id, int(ctx.user_id))
-    active_task = deps.active_tail_tasks.get(session_key)
-    if session_key in deps.active_tail_sessions or (active_task and not active_task.done()):
-        deps.active_tail_sessions.pop(session_key, None)
+    raw_chat_id = getattr(ctx, "chat_id", None)
+    if raw_chat_id is None:
+        raw_chat_id = getattr(getattr(ctx, "raw_event", None), "chat_id", None)
+    if raw_chat_id is None:
+        raw_chat_id = getattr(getattr(getattr(ctx, "raw_event", None), "effective_chat", None), "id", 0)
+    session_key = (int(raw_chat_id or 0), int(ctx.user_id))
+    tail_tasks = cast(dict[tuple[int, int], asyncio.Task], deps.active_tail_tasks)
+    active_sessions = cast(dict[tuple[int, int], str], deps.active_tail_sessions)
+    active_task = tail_tasks.get(session_key)
+    if session_key in active_sessions or (active_task and not active_task.done()):
+        if session_key in active_sessions:
+            del active_sessions[session_key]
         if active_task and not active_task.done():
             active_task.cancel()
-        deps.active_tail_tasks.pop(session_key, None)
+        if session_key in tail_tasks:
+            del tail_tasks[session_key]
         await ctx.reply_text("⏹️ Stopped live tail session.")
     else:
         await ctx.reply_text("ℹ️ No active live tail session to stop.")

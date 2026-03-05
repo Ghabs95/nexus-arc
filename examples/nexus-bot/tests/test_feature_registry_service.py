@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 import nexus.core.feature_registry_service as feature_registry_module
 from nexus.core.feature_registry_service import FeatureRegistryService
 

@@ -1,9 +1,8 @@
 from collections.abc import Callable
 
-from nexus.core.runtime.nexus_agent_runtime import NexusAgentRuntime
-
 from nexus.core.completion_store import CompletionStore
 from nexus.core.process_orchestrator import ProcessOrchestrator
+from nexus.core.runtime.nexus_agent_runtime import NexusAgentRuntime
 
 _process_orchestrator: ProcessOrchestrator | None = None
 _completion_store: CompletionStore | None = None

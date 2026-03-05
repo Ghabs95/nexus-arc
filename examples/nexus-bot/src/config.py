@@ -24,11 +24,6 @@ from config_nexus_paths import (
     get_tasks_logs_dir as _svc_get_tasks_logs_dir,
 )
 from config_paths import load_path_config_from_env
-from nexus.core.project.registry import (
-    get_project_aliases as _svc_get_project_aliases,
-    get_project_registry as _svc_get_project_registry,
-    normalize_project_key as _svc_normalize_project_key,
-)
 from config_project_workflow import (
     get_default_project as _svc_get_default_project,
     get_track_short_projects as _svc_get_track_short_projects,
@@ -42,6 +37,11 @@ from config_repos import (
     get_repos as _svc_get_repos,
 )
 from config_validators import validate_project_config as _svc_validate_project_config
+from nexus.core.project.registry import (
+    get_project_aliases as _svc_get_project_aliases,
+    get_project_registry as _svc_get_project_registry,
+    normalize_project_key as _svc_normalize_project_key,
+)
 
 # Load secrets from local file if exists
 SECRET_FILE = ".env"

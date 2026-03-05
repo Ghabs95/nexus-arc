@@ -2,9 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from nexus.core.runtime.agent_monitor import AgentMonitor
-
 from nexus.core.router import WorkflowRouter
+from nexus.core.runtime.agent_monitor import AgentMonitor
 
 
 class TestAgentMonitor:

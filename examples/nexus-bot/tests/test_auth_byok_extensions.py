@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from nexus.core.auth import credential_store as store_svc
 from nexus.core.auth import access_domain as access_svc
+from nexus.core.auth import credential_store as store_svc
 from nexus.core.auth import oauth_onboarding_domain as auth_svc
 
 
@@ -16,7 +16,7 @@ def test_store_ai_provider_keys_accepts_claude_only(monkeypatch):
         status="oauth_done",
     )
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     monkeypatch.setattr(auth_svc, "get_auth_session", lambda _sid: session)
     monkeypatch.setattr(auth_svc, "_validate_claude_api_key_with_provider", lambda _k: (True, ""))
@@ -252,7 +252,7 @@ def test_complete_github_oauth_reuses_existing_nexus_identity(monkeypatch):
         lambda **_kwargs: SimpleNamespace(nexus_id="nexus-telegram"),
     )
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
     monkeypatch.setattr(auth_svc, "upsert_github_credentials", lambda **kwargs: captured.setdefault("upsert", kwargs))
     monkeypatch.setattr(auth_svc, "sync_user_project_access", lambda **kwargs: captured.setdefault("sync", kwargs) or 3)
     monkeypatch.setattr(auth_svc, "update_auth_session", lambda **kwargs: captured.setdefault("session", kwargs))
@@ -292,7 +292,7 @@ def test_complete_gitlab_oauth_reuses_existing_nexus_identity(monkeypatch):
         lambda **_kwargs: SimpleNamespace(nexus_id="nexus-telegram"),
     )
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
     monkeypatch.setattr(auth_svc, "upsert_gitlab_credentials", lambda **kwargs: captured.setdefault("upsert", kwargs))
     monkeypatch.setattr(auth_svc, "sync_user_gitlab_project_access", lambda **kwargs: captured.setdefault("sync", kwargs) or 4)
     monkeypatch.setattr(auth_svc, "update_auth_session", lambda **kwargs: captured.setdefault("session", kwargs))

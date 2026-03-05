@@ -11,12 +11,11 @@ from nexus.core.config import (
     normalize_project_key,
 )
 from nexus.core.handlers.common_routing import extract_json_dict
-from nexus.core.integrations.inbox_queue import enqueue_task
 from nexus.core.inbox.inbox_routing_service import (
     process_inbox_task_request,
     save_resolved_inbox_task_request,
 )
-
+from nexus.core.integrations.inbox_queue import enqueue_task
 from nexus.core.utils.task_name import generate_task_name, normalize_task_name
 
 logger = logging.getLogger(__name__)

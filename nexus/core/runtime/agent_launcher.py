@@ -15,7 +15,15 @@ import subprocess
 import threading
 import time
 
+from nexus.adapters.git.utils import build_issue_url
 from nexus.core.audit_store import AuditStore
+from nexus.core.auth.access_domain import (
+    auth_enabled,
+    build_execution_env,
+    check_project_access,
+    check_repo_access,
+)
+from nexus.core.auth.credential_store import get_issue_requester_by_url
 from nexus.core.config import (
     BASE_DIR,
     ORCHESTRATOR_CONFIG,
@@ -30,28 +38,19 @@ from nexus.core.config import (
     get_project_platform,
     get_tasks_logs_dir,
 )
+# Nexus Core framework imports
+from nexus.core.guards import LaunchGuard
 from nexus.core.integrations.notifications import notify_agent_completed, emit_alert
 from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 from nexus.core.orchestration.plugin_runtime import get_profiled_plugin
-from nexus.core.auth.credential_store import get_issue_requester_by_url
-from nexus.core.auth.access_domain import (
-    auth_enabled,
-    build_execution_env,
-    check_project_access,
-    check_repo_access,
-)
-from nexus.core.runtime_mode import is_postgres_backend
-from nexus.core.state_manager import HostStateManager
-
-from nexus.adapters.git.utils import build_issue_url
-# Nexus Core framework imports
-from nexus.core.guards import LaunchGuard
 from nexus.core.project.repo_utils import (
     iter_project_configs as _iter_project_configs,
 )
 from nexus.core.project.repo_utils import (
     project_repos_from_config as _project_repos,
 )
+from nexus.core.runtime_mode import is_postgres_backend
+from nexus.core.state_manager import HostStateManager
 from nexus.plugins.builtin.ai_runtime_plugin import ToolUnavailableError
 
 logger = logging.getLogger(__name__)

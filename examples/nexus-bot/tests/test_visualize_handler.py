@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from nexus.core.mermaid_render_service import build_mermaid_diagram
 
 
@@ -113,7 +114,7 @@ async def test_handler_prompts_project_selection_when_no_args():
     ctx = _make_ctx(args=[])
     deps = _make_deps()
     await visualize_handler(ctx, deps)
-    deps.prompt_project_selection.assert_awaited_once_with(ctx, "visualize")
+    cast(AsyncMock, deps.prompt_project_selection).assert_awaited_once_with(ctx, "visualize")
 
 
 @pytest.mark.asyncio

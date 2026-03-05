@@ -24,7 +24,7 @@ def test_extract_repo_from_gitlab_issue_url_parses_namespace_repo():
 
 def test_resolve_repo_strict_raises_on_mismatch(monkeypatch):
     from nexus.core.inbox.inbox_repo_path_service import resolve_repo_strict
-    from nexus.core.project.repo_utils import iter_project_configs, project_repos_from_config
+    from nexus.core.project.repo_utils import project_repos_from_config
 
     project_config = {
         "nexus": {

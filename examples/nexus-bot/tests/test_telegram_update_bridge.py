@@ -1,6 +1,7 @@
 import types
 
 import pytest
+
 from nexus.core.orchestration.telegram.telegram_update_bridge import (
     _clip_telegram_text,
     _normalize_telegram_markdown,

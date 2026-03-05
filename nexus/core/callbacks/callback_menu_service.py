@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from nexus.core.callbacks.callback_registry_service import dispatch_callback_action
-
 from nexus.adapters.notifications.base import Button
+from nexus.core.callbacks.callback_registry_service import dispatch_callback_action
 
 
 def menu_root_buttons() -> list[list[Button]]:

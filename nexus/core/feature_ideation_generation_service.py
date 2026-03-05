@@ -4,9 +4,8 @@ import json
 import os
 from typing import Any, Callable
 
-from nexus.core.utils.log_utils import log_feature_ideation_success, truncate_for_log
-
 from nexus.core.prompt_budget import apply_prompt_budget, prompt_prefix_fingerprint
+from nexus.core.utils.log_utils import log_feature_ideation_success, truncate_for_log
 
 _PROMPT_MAX_CHARS = int(os.getenv("AI_PROMPT_MAX_CHARS", "16000"))
 _CONTEXT_SUMMARY_MAX_CHARS = int(os.getenv("AI_CONTEXT_SUMMARY_MAX_CHARS", "1200"))

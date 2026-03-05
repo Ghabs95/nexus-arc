@@ -24,17 +24,6 @@ from telegram.ext import (
 )
 
 from alerting import init_alerting_system
-from nexus.core.analytics.reporting import get_stats_report
-from nexus.core.audit_store import AuditStore
-from nexus.core.runtime.workflow_commands import (
-    pause_handler as workflow_pause_handler,
-)
-from nexus.core.runtime.workflow_commands import (
-    resume_handler as workflow_resume_handler,
-)
-from nexus.core.runtime.workflow_commands import (
-    stop_handler as workflow_stop_handler,
-)
 # Import configuration from centralized config module
 from config import (
     AI_PERSONA,
@@ -68,7 +57,26 @@ from config import (
     get_tasks_logs_dir,
     get_track_short_projects,
 )
+from nexus.adapters.git.utils import build_issue_url, resolve_repo
+from nexus.core.analytics.reporting import get_stats_report
+from nexus.core.audit_store import AuditStore
+from nexus.core.auth import (
+    check_project_access as _svc_check_project_access,
+)
+from nexus.core.auth import create_login_session_for_user
+from nexus.core.auth import (
+    get_setup_status as _svc_get_setup_status,
+)
+from nexus.core.command_contract import (
+    validate_command_parity,
+    validate_required_command_interface,
+)
+from nexus.core.completion import scan_for_completions
 from nexus.core.error_handling import format_error_for_user
+from nexus.core.feature_registry_service import FeatureRegistryService
+from nexus.core.git.direct_issue_plugin_service import (
+    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
+)
 from nexus.core.handlers.audio_transcription_handler import (
     AudioTranscriptionDeps,
     transcribe_telegram_voice,
@@ -246,14 +254,14 @@ from nexus.core.handlers.workflow_command_handlers import (
 from nexus.core.handlers.workflow_command_handlers import (
     wfstate_handler as workflow_wfstate_handler,
 )
-from nexus.core.task_flow.helpers import (
-    get_sop_tier,
-    normalize_agent_reference as _normalize_agent_reference,
+from nexus.core.memory import (
+    append_message,
+    create_chat,
+    get_active_chat,
+    get_chat,
+    get_chat_history,
+    rename_chat,
 )
-from nexus.adapters.git.utils import build_issue_url, resolve_repo
-from nexus.core.completion import scan_for_completions
-from nexus.core.utils.logging_filters import install_secret_redaction
-from nexus.plugins.builtin.ai_runtime_plugin import AIProvider
 from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
 from nexus.core.orchestration.plugin_runtime import (
@@ -276,33 +284,6 @@ from nexus.core.orchestration.telegram.telegram_update_bridge import (
 from nexus.core.orchestration.telegram.telegram_update_bridge import (
     buttons_to_reply_markup as _bridge_buttons_to_reply_markup,
 )
-from nexus.core.project.key_utils import normalize_project_key_optional as _normalize_project_key
-from rate_limiter import RateLimit, get_rate_limiter
-from nexus.core.report_scheduler import ReportScheduler
-from nexus.core.runtime.bridge import get_sop_tier_from_issue, invoke_ai_agent
-from nexus.core.auth import (
-    check_project_access as _svc_check_project_access,
-)
-from nexus.core.auth import create_login_session_for_user
-from nexus.core.auth import (
-    get_setup_status as _svc_get_setup_status,
-)
-from nexus.core.command_contract import (
-    validate_command_parity,
-    validate_required_command_interface,
-)
-from nexus.core.feature_registry_service import FeatureRegistryService
-from nexus.core.git.direct_issue_plugin_service import (
-    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
-)
-from nexus.core.memory import (
-    append_message,
-    create_chat,
-    get_active_chat,
-    get_chat,
-    get_chat_history,
-    rename_chat,
-)
 from nexus.core.project.catalog import (
     get_single_project_key as _svc_get_single_project_key,
 )
@@ -320,6 +301,24 @@ from nexus.core.project.issue_command_deps import (
 )
 from nexus.core.project.issue_command_deps import (
     project_repo as _svc_project_repo,
+)
+from nexus.core.project.key_utils import normalize_project_key_optional as _normalize_project_key
+from nexus.core.report_scheduler import ReportScheduler
+from nexus.core.runtime.bridge import find_task_file_by_issue
+from nexus.core.runtime.bridge import get_sop_tier_from_issue, invoke_ai_agent
+from nexus.core.runtime.workflow_commands import (
+    pause_handler as workflow_pause_handler,
+)
+from nexus.core.runtime.workflow_commands import (
+    resume_handler as workflow_resume_handler,
+)
+from nexus.core.runtime.workflow_commands import (
+    stop_handler as workflow_stop_handler,
+)
+from nexus.core.state_manager import HostStateManager
+from nexus.core.task_flow.helpers import (
+    get_sop_tier,
+    normalize_agent_reference as _normalize_agent_reference,
 )
 from nexus.core.telegram.telegram_bootstrap_ui_service import (
     build_menu_keyboard as _svc_build_menu_keyboard,
@@ -497,6 +496,8 @@ from nexus.core.telegram.telegram_ui_prompts_service import (
 from nexus.core.telegram.telegram_workflow_probe_service import (
     get_expected_running_agent_from_workflow as _svc_get_expected_running_agent_from_workflow,
 )
+from nexus.core.user_manager import get_user_manager
+from nexus.core.utils.logging_filters import install_secret_redaction
 from nexus.core.workflow_runtime.workflow_control_service import (
     kill_issue_agent,
     prepare_continue_context,
@@ -512,9 +513,8 @@ from nexus.core.workflow_runtime.workflow_signal_sync import (
     write_local_completion_from_signal,
 )
 from nexus.core.workflow_runtime.workflow_watch_service import get_workflow_watch_service
-from nexus.core.state_manager import HostStateManager
-from nexus.core.user_manager import get_user_manager
-from nexus.core.runtime.bridge import find_task_file_by_issue
+from nexus.plugins.builtin.ai_runtime_plugin import AIProvider
+from rate_limiter import RateLimit, get_rate_limiter
 
 # --- LOGGING ---
 logger = logging.getLogger(__name__)

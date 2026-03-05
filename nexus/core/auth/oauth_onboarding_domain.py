@@ -9,6 +9,12 @@ from typing import Any
 from urllib.parse import urlencode
 
 import requests
+
+from nexus.core.auth.access_domain import (
+    get_setup_status,
+    sync_user_gitlab_project_access,
+    sync_user_project_access,
+)
 from nexus.core.auth.credential_crypto import encrypt_secret
 from nexus.core.auth.credential_store import (
     cleanup_expired_auth_sessions,
@@ -22,11 +28,6 @@ from nexus.core.auth.credential_store import (
     upsert_ai_provider_keys,
     upsert_github_credentials,
     upsert_gitlab_credentials,
-)
-from nexus.core.auth.access_domain import (
-    get_setup_status,
-    sync_user_gitlab_project_access,
-    sync_user_project_access,
 )
 
 

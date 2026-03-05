@@ -17,7 +17,6 @@ from nexus.core.callbacks.callback_inline_service import (
 from nexus.core.callbacks.callback_menu_service import (
     handle_menu_callback as service_menu_callback_handler,
 )
-from nexus.core.state_manager import HostStateManager
 
 
 @dataclass
@@ -35,7 +34,10 @@ class CallbackHandlerDeps:
 
 
 async def core_callback_router(ctx: InteractiveContext, deps: CallbackHandlerDeps):
-    data = ctx.query.data
+    query = ctx.query
+    if query is None:
+        return
+    data = query.action_data
     monitor_prefixes = (
         "status:",
         "active:",
@@ -64,7 +66,10 @@ async def core_callback_router(ctx: InteractiveContext, deps: CallbackHandlerDep
 
 async def project_picker_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
     await ctx.answer_callback_query()
-    query_data = ctx.query.data
+    query = ctx.query
+    if query is None:
+        return
+    query_data = query.action_data
 
     if not query_data or not query_data.startswith("pickcmd:"):
         return
@@ -87,7 +92,8 @@ async def project_picker_handler(ctx: InteractiveContext, deps: CallbackHandlerD
 
     if pending_issue and command == "respond":
         await ctx.edit_message_text(
-            f"Selected {deps.get_project_label(project_key)}. Now send the response message."
+            message_id=query.message_id,
+            text=f"Selected {deps.get_project_label(project_key)}. Now send the response message.",
         )
         return
 
@@ -96,7 +102,10 @@ async def project_picker_handler(ctx: InteractiveContext, deps: CallbackHandlerD
 
 async def issue_picker_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
     await ctx.answer_callback_query()
-    query_data = ctx.query.data
+    query = ctx.query
+    if query is None:
+        return
+    query_data = query.action_data
 
     if not query_data:
         return
@@ -106,7 +115,8 @@ async def issue_picker_handler(ctx: InteractiveContext, deps: CallbackHandlerDep
         ctx.user_state["pending_command"] = command
         ctx.user_state["pending_project"] = project_key
         await ctx.edit_message_text(
-            f"Selected {deps.get_project_label(project_key)}. Send the issue number."
+            message_id=query.message_id,
+            text=f"Selected {deps.get_project_label(project_key)}. Send the issue number.",
         )
         return
 
@@ -125,13 +135,20 @@ async def issue_picker_handler(ctx: InteractiveContext, deps: CallbackHandlerDep
         return
 
     _, command, project_key, issue_num = query_data.split(":", 3)
-    await ctx.edit_message_text(ctx.text, buttons=[])
+    await ctx.edit_message_text(
+        message_id=query.message_id,
+        text=ctx.text,
+        buttons=[],
+    )
     await deps.dispatch_command(ctx, command, project_key, issue_num)
 
 
 async def monitor_project_picker_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
     await ctx.answer_callback_query()
-    query_data = ctx.query.data
+    query = ctx.query
+    if query is None:
+        return
+    query_data = query.action_data
 
     if not query_data:
         return
@@ -167,17 +184,33 @@ async def monitor_project_picker_handler(ctx: InteractiveContext, deps: Callback
         await handler(ctx)
         return
 
-    await ctx.edit_message_text("Unsupported monitoring command.")
+    await ctx.edit_message_text(
+        message_id=query.message_id,
+        text="Unsupported monitoring command.",
+    )
 
 
 async def close_flow_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
     await ctx.answer_callback_query()
-    await ctx.edit_message_text(ctx.text, buttons=[])
+    query = ctx.query
+    if query is None:
+        return
+    await ctx.edit_message_text(
+        message_id=query.message_id,
+        text=ctx.text,
+        buttons=[],
+    )
 
 
 async def flow_close_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
     await ctx.answer_callback_query()
-    await ctx.edit_message_text("❌ Cancelled.")
+    query = ctx.query
+    if query is None:
+        return
+    await ctx.edit_message_text(
+        message_id=query.message_id,
+        text="❌ Cancelled.",
+    )
 
 
 async def menu_callback_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
@@ -186,7 +219,10 @@ async def menu_callback_handler(ctx: InteractiveContext, deps: CallbackHandlerDe
 
 async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
     await ctx.answer_callback_query()
-    query_data = ctx.query.data
+    query = ctx.query
+    if query is None:
+        return
+    query_data = query.action_data
 
     if not query_data:
         return
@@ -198,8 +234,11 @@ async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandler
 
     if not project_hint:
         await ctx.edit_message_text(
-            "❌ This action is missing project context and is no longer supported.\n"
-            "Please trigger the latest message/action again."
+            message_id=query.message_id,
+            text=(
+                "❌ This action is missing project context and is no longer supported.\n"
+                "Please trigger the latest message/action again."
+            ),
         )
         return
 
@@ -219,14 +258,20 @@ async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandler
         return
     elif action == "respond":
         await ctx.edit_message_text(
-            f"✍️ To respond to issue #{issue_num}, use:\n\n"
-            f"`/respond {project_hint} {issue_num} <your message>`\n\n"
-            f"Example:\n"
-            f"`/respond {project_hint} {issue_num} Approved, proceed with implementation`"
+            message_id=query.message_id,
+            text=(
+                f"✍️ To respond to issue #{issue_num}, use:\n\n"
+                f"`/respond {project_hint} {issue_num} <your message>`\n\n"
+                f"Example:\n"
+                f"`/respond {project_hint} {issue_num} Approved, proceed with implementation`"
+            ),
         )
     elif action == "approve":
         ctx.args = [issue_num]
-        await ctx.edit_message_text(f"✅ Approving implementation for issue #{issue_num}...")
+        await ctx.edit_message_text(
+            message_id=query.message_id,
+            text=f"✅ Approving implementation for issue #{issue_num}...",
+        )
 
         try:
             repo = deps.get_repo(project_hint)
@@ -235,17 +280,29 @@ async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandler
                 issue_num,
                 "✅ Implementation approved. Please proceed.",
             ):
-                await ctx.edit_message_text(f"❌ Error approving issue #{issue_num}")
+                await ctx.edit_message_text(
+                    message_id=query.message_id,
+                    text=f"❌ Error approving issue #{issue_num}",
+                )
                 return
             await ctx.edit_message_text(
-                f"✅ Implementation approved for issue #{issue_num}\n\n"
-                f"Agent will continue automatically."
+                message_id=query.message_id,
+                text=(
+                    f"✅ Implementation approved for issue #{issue_num}\n\n"
+                    f"Agent will continue automatically."
+                ),
             )
         except Exception as exc:
-            await ctx.edit_message_text(f"❌ Error approving: {exc}")
+            await ctx.edit_message_text(
+                message_id=query.message_id,
+                text=f"❌ Error approving: {exc}",
+            )
     elif action == "reject":
         ctx.args = [issue_num]
-        await ctx.edit_message_text(f"❌ Rejecting implementation for issue #{issue_num}...")
+        await ctx.edit_message_text(
+            message_id=query.message_id,
+            text=f"❌ Rejecting implementation for issue #{issue_num}...",
+        )
 
         try:
             repo = deps.get_repo(project_hint)
@@ -254,19 +311,30 @@ async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandler
                 issue_num,
                 "❌ Implementation rejected. Please revise.",
             ):
-                await ctx.edit_message_text(f"❌ Error rejecting issue #{issue_num}")
+                await ctx.edit_message_text(
+                    message_id=query.message_id,
+                    text=f"❌ Error rejecting issue #{issue_num}",
+                )
                 return
             await ctx.edit_message_text(
-                f"❌ Implementation rejected for issue #{issue_num}\n\n" f"Agent has been notified."
+                message_id=query.message_id,
+                text=(
+                    f"❌ Implementation rejected for issue #{issue_num}\n\n"
+                    f"Agent has been notified."
+                ),
             )
         except Exception as exc:
-            await ctx.edit_message_text(f"❌ Error rejecting: {exc}")
+            await ctx.edit_message_text(
+                message_id=query.message_id,
+                text=f"❌ Error rejecting: {exc}",
+            )
     elif action == "wfapprove":
         parts2 = issue_num.split("_", 1)
         real_issue = parts2[0]
         step_num = parts2[1] if len(parts2) > 1 else "?"
         await ctx.edit_message_text(
-            f"✅ Approving workflow step {step_num} for issue #{real_issue}..."
+            message_id=query.message_id,
+            text=f"✅ Approving workflow step {step_num} for issue #{real_issue}...",
         )
         try:
             workflow_plugin = deps.get_workflow_state_plugin(
@@ -277,20 +345,30 @@ async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandler
             if not workflow_plugin or not await workflow_plugin.approve_step(
                 real_issue, approved_by
             ):
-                await ctx.edit_message_text(f"❌ No workflow found for issue #{real_issue}")
+                await ctx.edit_message_text(
+                    message_id=query.message_id,
+                    text=f"❌ No workflow found for issue #{real_issue}",
+                )
                 return
             await ctx.edit_message_text(
-                f"✅ Step {step_num} approved for issue #{real_issue}\n\n"
-                f"Workflow will continue automatically."
+                message_id=query.message_id,
+                text=(
+                    f"✅ Step {step_num} approved for issue #{real_issue}\n\n"
+                    f"Workflow will continue automatically."
+                ),
             )
         except Exception as exc:
-            await ctx.edit_message_text(f"❌ Error approving workflow step: {exc}")
+            await ctx.edit_message_text(
+                message_id=query.message_id,
+                text=f"❌ Error approving workflow step: {exc}",
+            )
     elif action == "wfdeny":
         parts2 = issue_num.split("_", 1)
         real_issue = parts2[0]
         step_num = parts2[1] if len(parts2) > 1 else "?"
         await ctx.edit_message_text(
-            f"❌ Denying workflow step {step_num} for issue #{real_issue}..."
+            message_id=query.message_id,
+            text=f"❌ Denying workflow step {step_num} for issue #{real_issue}...",
         )
         try:
             workflow_plugin = deps.get_workflow_state_plugin(
@@ -303,11 +381,20 @@ async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandler
                 denied_by,
                 reason="Denied via Interactive Client",
             ):
-                await ctx.edit_message_text(f"❌ No workflow found for issue #{real_issue}")
+                await ctx.edit_message_text(
+                    message_id=query.message_id,
+                    text=f"❌ No workflow found for issue #{real_issue}",
+                )
                 return
             await ctx.edit_message_text(
-                f"❌ Step {step_num} denied for issue #{real_issue}\n\n"
-                f"Workflow has been stopped."
+                message_id=query.message_id,
+                text=(
+                    f"❌ Step {step_num} denied for issue #{real_issue}\n\n"
+                    f"Workflow has been stopped."
+                ),
             )
         except Exception as exc:
-            await ctx.edit_message_text(f"❌ Error denying workflow step: {exc}")
+            await ctx.edit_message_text(
+                message_id=query.message_id,
+                text=f"❌ Error denying workflow step: {exc}",
+            )

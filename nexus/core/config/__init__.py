@@ -15,20 +15,7 @@ from nexus.core.config.chat import (
 from nexus.core.config.loaders import (
     load_and_validate_project_config as _svc_load_and_validate_project_config,
 )
-from nexus.core.config.runtime import (
-    get_inbox_dir as _svc_get_inbox_dir,
-    get_nexus_dir as _svc_get_nexus_dir,
-    get_nexus_dir_name as _svc_get_nexus_dir_name,
-    get_tasks_active_dir as _svc_get_tasks_active_dir,
-    get_tasks_closed_dir as _svc_get_tasks_closed_dir,
-    get_tasks_logs_dir as _svc_get_tasks_logs_dir,
-)
 from nexus.core.config.paths import load_path_config_from_env
-from nexus.core.project.registry import (
-    get_project_aliases as _svc_get_project_aliases,
-    get_project_registry as _svc_get_project_registry,
-    normalize_project_key as _svc_normalize_project_key,
-)
 from nexus.core.config.projects import (
     get_default_project as _svc_get_default_project,
     get_track_short_projects as _svc_get_track_short_projects,
@@ -41,7 +28,20 @@ from nexus.core.config.repos import (
     get_repo as _svc_get_repo,
     get_repos as _svc_get_repos,
 )
+from nexus.core.config.runtime import (
+    get_inbox_dir as _svc_get_inbox_dir,
+    get_nexus_dir as _svc_get_nexus_dir,
+    get_nexus_dir_name as _svc_get_nexus_dir_name,
+    get_tasks_active_dir as _svc_get_tasks_active_dir,
+    get_tasks_closed_dir as _svc_get_tasks_closed_dir,
+    get_tasks_logs_dir as _svc_get_tasks_logs_dir,
+)
 from nexus.core.config.validators import validate_project_config as _svc_validate_project_config
+from nexus.core.project.registry import (
+    get_project_aliases as _svc_get_project_aliases,
+    get_project_registry as _svc_get_project_registry,
+    normalize_project_key as _svc_normalize_project_key,
+)
 
 # Load secrets from local file if exists
 SECRET_FILE = ".env"

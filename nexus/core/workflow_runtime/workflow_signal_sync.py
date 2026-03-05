@@ -9,9 +9,8 @@ import re
 from datetime import datetime
 from typing import Any
 
-from nexus.core.storage.capabilities import get_storage_capabilities
-
 from nexus.core.completion import budget_completion_payload
+from nexus.core.storage.capabilities import get_storage_capabilities
 
 _STEP_COMPLETE_COMMENT_RE = re.compile(
     r"^\s*##\s+.+?\bcomplete\b\s+—\s+([a-zA-Z0-9_-]+)\s*$",

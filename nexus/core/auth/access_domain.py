@@ -10,13 +10,7 @@ from typing import Any, Optional
 from urllib.parse import quote_plus
 
 import requests
-from nexus.core.config import (
-    NEXUS_RUNTIME_DIR,
-    PROJECT_CONFIG,
-    get_project_platform,
-    get_repo,
-    normalize_project_key,
-)
+
 from nexus.core.auth.credential_crypto import decrypt_secret, encrypt_secret
 from nexus.core.auth.credential_store import (
     CredentialRecord,
@@ -26,6 +20,13 @@ from nexus.core.auth.credential_store import (
     list_credentials_for_sync,
     replace_user_project_access,
     update_gitlab_oauth_tokens,
+)
+from nexus.core.config import (
+    NEXUS_RUNTIME_DIR,
+    PROJECT_CONFIG,
+    get_project_platform,
+    get_repo,
+    normalize_project_key,
 )
 
 logger = logging.getLogger(__name__)

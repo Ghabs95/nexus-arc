@@ -11,13 +11,13 @@ from inspect import isawaitable
 from typing import Any
 
 from nexus.core.config import INBOX_PROCESSOR_LOG_FILE, NEXUS_CORE_STORAGE_DIR
-from nexus.core.storage.capabilities import get_storage_capabilities
 from nexus.core.integrations.workflow_state_factory import get_storage_backend
 from nexus.core.integrations.workflow_state_factory import get_workflow_state as _get_wf_state
 from nexus.core.orchestration.plugin_runtime import (
     get_runtime_ops_plugin,
     get_workflow_state_plugin,
 )
+from nexus.core.storage.capabilities import get_storage_capabilities
 
 logger = logging.getLogger(__name__)
 

@@ -7,6 +7,7 @@ import subprocess
 from unittest.mock import patch
 
 import pytest
+
 from nexus.core.error_handling import (
     ConfigurationError,
     RetryExhaustedError,

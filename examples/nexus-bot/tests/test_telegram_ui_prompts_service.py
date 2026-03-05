@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+
 from nexus.core.telegram.telegram_ui_prompts_service import (
     prompt_issue_selection,
     prompt_project_selection,

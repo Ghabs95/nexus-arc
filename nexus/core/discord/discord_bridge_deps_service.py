@@ -3,11 +3,10 @@ import logging
 import os
 from typing import Any
 
+from nexus.adapters.git.utils import build_issue_url, resolve_repo
 from nexus.core.analytics.reporting import get_stats_report
 from nexus.core.audit_store import AuditStore
-from nexus.core.runtime.bridge import workflow_pause_handler
-from nexus.core.runtime.bridge import workflow_resume_handler
-from nexus.core.runtime.bridge import workflow_stop_handler
+from nexus.core.completion import scan_for_completions
 from nexus.core.config import (
     AI_PERSONA,
     BASE_DIR,
@@ -16,7 +15,6 @@ from nexus.core.config import (
     NEXUS_FEATURE_REGISTRY_DEDUP_SIMILARITY,
     NEXUS_FEATURE_REGISTRY_ENABLED,
     NEXUS_FEATURE_REGISTRY_MAX_ITEMS_PER_PROJECT,
-    NEXUS_STATE_DIR,
     NEXUS_STORAGE_BACKEND,
     NEXUS_STORAGE_DSN,
     NEXUS_WORKFLOW_BACKEND,
@@ -25,6 +23,7 @@ from nexus.core.config import (
     get_default_repo,
     get_default_project,
     get_inbox_dir,
+    get_project_display_names,
     get_inbox_storage_backend,
     get_nexus_dir_name,
     get_repo,
@@ -35,10 +34,14 @@ from nexus.core.config import (
     get_track_short_projects,
 )
 from nexus.core.error_handling import format_error_for_user
+from nexus.core.feature_registry_service import FeatureRegistryService
+from nexus.core.git.direct_issue_plugin_service import (
+    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
+)
 from nexus.core.handlers.feature_registry_command_handlers import FeatureRegistryCommandDeps
 from nexus.core.handlers.inbox_routing_handler import TYPES
-from nexus.core.task_flow.helpers import normalize_agent_reference as _normalize_agent_reference, get_sop_tier
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
+from nexus.core.memory import append_message, create_chat, get_chat_history
 from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
 from nexus.core.orchestration.plugin_runtime import (
@@ -46,14 +49,6 @@ from nexus.core.orchestration.plugin_runtime import (
     get_runtime_ops_plugin,
     get_workflow_state_plugin,
 )
-from nexus.core.project.key_utils import normalize_project_key_optional as _normalize_project_key
-from nexus.core.runtime.bridge import get_sop_tier_from_issue, invoke_ai_agent
-from nexus.core.runtime.bridge import get_retry_fuse_status
-from nexus.core.feature_registry_service import FeatureRegistryService
-from nexus.core.git.direct_issue_plugin_service import (
-    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
-)
-from nexus.core.memory import append_message, create_chat, get_chat_history
 from nexus.core.project.catalog import (
     get_project_label as _svc_get_project_label,
 )
@@ -72,6 +67,15 @@ from nexus.core.project.issue_command_deps import (
 from nexus.core.project.issue_command_deps import (
     project_repo as _svc_project_repo,
 )
+from nexus.core.project.key_utils import normalize_project_key_optional as _normalize_project_key
+from nexus.core.runtime.bridge import find_task_file_by_issue
+from nexus.core.runtime.bridge import get_retry_fuse_status
+from nexus.core.runtime.bridge import get_sop_tier_from_issue, invoke_ai_agent
+from nexus.core.runtime.bridge import workflow_pause_handler
+from nexus.core.runtime.bridge import workflow_resume_handler
+from nexus.core.runtime.bridge import workflow_stop_handler
+from nexus.core.state_manager import HostStateManager
+from nexus.core.task_flow.helpers import normalize_agent_reference as _normalize_agent_reference, get_sop_tier
 from nexus.core.telegram.telegram_handler_deps_service import (
     build_issue_handler_deps as _svc_build_issue_handler_deps,
 )
@@ -132,6 +136,7 @@ from nexus.core.telegram.telegram_project_logs_service import (
 from nexus.core.telegram.telegram_workflow_probe_service import (
     get_expected_running_agent_from_workflow as _svc_get_expected_running_agent_from_workflow,
 )
+from nexus.core.user_manager import get_user_manager
 from nexus.core.workflow_runtime.workflow_control_service import kill_issue_agent, prepare_continue_context
 from nexus.core.workflow_runtime.workflow_ops_service import (
     build_workflow_snapshot,
@@ -144,15 +149,10 @@ from nexus.core.workflow_runtime.workflow_signal_sync import (
     write_local_completion_from_signal,
 )
 from nexus.core.workflow_runtime.workflow_watch_service import get_workflow_watch_service
-from nexus.core.state_manager import HostStateManager
-from nexus.core.user_manager import get_user_manager
-from nexus.core.runtime.bridge import find_task_file_by_issue
-
-from nexus.adapters.git.utils import build_issue_url, resolve_repo
-from nexus.core.completion import scan_for_completions
 
 logger = logging.getLogger(__name__)
 DEFAULT_REPO = get_default_repo()
+PROJECTS_MAP = get_project_display_names()
 active_tail_sessions: dict[tuple[int, int], str] = {}
 active_tail_tasks: dict[tuple[int, int], asyncio.Task] = {}
 _orchestrator = None
@@ -181,7 +181,7 @@ def _iter_project_keys() -> list[str]:
 
 
 def _get_project_label(project_key: str) -> str:
-    return _svc_get_project_label(project_key=project_key, project_config=PROJECT_CONFIG)
+    return _svc_get_project_label(project_key=project_key, projects_map=PROJECTS_MAP)
 
 
 def _resolve_project_root_from_task_path(task_file: str) -> str:

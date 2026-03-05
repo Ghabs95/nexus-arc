@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any
 
 from nexus.core.config import BASE_DIR, NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG
 from nexus.core.config import get_tasks_active_dir, get_tasks_closed_dir
 from nexus.core.inbox.inbox_repo_path_service import resolve_git_dir, resolve_git_dirs
+from nexus.core.inbox.inbox_sop_naming_service import get_sop_tier_for_task
 from nexus.core.integrations.notifications import send_notification
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
 from nexus.core.issue_finalize import (
@@ -23,8 +22,6 @@ from nexus.core.merge_queue import enqueue_merge_queue_prs
 from nexus.core.orchestration.plugin_runtime import get_workflow_policy_plugin, get_workflow_state_plugin
 from nexus.core.runtime_mode import is_issue_process_running
 from nexus.core.task_archive import archive_closed_task_files
-from nexus.core.workflow_runtime.workflow_signal_sync import normalize_agent_reference
-from nexus.core.inbox.inbox_sop_naming_service import get_sop_tier_for_task
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +39,7 @@ def get_sop_tier(task_type: str, title: str | None = None, body: str | None = No
         task_type=str(task_type or ""),
         title=title,
         body=body,
-        suggest_tier_label=None,
+        suggest_tier_label=lambda _title, _body: None,
         logger=logger,
     )
 
@@ -103,4 +100,3 @@ def finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: 
         get_tasks_active_dir=get_tasks_active_dir,
         get_tasks_closed_dir=get_tasks_closed_dir,
     )
-

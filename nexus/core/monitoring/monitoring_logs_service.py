@@ -6,9 +6,8 @@ import re
 import time
 from typing import Any
 
-from nexus.core.utils.log_utils import log_unauthorized_access
-
 from nexus.adapters.notifications.base import Button
+from nexus.core.utils.log_utils import log_unauthorized_access
 
 
 def _resolve_project_only_arg(ctx: Any, deps: Any) -> str | None:

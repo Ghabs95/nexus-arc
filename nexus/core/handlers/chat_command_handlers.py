@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from nexus.core.handlers.inbox_routing_handler import PROJECTS
+from nexus.adapters.notifications.base import Button
 from nexus.core.chat.chat_context_service import (
     CHAT_MODES,
     agent_display_label,
@@ -10,6 +10,7 @@ from nexus.core.chat.chat_context_service import (
     available_primary_agent_types,
     chat_context_summary,
 )
+from nexus.core.handlers.inbox_routing_handler import PROJECTS
 from nexus.core.memory import (
     create_chat,
     delete_chat,
@@ -19,8 +20,6 @@ from nexus.core.memory import (
     set_active_chat,
     update_chat_metadata,
 )
-
-from nexus.adapters.notifications.base import Button
 
 if TYPE_CHECKING:
     from nexus.core.interactive.context import InteractiveContext

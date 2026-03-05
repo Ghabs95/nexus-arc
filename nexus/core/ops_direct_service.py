@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
-
-from nexus.core.handlers.agent_resolution_handler import resolve_agents_for_project
-from nexus.core.utils.log_utils import log_unauthorized_access
+from typing import Any, cast
 
 from nexus.core.chat_agents_schema import get_project_chat_agent_types
+from nexus.core.handlers.agent_resolution_handler import resolve_agents_for_project
+from nexus.core.utils.log_utils import log_unauthorized_access
 
 
 async def handle_direct_request(
@@ -45,7 +44,8 @@ async def handle_direct_request(
         await ctx.reply_text(f"❌ Unknown project '{project}'")
         return True
 
-    agents_dir = os.path.join(deps.base_dir, deps.project_config[project]["agents_dir"])
+    agents_subdir = cast(str, deps.project_config[project]["agents_dir"])
+    agents_dir = os.path.join(str(deps.base_dir), agents_subdir)
     agents_map = resolve_agents_for_project(agents_dir, deps.nexus_dir_name)
     if agent not in agents_map:
         available = ", ".join([f"@{a}" for a in sorted(agents_map.keys())])

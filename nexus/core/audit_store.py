@@ -7,16 +7,23 @@ Delegates to nexus-arc for standardized storage.
 import asyncio
 import logging
 import threading
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeVar, cast
 
-from nexus.core.config import NEXUS_CORE_STORAGE_DIR
 from nexus.adapters.storage.file import FileStorage
 from nexus.adapters.storage.structured_log import StructuredLogAuditBackend
+from nexus.core.config import NEXUS_CORE_STORAGE_DIR
 from nexus.core.storage.audit import AuditStore as CoreAuditStore
 
 logger = logging.getLogger(__name__)
 
+_T = TypeVar("_T")
 
-def _run_coro_sync(coro_factory, *, timeout_seconds: float = 10):
+def _run_coro_sync(
+    coro_factory: Callable[[], Coroutine[Any, Any, _T]],
+    *,
+    timeout_seconds: float = 10,
+) -> _T:
     """Run an async call from sync code, even if a loop is already running."""
     try:
         asyncio.get_running_loop()
@@ -27,22 +34,24 @@ def _run_coro_sync(coro_factory, *, timeout_seconds: float = 10):
     if not in_running_loop:
         return asyncio.run(coro_factory())
 
-    holder = {"value": None, "error": None}
+    value_holder: Any = None
+    error_holder: Exception | None = None
 
     def _runner() -> None:
+        nonlocal value_holder, error_holder
         try:
-            holder["value"] = asyncio.run(coro_factory())
+            value_holder = asyncio.run(coro_factory())
         except Exception as exc:  # pragma: no cover - defensive bridge
-            holder["error"] = exc
+            error_holder = exc
 
     worker = threading.Thread(target=_runner, daemon=True)
     worker.start()
     worker.join(timeout=timeout_seconds)
     if worker.is_alive():
         raise TimeoutError("Timed out running async audit operation in worker thread")
-    if holder["error"] is not None:
-        raise holder["error"]
-    return holder["value"]
+    if error_holder is not None:
+        raise error_holder
+    return cast(_T, value_holder)
 
 
 class AuditStore:

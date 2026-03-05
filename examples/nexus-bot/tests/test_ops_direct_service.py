@@ -2,6 +2,7 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+
 from nexus.core import ops_direct_service as svc
 from nexus.core.ops_direct_service import handle_direct_request
 

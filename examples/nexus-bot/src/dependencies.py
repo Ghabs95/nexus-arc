@@ -1,16 +1,5 @@
 import logging
 
-from nexus.core.analytics.reporting import get_stats_report
-from nexus.core.audit_store import AuditStore
-from nexus.core.runtime.workflow_commands import (
-    pause_handler as workflow_pause_handler,
-)
-from nexus.core.runtime.workflow_commands import (
-    resume_handler as workflow_resume_handler,
-)
-from nexus.core.runtime.workflow_commands import (
-    stop_handler as workflow_stop_handler,
-)
 # Import configuration from centralized config module
 from config import (
     AI_PERSONA,
@@ -31,6 +20,10 @@ from config import (
     get_tasks_closed_dir,
     get_track_short_projects,
 )
+from nexus.adapters.git.utils import build_issue_url, resolve_repo
+from nexus.core.analytics.reporting import get_stats_report
+from nexus.core.audit_store import AuditStore
+from nexus.core.completion import scan_for_completions
 from nexus.core.error_handling import format_error_for_user
 from nexus.core.handlers.inbox_routing_handler import (
     TYPES,
@@ -47,14 +40,12 @@ from nexus.core.handlers.ops_command_handlers import (
 from nexus.core.handlers.workflow_command_handlers import (
     WorkflowHandlerDeps,
 )
-from nexus.core.task_flow.helpers import (
-    get_sop_tier,
-    normalize_agent_reference as _normalize_agent_reference,
-)
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
-from nexus.adapters.git.utils import build_issue_url, resolve_repo
-from nexus.core.completion import scan_for_completions
-from nexus.core.utils.logging_filters import install_secret_redaction
+from nexus.core.memory import (
+    append_message,
+    create_chat,
+    get_chat_history,
+)
 from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
 from nexus.core.orchestration.plugin_runtime import (
@@ -62,13 +53,23 @@ from nexus.core.orchestration.plugin_runtime import (
     get_workflow_state_plugin,
 )
 from nexus.core.project.key_utils import normalize_project_key_optional as _normalize_project_key
-from rate_limiter import get_rate_limiter
 from nexus.core.runtime.bridge import get_sop_tier_from_issue, invoke_ai_agent
-from nexus.core.memory import (
-    append_message,
-    create_chat,
-    get_chat_history,
+from nexus.core.runtime.workflow_commands import (
+    pause_handler as workflow_pause_handler,
 )
+from nexus.core.runtime.workflow_commands import (
+    resume_handler as workflow_resume_handler,
+)
+from nexus.core.runtime.workflow_commands import (
+    stop_handler as workflow_stop_handler,
+)
+from nexus.core.state_manager import HostStateManager
+from nexus.core.task_flow.helpers import (
+    get_sop_tier,
+    normalize_agent_reference as _normalize_agent_reference,
+)
+from nexus.core.user_manager import get_user_manager
+from nexus.core.utils.logging_filters import install_secret_redaction
 from nexus.core.workflow_runtime.workflow_control_service import (
     kill_issue_agent,
     prepare_continue_context,
@@ -78,8 +79,7 @@ from nexus.core.workflow_runtime.workflow_ops_service import (
     fetch_workflow_state_snapshot,
     reconcile_issue_from_signals,
 )
-from nexus.core.state_manager import HostStateManager
-from nexus.core.user_manager import get_user_manager
+from rate_limiter import get_rate_limiter
 
 # --- LOGGING ---
 logger = logging.getLogger(__name__)

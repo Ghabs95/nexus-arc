@@ -1,8 +1,15 @@
 import logging
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
-from nexus.core.handlers.monitoring_command_handlers import fuse_handler, tailstop_handler
+
+from nexus.core.handlers.monitoring_command_handlers import (
+    MonitoringHandlersDeps,
+    fuse_handler,
+    tailstop_handler,
+)
+from nexus.core.interactive.context import InteractiveContext
 
 
 class _Ctx:
@@ -12,7 +19,7 @@ class _Ctx:
         self.args = []
         self.replies = []
 
-    async def reply_text(self, text, **kwargs):
+    def reply_text(self, text, **kwargs):
         self.replies.append((text, kwargs))
         return "msg"
 
@@ -41,7 +48,10 @@ async def test_tailstop_stops_active_session_and_cancels_task():
         active_tail_tasks={session_key: task},
     )
 
-    await tailstop_handler(ctx, deps)
+    await tailstop_handler(
+        cast(InteractiveContext, cast(object, ctx)),
+        cast(MonitoringHandlersDeps, cast(object, deps)),
+    )
 
     assert task.cancelled is True
     assert session_key not in deps.active_tail_sessions
@@ -59,7 +69,10 @@ async def test_tailstop_reports_when_no_active_session():
         active_tail_tasks={},
     )
 
-    await tailstop_handler(ctx, deps)
+    await tailstop_handler(
+        cast(InteractiveContext, cast(object, ctx)),
+        cast(MonitoringHandlersDeps, cast(object, deps)),
+    )
 
     assert "No active live tail session" in ctx.replies[-1][0]
 
@@ -74,7 +87,10 @@ async def test_fuse_prompts_with_close_when_no_args():
         get_project_label=lambda _pk: "Nexus",
     )
 
-    await fuse_handler(ctx, deps)
+    await fuse_handler(
+        cast(InteractiveContext, cast(object, ctx)),
+        cast(MonitoringHandlersDeps, cast(object, deps)),
+    )
 
     assert "Please select a project to view fuse status" in ctx.replies[-1][0]
     buttons = ctx.replies[-1][1]["buttons"]
