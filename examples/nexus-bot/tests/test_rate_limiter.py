@@ -2,7 +2,63 @@
 
 import time
 
-from rate_limiter import RateLimit, RateLimiter, UserQuota
+from nexus.core.rate_limiter import (
+    RateLimit,
+    RateLimiter,
+    UserQuota,
+    get_rate_limiter,
+    reset_rate_limiter,
+)
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.sorted_sets: dict[str, list[tuple[float, str]]] = {}
+        self.sets: dict[str, set[str]] = {}
+
+    def ping(self):
+        return True
+
+    def zadd(self, key, members):
+        items = self.sorted_sets.setdefault(str(key), [])
+        for member, score in members.items():
+            items.append((float(score), str(member)))
+        items.sort(key=lambda item: item[0])
+
+    def zremrangebyscore(self, key, min_score, max_score):
+        current = self.sorted_sets.get(str(key), [])
+        min_val = float("-inf") if str(min_score) == "-inf" else float(min_score)
+        max_val = float(max_score)
+        kept = [(score, member) for score, member in current if not (min_val <= score <= max_val)]
+        self.sorted_sets[str(key)] = kept
+
+    def zcard(self, key):
+        return len(self.sorted_sets.get(str(key), []))
+
+    def zrange(self, key, start, end, withscores=False):
+        current = self.sorted_sets.get(str(key), [])
+        if not current:
+            return []
+        items = current[start : end + 1 if end >= 0 else None]
+        if withscores:
+            return [(member, score) for score, member in items]
+        return [member for score, member in items]
+
+    def sadd(self, key, value):
+        self.sets.setdefault(str(key), set()).add(str(value))
+
+    def srem(self, key, value):
+        self.sets.setdefault(str(key), set()).discard(str(value))
+
+    def scard(self, key):
+        return len(self.sets.get(str(key), set()))
+
+    def expire(self, key, ttl):
+        return True
+
+    def delete(self, key):
+        self.sorted_sets.pop(str(key), None)
+        self.sets.pop(str(key), None)
 
 
 class TestUserQuota:
@@ -229,3 +285,43 @@ class TestRateLimiter:
         # Verify they have reasonable values
         assert limiter.DEFAULT_LIMITS["user_global"].max_requests > 0
         assert limiter.DEFAULT_LIMITS["logs"].window_seconds > 0
+
+    def test_redis_backend_enforces_limits(self):
+        limiter = RateLimiter(state_file=None, state_backend="redis", redis_client=_FakeRedis())
+        limit = RateLimit(max_requests=2, window_seconds=60)
+
+        assert limiter.check_and_record(7, "logs", limit)[0] is True
+        assert limiter.check_and_record(7, "logs", limit)[0] is True
+        allowed, error = limiter.check_limit(7, "logs", limit)
+        assert allowed is False
+        assert error is not None
+        assert "Rate limit exceeded" in error
+
+    def test_redis_backend_stats_and_reset(self):
+        limiter = RateLimiter(state_file=None, state_backend="redis", redis_client=_FakeRedis())
+        limit = RateLimit(max_requests=5, window_seconds=60)
+
+        limiter.check_and_record(11, "logs", limit)
+        limiter.check_and_record(12, "stats", limit)
+
+        stats = limiter.get_stats()
+        assert stats["backend"] == "redis"
+        assert stats["active_users"] == 2
+        assert stats["total_tracked_actions"] == 2
+
+        limiter.reset_user(11)
+        assert limiter.get_remaining(11, "logs") == 5
+
+    def test_shared_limiter_uses_injected_settings(self, tmp_path):
+        class _Settings:
+            nexus_state_dir = str(tmp_path)
+            nexus_storage_backend = "filesystem"
+            nexus_rate_limit_backend = "filesystem"
+            redis_url = "redis://invalid:6379/0"
+            nexus_core_storage_dir = str(tmp_path)
+
+        reset_rate_limiter()
+        limiter = get_rate_limiter(settings=_Settings())
+        assert limiter.state_backend == "filesystem"
+        assert limiter.state_file.endswith("rate_limits.json")
+        reset_rate_limiter()

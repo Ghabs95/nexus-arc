@@ -6,7 +6,7 @@ import types
 def test_build_workflow_snapshot_allows_workflow_file_when_local_task_files_disabled(
     monkeypatch, tmp_path
 ):
-    from services.workflow import workflow_ops_service as svc
+    from nexus.core.workflow_runtime import workflow_ops_service as svc
 
     workflows_dir = tmp_path / "workflows"
     workflows_dir.mkdir(parents=True)
@@ -64,7 +64,7 @@ def test_build_workflow_snapshot_allows_workflow_file_when_local_task_files_disa
 
 
 def test_build_workflow_snapshot_uses_live_workflow_status_when_file_unavailable(monkeypatch):
-    from services.workflow import workflow_ops_service as svc
+    from nexus.core.workflow_runtime import workflow_ops_service as svc
 
     class _WFState:
         def get_workflow_id(self, issue_num):  # noqa: ANN001
@@ -109,7 +109,7 @@ def test_build_workflow_snapshot_uses_live_workflow_status_when_file_unavailable
 
 
 def test_build_workflow_snapshot_flags_missing_workflow_state_when_signals_exist(monkeypatch):
-    from services.workflow import workflow_ops_service as svc
+    from nexus.core.workflow_runtime import workflow_ops_service as svc
 
     class _WFState:
         def get_workflow_id(self, issue_num):  # noqa: ANN001
@@ -145,8 +145,8 @@ def test_build_workflow_snapshot_flags_missing_workflow_state_when_signals_exist
 
 
 async def test_reconcile_issue_from_signals_uses_local_completion_writer_when_enabled(monkeypatch):
-    from services.workflow import workflow_ops_service as svc
-    from config_storage_capabilities import StorageCapabilities
+    from nexus.core.workflow_runtime import workflow_ops_service as svc
+    from nexus.core.storage.capabilities import StorageCapabilities
 
     class _IssuePlugin:
         def get_issue(self, issue_num, fields):  # noqa: ANN001
@@ -224,8 +224,8 @@ async def test_reconcile_issue_from_signals_uses_local_completion_writer_when_en
 async def test_reconcile_issue_from_signals_uses_storage_completion_when_local_disabled(
     monkeypatch,
 ):
-    from services.workflow import workflow_ops_service as svc
-    from config_storage_capabilities import StorageCapabilities
+    from nexus.core.workflow_runtime import workflow_ops_service as svc
+    from nexus.core.storage.capabilities import StorageCapabilities
 
     class _IssuePlugin:
         def get_issue(self, issue_num, fields):  # noqa: ANN001
@@ -284,8 +284,8 @@ async def test_reconcile_issue_from_signals_uses_storage_completion_when_local_d
 
 
 async def test_fetch_workflow_state_snapshot_uses_capabilities_for_mixed_mode(monkeypatch):
-    from services.workflow import workflow_ops_service as svc
-    from config_storage_capabilities import StorageCapabilities
+    from nexus.core.workflow_runtime import workflow_ops_service as svc
+    from nexus.core.storage.capabilities import StorageCapabilities
 
     monkeypatch.setattr(
         svc,
@@ -312,9 +312,9 @@ async def test_fetch_workflow_state_snapshot_uses_capabilities_for_mixed_mode(mo
         ),
     )
 
-    fake_runtime_mod = types.ModuleType("runtime.nexus_agent_runtime")
+    fake_runtime_mod = types.ModuleType("nexus.core.runtime.nexus_agent_runtime")
     fake_runtime_mod.get_expected_running_agent_from_workflow = lambda issue_num: "developer"
-    monkeypatch.setitem(sys.modules, "runtime.nexus_agent_runtime", fake_runtime_mod)
+    monkeypatch.setitem(sys.modules, "nexus.core.runtime.nexus_agent_runtime", fake_runtime_mod)
 
     captured: dict[str, object] = {}
 

@@ -1,10 +1,10 @@
 import asyncio
 
-from handlers import feature_ideation_handlers as handlers
+from nexus.core.handlers import feature_ideation_handlers as handlers
 
 
 def test_detect_feature_project_uses_config_aliases(monkeypatch):
-    import config
+    import nexus.core.config as config
 
     monkeypatch.setattr(
         config,
@@ -24,7 +24,7 @@ def test_detect_feature_project_uses_config_aliases(monkeypatch):
 
 
 def test_detect_feature_project_falls_back_to_project_keys(monkeypatch):
-    import config
+    import nexus.core.config as config
 
     monkeypatch.setattr(config, "get_project_aliases", lambda: {})
 

@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from services import issue_lifecycle_service as svc
+from nexus.core import issue_lifecycle as svc
 
 
 class _FakePlatform:

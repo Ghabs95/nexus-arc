@@ -1,10 +1,10 @@
 """Tests for provider-neutral repository keys in project config."""
 
+import nexus.core.config as config
+import nexus.core.config.repos as config_repos
+
 
 def test_get_git_repos_auto_discovers_from_workspace(monkeypatch, tmp_path):
-    import config
-    import config_repos
-
     workspace_root = tmp_path / "sampleco"
     backend_dir = workspace_root / "backend"
     mobile_dir = workspace_root / "mobile"
@@ -46,8 +46,6 @@ def test_get_git_repos_auto_discovers_from_workspace(monkeypatch, tmp_path):
 
 
 def test_get_repos_supports_git_repo_and_git_repos(monkeypatch):
-    import config
-
     monkeypatch.setattr(
         config,
         "_get_project_config",
@@ -67,8 +65,6 @@ def test_get_repos_supports_git_repo_and_git_repos(monkeypatch):
 
 
 def test_get_workflow_profile_prefers_project_specific(monkeypatch):
-    import config
-
     monkeypatch.setattr(
         config,
         "_get_project_config",
@@ -85,8 +81,6 @@ def test_get_workflow_profile_prefers_project_specific(monkeypatch):
 
 
 def test_get_workflow_profile_falls_back_to_global(monkeypatch):
-    import config
-
     monkeypatch.setattr(
         config,
         "_get_project_config",
@@ -100,8 +94,6 @@ def test_get_workflow_profile_falls_back_to_global(monkeypatch):
 
 
 def test_normalize_project_key_uses_config_aliases(monkeypatch):
-    import config
-
     monkeypatch.setattr(
         config,
         "_get_project_config",
@@ -121,8 +113,6 @@ def test_normalize_project_key_uses_config_aliases(monkeypatch):
 
 
 def test_get_track_short_projects_derives_from_aliases(monkeypatch):
-    import config
-
     monkeypatch.setattr(
         config,
         "_get_project_config",
@@ -144,8 +134,6 @@ def test_get_track_short_projects_derives_from_aliases(monkeypatch):
 
 
 def test_get_chat_agents_reads_mapping_shape(monkeypatch):
-    import config
-
     monkeypatch.setattr(
         config,
         "_get_project_config",
@@ -170,8 +158,6 @@ def test_get_chat_agents_reads_mapping_shape(monkeypatch):
 
 
 def test_get_chat_agents_reads_list_shape(monkeypatch):
-    import config
-
     monkeypatch.setattr(
         config,
         "_get_project_config",

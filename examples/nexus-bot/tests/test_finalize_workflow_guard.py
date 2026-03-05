@@ -2,27 +2,21 @@
 
 
 def test_finalize_workflow_skips_non_terminal_state(monkeypatch):
-    from inbox_processor import _finalize_workflow
+    from nexus.core.issue_finalize import verify_workflow_terminal_before_finalize
 
     class _WorkflowPlugin:
         async def get_workflow_status(self, issue_number: str):
             return {"state": "running", "issue": issue_number}
 
-    class _Policy:
-        def finalize_workflow(self, **_kwargs):
-            raise AssertionError("finalize_workflow should not be called for non-terminal state")
-
     alerts = []
-
     monkeypatch.setattr(
-        "inbox_processor.get_workflow_state_plugin", lambda **_kwargs: _WorkflowPlugin()
+        "nexus.core.issue_finalize.emit_alert",
+        lambda message, **_kwargs: alerts.append(message) or True,
     )
-    monkeypatch.setattr("inbox_processor.get_workflow_policy_plugin", lambda **_kwargs: _Policy())
-    monkeypatch.setattr(
-        "inbox_processor.emit_alert", lambda message, **kwargs: alerts.append(message) or True
+    allowed = verify_workflow_terminal_before_finalize(
+        workflow_plugin=_WorkflowPlugin(),
+        issue_num="55",
+        project_name="nexus",
     )
-
-    _finalize_workflow("55", "sample-org/nexus-arc", "writer", "nexus")
-
-    assert alerts
-    assert "Finalization blocked" in alerts[0]
+    assert allowed is False
+    assert alerts and "Finalization blocked" in alerts[0]

@@ -14,22 +14,26 @@ All configuration lives in environment variables (loaded from `.env`) and `confi
 
 ### Storage
 
-| Variable                                       | Required | Default         | Description                                                  |
-|------------------------------------------------|----------|-----------------|--------------------------------------------------------------|
-| `NEXUS_STORAGE_BACKEND`                        | ❌        | `filesystem`    | Primary storage backend: `filesystem` or `postgres`          |
-| `NEXUS_WORKFLOW_BACKEND`                       | ❌        | follows primary | Workflow state backend override                              |
-| `NEXUS_INBOX_BACKEND`                          | ❌        | follows primary | Inbox queue backend override                                 |
-| `NEXUS_STORAGE_DSN`                            | 🟡       | —               | PostgreSQL connection string (required if using postgres)    |
-| `NEXUS_FEATURE_REGISTRY_ENABLED`               | ❌        | `true`          | Enable implemented-feature registry and ideation dedup       |
-| `NEXUS_FEATURE_REGISTRY_MAX_ITEMS_PER_PROJECT` | ❌        | `500`           | Maximum implemented features retained per project            |
-| `NEXUS_FEATURE_REGISTRY_DEDUP_SIMILARITY`      | ❌        | `0.86`          | Fuzzy similarity threshold used for ideation dedup filtering |
+| Variable                                       | Required | Default                    | Description                                                            |
+|------------------------------------------------|----------|----------------------------|------------------------------------------------------------------------|
+| `NEXUS_STORAGE_BACKEND`                        | ❌        | `filesystem`               | Primary storage backend: `filesystem` or `postgres` (`database` alias) |
+| `NEXUS_WORKFLOW_BACKEND`                       | ❌        | follows primary            | Workflow state backend override                                        |
+| `NEXUS_INBOX_BACKEND`                          | ❌        | follows primary            | Inbox queue backend override                                           |
+| `NEXUS_STORAGE_DSN`                            | 🟡       | —                          | PostgreSQL connection string (required if using postgres)              |
+| `NEXUS_RATE_LIMIT_BACKEND`                     | ❌        | `redis`                    | Rate-limit backend: `redis`, `database`, or `filesystem`               |
+| `REDIS_URL`                                    | ❌        | `redis://localhost:6379/0` | Redis connection URL used by rate limits/chat memory                   |
+| `NEXUS_FEATURE_REGISTRY_ENABLED`               | ❌        | `true`                     | Enable implemented-feature registry and ideation dedup                 |
+| `NEXUS_FEATURE_REGISTRY_MAX_ITEMS_PER_PROJECT` | ❌        | `500`                      | Maximum implemented features retained per project                      |
+| `NEXUS_FEATURE_REGISTRY_DEDUP_SIMILARITY`      | ❌        | `0.86`                     | Fuzzy similarity threshold used for ideation dedup filtering           |
 
 ### Webhook Server
 
-| Variable         | Required | Default | Description                                           |
-|------------------|----------|---------|-------------------------------------------------------|
-| `WEBHOOK_PORT`   | ❌        | `8081`  | Port for the webhook server                           |
-| `WEBHOOK_SECRET` | ❌        | —       | GitHub webhook HMAC secret for signature verification |
+| Variable                        | Required | Default | Description                                                                                   |
+|---------------------------------|----------|---------|-----------------------------------------------------------------------------------------------|
+| `WEBHOOK_PORT`                  | ❌        | `8081`  | Port for the webhook server                                                                   |
+| `WEBHOOK_SECRET`                | ❌        | —       | GitHub webhook HMAC secret for signature verification                                         |
+| `NEXUS_VISUALIZER_ENABLED`      | ❌        | `true`  | Enable/disable visualizer endpoints (`/visualizer`, `/visualizer/snapshot`, socket namespace) |
+| `NEXUS_VISUALIZER_SHARED_TOKEN` | ❌        | —       | Shared token for visualizer access (works without DB auth via cookie/header)                  |
 
 ### Project
 
@@ -101,6 +105,9 @@ ai_tool_preferences:
 | `audit.log`             | `logs/`         | Append-only event log                              |
 | `workflow_state.json`   | `.nexus/state/` | Pause/resume/stop state per issue                  |
 
+When `NEXUS_STORAGE_BACKEND=postgres`, UNI user tracking state (`user_tracking.json` payload)
+is persisted in Postgres table `nexus_user_tracking_state` instead of local file writes.
+
 ## Rate Limits
 
 | Scope      | Limit        | Window        |
@@ -113,12 +120,14 @@ ai_tool_preferences:
 
 ## Service Endpoints
 
-| Endpoint               | Method | Description                    |
-|------------------------|--------|--------------------------------|
-| `/health`              | GET    | Health check                   |
-| `/status`              | GET    | Detailed system status         |
-| `/metrics`             | GET    | Prometheus-compatible metrics  |
-| `/webhook`             | POST   | GitHub webhook receiver        |
-| `/api/v1/completion`   | POST   | Agent completion reporting     |
-| `/visualizer`          | GET    | Workflow visualizer UI         |
-| `/visualizer/snapshot` | GET    | Workflow state snapshot (JSON) |
+| Endpoint               | Method | Description                                                                                   |
+|------------------------|--------|-----------------------------------------------------------------------------------------------|
+| `/`                    | GET    | Visualizer access gateway/login page                                                          |
+| `/health`              | GET    | Health check                                                                                  |
+| `/status`              | GET    | Detailed system status                                                                        |
+| `/metrics`             | GET    | Prometheus-compatible metrics                                                                 |
+| `/webhook`             | POST   | GitHub webhook receiver                                                                       |
+| `/api/v1/completion`   | POST   | Agent completion reporting                                                                    |
+| `/visualizer/access`   | POST   | Exchanges shared visualizer token for HttpOnly cookie                                         |
+| `/visualizer`          | GET    | Workflow visualizer UI (gated by `NEXUS_AUTH_ENABLED` and/or `NEXUS_VISUALIZER_SHARED_TOKEN`) |
+| `/visualizer/snapshot` | GET    | Workflow state snapshot JSON (same visualizer access guard as `/visualizer`)                  |

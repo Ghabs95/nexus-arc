@@ -1,6 +1,6 @@
 """Tests for agent resolution handler."""
 
-from handlers.agent_resolution_handler import resolve_agents_for_project
+from nexus.core.handlers.agent_resolution_handler import resolve_agents_for_project
 
 
 def test_resolve_agents_from_project_root_scans_nexus_and_root(tmp_path):

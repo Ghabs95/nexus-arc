@@ -1,55 +1,58 @@
 """Regression tests for strict project/repository boundaries."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 
 def test_extract_repo_from_issue_url_parses_owner_repo():
-    from inbox_processor import _extract_repo_from_issue_url
+    from nexus.core.inbox.inbox_repo_path_service import extract_repo_from_issue_url
 
-    repo = _extract_repo_from_issue_url("https://github.com/sample-org/nexus-arc/issues/43")
+    repo = extract_repo_from_issue_url("https://github.com/sample-org/nexus-arc/issues/43")
 
     assert repo == "sample-org/nexus-arc"
 
 
 def test_extract_repo_from_gitlab_issue_url_parses_namespace_repo():
-    from inbox_processor import _extract_repo_from_issue_url
+    from nexus.core.inbox.inbox_repo_path_service import extract_repo_from_issue_url
 
-    repo = _extract_repo_from_issue_url("https://gitlab.com/sample-org/mobile-app/-/issues/77")
+    repo = extract_repo_from_issue_url("https://gitlab.com/sample-org/mobile-app/-/issues/77")
 
     assert repo == "sample-org/mobile-app"
 
 
 def test_resolve_repo_strict_raises_on_mismatch(monkeypatch):
-    import inbox_processor
+    from nexus.core.inbox.inbox_repo_path_service import resolve_repo_strict
+    from nexus.core.project.repo_utils import project_repos_from_config
 
-    monkeypatch.setattr(
-        inbox_processor,
-        "PROJECT_CONFIG",
-        {
-            "nexus": {
-                "workspace": "sample/core",
-                "git_repo": "sample-org/nexus-arc",
-            }
-        },
-    )
-    monkeypatch.setattr(
-        inbox_processor,
-        "_resolve_repo_for_issue",
-        lambda issue, default_project=None: "sample-org/nexus",
-    )
+    project_config = {
+        "nexus": {
+            "workspace": "sample/core",
+            "git_repo": "sample-org/nexus-arc",
+        }
+    }
 
-    with patch("inbox_processor.emit_alert") as mock_alert:
-        with pytest.raises(ValueError):
-            inbox_processor._resolve_repo_strict("nexus", "43")
-
-    mock_alert.assert_called_once()
+    mock_logger = MagicMock()
+    mock_emit = Mock()
+    with pytest.raises(ValueError):
+        resolve_repo_strict(
+            project_name="nexus",
+            issue_num="43",
+            project_config=project_config,
+            project_repos_from_config=project_repos_from_config,
+            get_repos=lambda _project: [],
+            resolve_repo_for_issue=lambda _issue, default_project=None: "sample-org/nexus",
+            get_default_project=lambda: "nexus",
+            get_repo=lambda _project: "sample-org/nexus-arc",
+            emit_alert=mock_emit,
+            logger=mock_logger,
+        )
+    mock_emit.assert_called_once()
 
 
 def test_reroute_webhook_task_moves_file(tmp_path, monkeypatch):
-    from inbox_processor import _reroute_webhook_task_to_project
+    from nexus.core.inbox.inbox_repo_path_service import reroute_webhook_task_to_project
 
     base_dir = tmp_path / "root"
     source_dir = base_dir / "workspace-a" / ".nexus" / "inbox" / "project-a"
@@ -57,18 +60,21 @@ def test_reroute_webhook_task_moves_file(tmp_path, monkeypatch):
     source_file = source_dir / "issue_43.md"
     source_file.write_text("test")
 
-    monkeypatch.setattr("inbox_processor.BASE_DIR", str(base_dir))
-    monkeypatch.setattr(
-        "inbox_processor.PROJECT_CONFIG",
-        {
-            "project-b": {
-                "workspace": "workspace-b",
-                "git_repo": "sample-org/nexus-arc",
-            }
-        },
+    project_config = {
+        "project-b": {
+            "workspace": "workspace-b",
+            "git_repo": "sample-org/nexus-arc",
+        }
+    }
+    moved_path = reroute_webhook_task_to_project(
+        filepath=str(source_file),
+        target_project="project-b",
+        project_config=project_config,
+        base_dir=str(base_dir),
+        get_inbox_dir=lambda workspace_root, project: str(
+            Path(workspace_root) / ".nexus" / "inbox" / project
+        ),
     )
-
-    moved_path = _reroute_webhook_task_to_project(str(source_file), "project-b")
 
     assert moved_path is not None
     assert not source_file.exists()
@@ -103,7 +109,7 @@ def test_webhook_blocks_unmapped_repository(mock_alert):
 
 
 def test_agent_launcher_resolves_issue_body_from_matching_project_repo(monkeypatch):
-    import runtime.agent_launcher as agent_launcher
+    import nexus.core.runtime.agent_launcher as agent_launcher
 
     class PluginA:
         async def get_issue(self, issue_number):
@@ -167,7 +173,7 @@ def test_agent_launcher_resolves_issue_body_from_matching_project_repo(monkeypat
 
 
 def test_launch_next_agent_uses_issue_body_for_shared_active_task_file(monkeypatch):
-    import runtime.agent_launcher as agent_launcher
+    import nexus.core.runtime.agent_launcher as agent_launcher
 
     issue_body = (
         "## Task\n"
@@ -224,44 +230,54 @@ def test_launch_next_agent_uses_issue_body_for_shared_active_task_file(monkeypat
 
 
 def test_resolve_project_for_repo_matches_secondary_repo(monkeypatch):
-    import inbox_processor
+    from nexus.core.inbox.inbox_repo_path_service import resolve_project_for_repo
+    from nexus.core.project.repo_utils import iter_project_configs, project_repos_from_config
 
-    monkeypatch.setattr(
-        inbox_processor,
-        "PROJECT_CONFIG",
-        {
-            "sampleco": {
-                "workspace": "sampleco",
-                "git_repo": "acme/sampleco-backend",
-                "git_repos": ["acme/sampleco-backend", "acme/sampleco-mobile"],
-            }
-        },
+    project_config = {
+        "sampleco": {
+            "workspace": "sampleco",
+            "git_repo": "acme/sampleco-backend",
+            "git_repos": ["acme/sampleco-backend", "acme/sampleco-mobile"],
+        }
+    }
+    assert (
+        resolve_project_for_repo(
+            repo_name="acme/sampleco-mobile",
+            project_config=project_config,
+            iter_project_configs=iter_project_configs,
+            project_repos_from_config=project_repos_from_config,
+            get_repos=lambda _project: [],
+        )
+        == "sampleco"
     )
-
-    assert inbox_processor._resolve_project_for_repo("acme/sampleco-mobile") == "sampleco"
 
 
 def test_resolve_project_for_repo_matches_gitlab_secondary_repo(monkeypatch):
-    import inbox_processor
+    from nexus.core.inbox.inbox_repo_path_service import resolve_project_for_repo
+    from nexus.core.project.repo_utils import iter_project_configs, project_repos_from_config
 
-    monkeypatch.setattr(
-        inbox_processor,
-        "PROJECT_CONFIG",
-        {
-            "sampleco": {
-                "workspace": "sampleco",
-                "git_platform": "gitlab",
-                "git_repo": "sampleco/backend",
-                "git_repos": ["sampleco/backend", "sampleco/mobile-app"],
-            }
-        },
+    project_config = {
+        "sampleco": {
+            "workspace": "sampleco",
+            "git_platform": "gitlab",
+            "git_repo": "sampleco/backend",
+            "git_repos": ["sampleco/backend", "sampleco/mobile-app"],
+        }
+    }
+    assert (
+        resolve_project_for_repo(
+            repo_name="sampleco/mobile-app",
+            project_config=project_config,
+            iter_project_configs=iter_project_configs,
+            project_repos_from_config=project_repos_from_config,
+            get_repos=lambda _project: [],
+        )
+        == "sampleco"
     )
-
-    assert inbox_processor._resolve_project_for_repo("sampleco/mobile-app") == "sampleco"
 
 
 def test_issue_body_resolution_skips_project_probe_failures(monkeypatch):
-    import runtime.agent_launcher as agent_launcher
+    import nexus.core.runtime.agent_launcher as agent_launcher
 
     class _Issue:
         def __init__(self, body: str):

@@ -1,4 +1,4 @@
-from services.git.direct_issue_plugin_service import get_direct_issue_plugin
+from nexus.core.git.direct_issue_plugin_service import get_direct_issue_plugin
 
 
 class _PluginFactory:

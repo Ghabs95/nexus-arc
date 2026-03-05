@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from services import workflow_watch_service as watch_module
-from services.workflow_watch_service import WorkflowWatchService
-from state_manager import HostStateManager
+from nexus.core.state_manager import HostStateManager
+from nexus.core.workflow_runtime import workflow_watch_service as watch_module
+from nexus.core.workflow_runtime.workflow_watch_service import WorkflowWatchService
 
 
 def _build_service(monkeypatch) -> WorkflowWatchService:

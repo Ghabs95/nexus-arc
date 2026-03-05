@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from services.webhook_comment_service import handle_issue_comment_event
+from nexus.core.webhook.comment_service import handle_issue_comment_event
 
 
 class _Policy:

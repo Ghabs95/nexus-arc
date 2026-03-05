@@ -16,6 +16,13 @@ import logging
 import os
 from dataclasses import dataclass
 
+from nexus.core.inbox.inbox_persistence_service import (
+    load_json_state_file as _load_json_state_file,
+)
+from nexus.core.inbox.inbox_persistence_service import (
+    save_json_state_file as _save_json_state_file,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +42,7 @@ class IdempotencyKey:
 
 
 class IdempotencyLedger:
-    """File-backed ledger for deduplicating workflow step completion events.
+    """Backend-aware ledger for deduplicating workflow step completion events.
 
     Usage::
 
@@ -49,8 +56,16 @@ class IdempotencyLedger:
         ledger.record(key)
     """
 
-    def __init__(self, ledger_path: str) -> None:
+    def __init__(
+        self,
+        ledger_path: str,
+        *,
+        storage_backend: str | None = None,
+        state_key: str | None = None,
+    ) -> None:
         self._path = ledger_path
+        self._storage_backend = storage_backend
+        self._state_key = state_key or os.path.splitext(os.path.basename(self._path).lstrip("."))[0]
         self._seen: set[str] = set()
         self._load()
 
@@ -73,18 +88,80 @@ class IdempotencyLedger:
     # Persistence helpers
     # ------------------------------------------------------------------
 
-    def _load(self) -> None:
+    def _is_database_backend(self) -> bool:
+        explicit = str(self._storage_backend or "").strip().lower()
+        if explicit in {"database", "postgres", "postgresql"}:
+            return True
+        host_state_backend = str(os.getenv("NEXUS_HOST_STATE_BACKEND", "")).strip().lower()
+        if host_state_backend in {"database", "postgres", "postgresql"}:
+            return True
+        storage_backend = str(os.getenv("NEXUS_STORAGE_BACKEND", "filesystem")).strip().lower()
+        return storage_backend in {"database", "postgres", "postgresql"}
+
+    def _load_legacy_file_seen(self) -> set[str]:
         if not os.path.exists(self._path):
-            return
+            return set()
         try:
             with open(self._path, encoding="utf-8") as fh:
                 data = json.load(fh)
             if isinstance(data, list):
-                self._seen = set(data)
+                return {str(item) for item in data if str(item).strip()}
+            if isinstance(data, dict):
+                seen_values = data.get("seen", [])
+                if isinstance(seen_values, list):
+                    return {str(item) for item in seen_values if str(item).strip()}
         except Exception as exc:
             logger.warning("IdempotencyLedger: failed to load %s: %s", self._path, exc)
+        return set()
+
+    def _load(self) -> None:
+        if not self._is_database_backend():
+            self._seen = self._load_legacy_file_seen()
+            return
+
+        payload = _load_json_state_file(
+            path=self._path,
+            logger=logger,
+            warn_only=True,
+            storage_backend=self._storage_backend,
+            state_key=self._state_key,
+            migrate_local_on_empty=False,
+        )
+        seen_values = payload.get("seen", []) if isinstance(payload, dict) else []
+        if isinstance(seen_values, list):
+            self._seen = {str(item) for item in seen_values if str(item).strip()}
+            if self._seen:
+                return
+
+        legacy_seen = self._load_legacy_file_seen()
+        if legacy_seen:
+            self._seen = legacy_seen
+            _save_json_state_file(
+                path=self._path,
+                data={"seen": sorted(self._seen)},
+                logger=logger,
+                warn_only=True,
+                storage_backend=self._storage_backend,
+                state_key=self._state_key,
+            )
+            logger.info(
+                "Bootstrapped idempotency ledger host-state key '%s' from %s",
+                self._state_key,
+                self._path,
+            )
 
     def _save(self) -> None:
+        if self._is_database_backend():
+            _save_json_state_file(
+                path=self._path,
+                data={"seen": sorted(self._seen)},
+                logger=logger,
+                warn_only=True,
+                storage_backend=self._storage_backend,
+                state_key=self._state_key,
+            )
+            return
+
         try:
             parent = os.path.dirname(self._path)
             if parent:

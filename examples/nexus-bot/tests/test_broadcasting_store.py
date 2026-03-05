@@ -8,19 +8,12 @@ delegate correctly to the wrapped inner store.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure nexus/src is importable
-_nexus_src = Path(__file__).parent.parent / "src"
-if str(_nexus_src) not in sys.path:
-    sys.path.insert(0, str(_nexus_src))
-
-_repo_root = Path(__file__).resolve().parents[3]
-if str(_repo_root) not in sys.path:
-    sys.path.insert(0, str(_repo_root))
+from nexus.core.workflow_state import WorkflowStateStore
 
 
 # ---------------------------------------------------------------------------
@@ -42,17 +35,12 @@ def inner() -> MagicMock:
 @pytest.fixture()
 def broadcasting(inner: MagicMock, monkeypatch):
     """Create a _BroadcastingStore wrapping the mock inner store."""
-    # Avoid import-time side effects from config module
+    # Avoid import-time side effects from config module.
     monkeypatch.setenv("DATA_DIR", "/tmp/test")
 
-    # Ensure we can import without real config
-    config_mock = MagicMock()
-    config_mock.DATA_DIR = "/tmp/test"
-    monkeypatch.setitem(sys.modules, "config", config_mock)
+    from nexus.core.integrations.workflow_state_factory import _BroadcastingStore
 
-    from integrations.workflow_state_factory import _BroadcastingStore
-
-    return _BroadcastingStore(inner)
+    return _BroadcastingStore(cast(WorkflowStateStore, cast(object, inner)))
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +50,7 @@ def broadcasting(inner: MagicMock, monkeypatch):
 
 class TestDelegation:
     def test_map_issue_delegates(self, broadcasting, inner: MagicMock) -> None:
-        with patch("integrations.workflow_state_factory._BroadcastingStore._emit"):
+        with patch("nexus.core.integrations.workflow_state_factory._BroadcastingStore._emit"):
             broadcasting.map_issue("10", "wf-10")
         inner.map_issue.assert_called_once_with("10", "wf-10")
 
@@ -112,7 +100,7 @@ class TestDelegation:
 
 class TestSocketIOEmit:
     def test_map_issue_emits_event(self, broadcasting, inner: MagicMock) -> None:
-        with patch("integrations.workflow_state_factory._BroadcastingStore._emit") as emit_mock:
+        with patch("nexus.core.integrations.workflow_state_factory._BroadcastingStore._emit") as emit_mock:
             broadcasting.map_issue("10", "wf-10")
         emit_mock.assert_called_once()
         args = emit_mock.call_args
@@ -122,14 +110,14 @@ class TestSocketIOEmit:
 
     def test_emit_noop_when_no_emitter(self, broadcasting) -> None:
         """When _socketio_emitter is None, _emit should not raise."""
-        with patch.dict(sys.modules, {"state_manager": MagicMock(_socketio_emitter=None)}):
+        with patch.dict(sys.modules, {"nexus.core.state_manager": MagicMock(_socketio_emitter=None)}):
             # Should not raise
             broadcasting._emit("test_event", {"key": "value"})
 
     def test_emit_calls_emitter(self, broadcasting) -> None:
         emitter = MagicMock()
         sm_mock = MagicMock(_socketio_emitter=emitter)
-        with patch.dict(sys.modules, {"state_manager": sm_mock}):
+        with patch.dict(sys.modules, {"nexus.core.state_manager": sm_mock}):
             broadcasting._emit("evt", {"k": "v"})
         emitter.assert_called_once_with("evt", {"k": "v"})
 

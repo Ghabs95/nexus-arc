@@ -1,6 +1,6 @@
 import pytest
 
-from orchestration.telegram.telegram_command_router import dispatch_command
+from nexus.core.orchestration.telegram.telegram_command_router import dispatch_command
 
 
 @pytest.mark.asyncio

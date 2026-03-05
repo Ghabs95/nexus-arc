@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from services.task_archive_service import archive_closed_task_files
+from nexus.core.task_archive import archive_closed_task_files
 
 
 def test_archive_closed_task_files_matches_filename(tmp_path):

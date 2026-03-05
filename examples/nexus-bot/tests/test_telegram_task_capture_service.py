@@ -3,7 +3,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from services.telegram.telegram_task_capture_service import (
+
+from nexus.core.telegram.telegram_task_capture_service import (
     handle_save_task_selection,
     handle_task_confirmation_callback,
 )
@@ -44,6 +45,10 @@ def _update(query, user_id=1):
     return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
 
 
+async def _noop_process_inbox_task(*_a, **_k):
+    return None
+
+
 @pytest.mark.asyncio
 async def test_task_confirmation_expired():
     query = _Query()
@@ -60,7 +65,7 @@ async def test_task_confirmation_expired():
         route_task_with_context=_route_task_with_context,
         orchestrator=object(),
         get_chat=lambda *_a, **_k: None,
-        process_inbox_task=lambda *_a, **_k: None,
+        process_inbox_task=_noop_process_inbox_task,
     )
 
     assert query.answered is True
@@ -88,7 +93,7 @@ async def test_task_confirmation_cancel_clears_pending():
         route_task_with_context=_route_task_with_context,
         orchestrator=object(),
         get_chat=lambda *_a, **_k: None,
-        process_inbox_task=lambda *_a, **_k: None,
+        process_inbox_task=_noop_process_inbox_task,
     )
 
     assert "pending_task_confirmation" not in ctx.user_data
@@ -112,7 +117,7 @@ async def test_task_confirmation_edit_sets_pending_edit():
         route_task_with_context=_route_task_with_context,
         orchestrator=object(),
         get_chat=lambda *_a, **_k: None,
-        process_inbox_task=lambda *_a, **_k: None,
+        process_inbox_task=_noop_process_inbox_task,
     )
 
     assert ctx.user_data["pending_task_edit"] is True
@@ -141,7 +146,7 @@ async def test_task_confirmation_confirm_routes_and_sets_pending_resolution():
         route_task_with_context=_route_task_with_context,
         orchestrator="orch",
         get_chat=lambda *_a, **_k: None,
-        process_inbox_task=lambda *_a, **_k: None,
+        process_inbox_task=_noop_process_inbox_task,
     )
 
     assert seen["user_id"] == 42
@@ -169,7 +174,7 @@ async def test_task_confirmation_unauthorized_returns_after_answer():
         route_task_with_context=_route_task_with_context,
         orchestrator=object(),
         get_chat=lambda *_a, **_k: None,
-        process_inbox_task=lambda *_a, **_k: None,
+        process_inbox_task=_noop_process_inbox_task,
     )
 
     assert query.answered is True

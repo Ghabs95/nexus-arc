@@ -21,13 +21,13 @@ def _load_memory_service_module():
         redis_stub.from_url = _from_url
         sys.modules["redis"] = redis_stub
 
-    return importlib.import_module("services.memory_service")
+    return importlib.import_module("nexus.core.memory")
 
 
 def test_default_chat_metadata_uses_project_workflow_profile(monkeypatch):
     memory_service = _load_memory_service_module()
     monkeypatch.setattr(
-        memory_service, "get_workflow_profile", lambda project: "sampleco/workflows/master.yaml"
+        memory_service, "_get_workflow_profile", lambda project: "sampleco/workflows/master.yaml"
     )
 
     metadata = memory_service._default_chat_metadata("sampleco")
@@ -38,10 +38,10 @@ def test_default_chat_metadata_uses_project_workflow_profile(monkeypatch):
 def test_normalize_chat_data_replaces_generic_profile_with_project_specific(monkeypatch):
     memory_service = _load_memory_service_module()
     monkeypatch.setattr(
-        memory_service, "get_workflow_profile", lambda project: "sampleco/workflows/master.yaml"
+        memory_service, "_get_workflow_profile", lambda project: "sampleco/workflows/master.yaml"
     )
     monkeypatch.setattr(
-        memory_service, "get_chat_agent_types", lambda project: ["business", "marketing"]
+        memory_service, "_get_chat_agent_types", lambda project: ["business", "marketing"]
     )
 
     normalized = memory_service._normalize_chat_data(

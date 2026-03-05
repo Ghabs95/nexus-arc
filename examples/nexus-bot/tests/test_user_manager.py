@@ -1,8 +1,10 @@
 """Tests for user_manager module."""
 
 import json
+from pathlib import Path
 
-from user_manager import UserManager
+from nexus.core import user_manager as user_manager_module
+from nexus.core.user_manager import UserManager
 
 
 class TestUserManager:
@@ -219,6 +221,35 @@ class TestUserManager:
         assert manager.users[nexus_id].username == "legacy"
         assert manager.users[nexus_id].projects["proj_a"].tracked_issues == ["1"]
 
+    def test_merge_users_combines_identities_and_projects(self, tmp_path):
+        data_file = tmp_path / "users.json"
+        manager = UserManager(data_file)
+
+        tg_user = manager.get_or_create_user_by_identity("telegram", "123", "tg", "TG")
+        dc_user = manager.get_or_create_user_by_identity("discord", "999", "dc", "DC")
+        manager.track_issue_by_nexus_id(tg_user.nexus_id, "proj_a", "1")
+        manager.track_issue_by_nexus_id(dc_user.nexus_id, "proj_a", "2")
+
+        merged_id = manager.merge_users(tg_user.nexus_id, dc_user.nexus_id)
+
+        assert merged_id == tg_user.nexus_id
+        assert manager.resolve_nexus_id("telegram", "123") == merged_id
+        assert manager.resolve_nexus_id("discord", "999") == merged_id
+        tracked = manager.get_user_tracked_issues_by_nexus_id(merged_id, "proj_a")
+        assert tracked["proj_a"] == ["1", "2"]
+
+    def test_resolve_nexus_id_auto_reloads_after_external_file_change(self, tmp_path):
+        data_file = tmp_path / "users.json"
+        manager_a = UserManager(data_file)
+        manager_b = UserManager(data_file)
+
+        user_a = manager_a.get_or_create_user_by_identity("telegram", "123")
+        user_b = manager_a.get_or_create_user_by_identity("discord", "999")
+
+        manager_b.merge_users(user_a.nexus_id, user_b.nexus_id)
+
+        assert manager_a.resolve_nexus_id("discord", "999") == user_a.nexus_id
+
     def test_multi_user_isolation(self, tmp_path):
         data_file = tmp_path / "users.json"
         manager = UserManager(data_file)
@@ -231,3 +262,45 @@ class TestUserManager:
 
         assert user1_issues["proj_a"] == ["123"]
         assert user2_issues["proj_a"] == ["456"]
+
+
+def test_resolve_state_dir_prefers_nexus_state_dir(monkeypatch):
+    monkeypatch.setenv("NEXUS_STATE_DIR", "/tmp/nexus-state")
+    monkeypatch.setenv("DATA_DIR", "/tmp/data-dir")
+    monkeypatch.setenv("NEXUS_RUNTIME_DIR", "/tmp/runtime-dir")
+    assert user_manager_module._resolve_state_dir() == Path("/tmp/nexus-state")
+
+
+def test_resolve_state_dir_falls_back_to_data_dir(monkeypatch):
+    monkeypatch.delenv("NEXUS_STATE_DIR", raising=False)
+    monkeypatch.setenv("DATA_DIR", "/tmp/data-dir")
+    monkeypatch.setenv("NEXUS_RUNTIME_DIR", "/tmp/runtime-dir")
+    assert user_manager_module._resolve_state_dir() == Path("/tmp/data-dir")
+
+
+def test_resolve_state_dir_falls_back_to_runtime_dir(monkeypatch):
+    monkeypatch.delenv("NEXUS_STATE_DIR", raising=False)
+    monkeypatch.delenv("DATA_DIR", raising=False)
+    monkeypatch.setenv("NEXUS_RUNTIME_DIR", "/tmp/runtime-dir")
+    assert user_manager_module._resolve_state_dir() == Path("/tmp/runtime-dir/state")
+
+
+def test_resolve_storage_backend_prefers_forced_backend(monkeypatch):
+    monkeypatch.setenv("NEXUS_USER_MANAGER_BACKEND", "postgres")
+    monkeypatch.setenv("NEXUS_STORAGE_BACKEND", "filesystem")
+    backend = user_manager_module._resolve_storage_backend(data_file=user_manager_module.USER_DATA_FILE)
+    assert backend == "postgres"
+
+
+def test_resolve_storage_backend_uses_filesystem_for_custom_data_file(monkeypatch, tmp_path):
+    monkeypatch.delenv("NEXUS_USER_MANAGER_BACKEND", raising=False)
+    monkeypatch.setenv("NEXUS_STORAGE_BACKEND", "postgres")
+    backend = user_manager_module._resolve_storage_backend(data_file=tmp_path / "users.json")
+    assert backend == "filesystem"
+
+
+def test_resolve_storage_backend_uses_postgres_for_default_data_file(monkeypatch):
+    monkeypatch.delenv("NEXUS_USER_MANAGER_BACKEND", raising=False)
+    monkeypatch.setenv("NEXUS_STORAGE_BACKEND", "postgres")
+    backend = user_manager_module._resolve_storage_backend(data_file=user_manager_module.USER_DATA_FILE)
+    assert backend == "postgres"

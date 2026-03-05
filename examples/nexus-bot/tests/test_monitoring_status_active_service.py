@@ -1,7 +1,8 @@
 import logging
 
 import pytest
-from services.monitoring.monitoring_status_active_service import handle_active, handle_status
+
+from nexus.core.monitoring.monitoring_status_active_service import handle_active, handle_status
 
 
 class _Ctx:

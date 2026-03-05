@@ -1,12 +1,12 @@
 import asyncio
 import logging
-import os
 import signal
-import sys
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from nexus.adapters.notifications.interactive import InteractiveClientPlugin
 from nexus.adapters.registry import AdapterRegistry
+from nexus.core.config.bootstrap import initialize_runtime
+from nexus.core.interactive.context import InteractiveContext
 
 # Setup logging
 logging.basicConfig(
@@ -14,28 +14,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add src to path for local imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+initialize_runtime(configure_logging=False)
 
-from config import ORCHESTRATOR_CONFIG, PROJECT_CONFIG
+from nexus.core.config import ORCHESTRATOR_CONFIG, PROJECT_CONFIG
 
 # Centralized dependency injection factories
 from dependencies import (
-    get_callback_handler_deps,
-    get_feature_ideation_handler_deps,
     get_hands_free_routing_handler_deps,
     get_issue_handler_deps,
     get_monitoring_handler_deps,
     get_ops_handler_deps,
     get_workflow_handler_deps,
 )
-from handlers.chat_command_handlers import (
+from nexus.core.handlers.chat_command_handlers import (
     chat_agents_handler,
-    chat_callback_handler,
     chat_menu_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     assign_handler,
     comments_handler,
     implement_handler,
@@ -47,7 +42,7 @@ from handlers.issue_command_handlers import (
     tracked_handler,
     untrack_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     active_handler,
     fuse_handler,
     logs_handler,
@@ -56,13 +51,13 @@ from handlers.monitoring_command_handlers import (
     tail_handler,
     tailstop_handler,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     agents_handler,
     audit_handler,
     direct_handler,
     stats_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     continue_handler,
     forget_handler,
     kill_handler,
@@ -73,14 +68,14 @@ from handlers.workflow_command_handlers import (
     stop_handler,
     wfstate_handler,
 )
-from orchestration.ai_orchestrator import get_orchestrator
+from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 
 
 async def main() -> None:
     """Initialize and run all configured interactive client plugins."""
     # 1. Initialize core services
     get_orchestrator(ORCHESTRATOR_CONFIG)
-    registry = AdapterRegistry.get_instance()
+    registry = AdapterRegistry()
 
     # 2. Extract client configs from PROJECT_CONFIG
     client_configs: dict[str, Any] = PROJECT_CONFIG.get("interactive_clients", {})
@@ -102,7 +97,7 @@ async def main() -> None:
         try:
             logger.info(f"Loading interactive plugin: {plugin_type} for {client_id}")
             # The registry builds and configures the plugin
-            plugin = registry.get_interactive_client(plugin_type, config)
+            plugin = registry.create_interactive(plugin_type, config=config)
             if plugin:
                 plugins[client_id] = plugin
             else:
@@ -123,12 +118,12 @@ async def main() -> None:
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
-    def _signal_handler() -> None:
+    def _signal_handler(_signum: int, _frame: Any) -> None:
         logger.info("Shutdown signal received")
         stop_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _signal_handler)
+        signal.signal(sig, _signal_handler)
 
     # 6. Start all plugins concurrently
     logger.info(f"Starting {len(plugins)} interactive plugins...")
@@ -138,13 +133,23 @@ async def main() -> None:
         # Depending on the plugin, this might block (like telegram long-polling)
         # or it might just setup background tasks.
         start_tasks.append(asyncio.create_task(plugin.start()))
+    stop_task = asyncio.create_task(stop_event.wait())
 
     try:
         # Wait until we get a stop signal or one of the bots hard-crashes
         done, pending = await asyncio.wait(
-            [stop_event.wait()] + start_tasks, return_when=asyncio.FIRST_COMPLETED
+            {stop_task, *start_tasks}, return_when=asyncio.FIRST_COMPLETED
         )
         logger.info("Main loop terminated. Stopping plugins...")
+        for task in pending:
+            task.cancel()
+        for task in done:
+            if task is stop_task:
+                continue
+            if task.cancelled():
+                continue
+            if exc := task.exception():
+                logger.error("Interactive plugin task exited with error: %s", exc)
     finally:
         # 7. Teardown
         for client_id, plugin in plugins.items():
@@ -162,86 +167,100 @@ def _bind_handlers(plugin: InteractiveClientPlugin) -> None:
     monitoring_deps = get_monitoring_handler_deps()
     issue_deps = get_issue_handler_deps()
     ops_deps = get_ops_handler_deps()
-    feature_deps = get_feature_ideation_handler_deps()
     routing_deps = get_hands_free_routing_handler_deps()
-    callback_deps = get_callback_handler_deps()
+
+    def _build_ctx(
+        *,
+        user_id: str,
+        text: str,
+        args: list[str] | None,
+        raw_event: Any,
+    ) -> InteractiveContext:
+        return InteractiveContext(
+            client=plugin,
+            user_id=str(user_id),
+            text=str(text or ""),
+            args=list(args or []),
+            raw_event=raw_event,
+            user_state={},
+        )
+
+    def _wrap_command_handler(
+        handler: Callable[..., Awaitable[None]],
+        deps: Any | None = None,
+    ) -> Callable[..., Awaitable[None]]:
+        async def _callback(
+            *,
+            user_id: str,
+            text: str,
+            context: list[str] | None = None,
+            raw_event: Any = None,
+            **_kwargs: Any,
+        ) -> None:
+            ctx = _build_ctx(user_id=user_id, text=text, args=context, raw_event=raw_event)
+            if deps is None:
+                await handler(ctx)
+                return
+            await handler(ctx, deps)
+
+        return _callback
 
     # Chat Commands
-    plugin.register_command_handler("chat", lambda ctx: chat_menu_handler(ctx, ops_deps))
-    plugin.register_command_handler("chatagents", lambda ctx: chat_agents_handler(ctx, ops_deps))
+    plugin.register_command("chat", _wrap_command_handler(chat_menu_handler))
+    plugin.register_command("chatagents", _wrap_command_handler(chat_agents_handler))
 
     # Issue Commands
-    plugin.register_command_handler("assign", lambda ctx: assign_handler(ctx, issue_deps))
-    plugin.register_command_handler("comments", lambda ctx: comments_handler(ctx, issue_deps))
-    plugin.register_command_handler("implement", lambda ctx: implement_handler(ctx, issue_deps))
-    plugin.register_command_handler("myissues", lambda ctx: myissues_handler(ctx, issue_deps))
-    plugin.register_command_handler("plan", lambda ctx: plan_handler(ctx, issue_deps))
-    plugin.register_command_handler("prepare", lambda ctx: prepare_handler(ctx, issue_deps))
-    plugin.register_command_handler("respond", lambda ctx: respond_handler(ctx, issue_deps))
-    plugin.register_command_handler("track", lambda ctx: track_handler(ctx, issue_deps))
-    plugin.register_command_handler("tracked", lambda ctx: tracked_handler(ctx, issue_deps))
-    plugin.register_command_handler("untrack", lambda ctx: untrack_handler(ctx, issue_deps))
+    plugin.register_command("assign", _wrap_command_handler(assign_handler, issue_deps))
+    plugin.register_command("comments", _wrap_command_handler(comments_handler, issue_deps))
+    plugin.register_command("implement", _wrap_command_handler(implement_handler, issue_deps))
+    plugin.register_command("myissues", _wrap_command_handler(myissues_handler, issue_deps))
+    plugin.register_command("plan", _wrap_command_handler(plan_handler, issue_deps))
+    plugin.register_command("prepare", _wrap_command_handler(prepare_handler, issue_deps))
+    plugin.register_command("respond", _wrap_command_handler(respond_handler, issue_deps))
+    plugin.register_command("track", _wrap_command_handler(track_handler, issue_deps))
+    plugin.register_command("tracked", _wrap_command_handler(tracked_handler, issue_deps))
+    plugin.register_command("untrack", _wrap_command_handler(untrack_handler, issue_deps))
 
     # Monitoring Commands
-    plugin.register_command_handler("active", lambda ctx: active_handler(ctx, monitoring_deps))
-    plugin.register_command_handler("fuse", lambda ctx: fuse_handler(ctx, monitoring_deps))
-    plugin.register_command_handler("logs", lambda ctx: logs_handler(ctx, monitoring_deps))
-    plugin.register_command_handler("logsfull", lambda ctx: logsfull_handler(ctx, monitoring_deps))
-    plugin.register_command_handler("status", lambda ctx: status_handler(ctx, monitoring_deps))
-    plugin.register_command_handler("tail", lambda ctx: tail_handler(ctx, monitoring_deps))
-    plugin.register_command_handler("tailstop", lambda ctx: tailstop_handler(ctx, monitoring_deps))
+    plugin.register_command("active", _wrap_command_handler(active_handler, monitoring_deps))
+    plugin.register_command("fuse", _wrap_command_handler(fuse_handler, monitoring_deps))
+    plugin.register_command("logs", _wrap_command_handler(logs_handler, monitoring_deps))
+    plugin.register_command("logsfull", _wrap_command_handler(logsfull_handler, monitoring_deps))
+    plugin.register_command("status", _wrap_command_handler(status_handler, monitoring_deps))
+    plugin.register_command("tail", _wrap_command_handler(tail_handler, monitoring_deps))
+    plugin.register_command("tailstop", _wrap_command_handler(tailstop_handler, monitoring_deps))
 
     # Ops Commands
-    plugin.register_command_handler("agents", lambda ctx: agents_handler(ctx, ops_deps))
-    plugin.register_command_handler("audit", lambda ctx: audit_handler(ctx, ops_deps))
-    plugin.register_command_handler("direct", lambda ctx: direct_handler(ctx, ops_deps))
-    plugin.register_command_handler("stats", lambda ctx: stats_handler(ctx, ops_deps))
+    plugin.register_command("agents", _wrap_command_handler(agents_handler, ops_deps))
+    plugin.register_command("audit", _wrap_command_handler(audit_handler, ops_deps))
+    plugin.register_command("direct", _wrap_command_handler(direct_handler, ops_deps))
+    plugin.register_command("stats", _wrap_command_handler(stats_handler, ops_deps))
 
     # Workflow Control Commands
-    plugin.register_command_handler("continue", lambda ctx: continue_handler(ctx, workflow_deps))
-    plugin.register_command_handler("forget", lambda ctx: forget_handler(ctx, workflow_deps))
-    plugin.register_command_handler("kill", lambda ctx: kill_handler(ctx, workflow_deps))
-    plugin.register_command_handler("pause", lambda ctx: pause_handler(ctx, workflow_deps))
-    plugin.register_command_handler("reconcile", lambda ctx: reconcile_handler(ctx, workflow_deps))
-    plugin.register_command_handler("reprocess", lambda ctx: reprocess_handler(ctx, workflow_deps))
-    plugin.register_command_handler("resume", lambda ctx: resume_handler(ctx, workflow_deps))
-    plugin.register_command_handler("stop", lambda ctx: stop_handler(ctx, workflow_deps))
-    plugin.register_command_handler("wfstate", lambda ctx: wfstate_handler(ctx, workflow_deps))
+    plugin.register_command("continue", _wrap_command_handler(continue_handler, workflow_deps))
+    plugin.register_command("forget", _wrap_command_handler(forget_handler, workflow_deps))
+    plugin.register_command("kill", _wrap_command_handler(kill_handler, workflow_deps))
+    plugin.register_command("pause", _wrap_command_handler(pause_handler, workflow_deps))
+    plugin.register_command("reconcile", _wrap_command_handler(reconcile_handler, workflow_deps))
+    plugin.register_command("reprocess", _wrap_command_handler(reprocess_handler, workflow_deps))
+    plugin.register_command("resume", _wrap_command_handler(resume_handler, workflow_deps))
+    plugin.register_command("stop", _wrap_command_handler(stop_handler, workflow_deps))
+    plugin.register_command("wfstate", _wrap_command_handler(wfstate_handler, workflow_deps))
 
     # Catch-all text message handler
-    from handlers.inbox_routing_handler import route_hands_free_text
+    from nexus.core.handlers.inbox_routing_handler import route_hands_free_text
 
-    plugin.register_message_handler(lambda ctx: route_hands_free_text(ctx, routing_deps))
+    async def _message_handler(
+        *,
+        user_id: str,
+        text: str,
+        raw_event: Any = None,
+        **_kwargs: Any,
+    ) -> None:
+        ctx = _build_ctx(user_id=user_id, text=text, args=[], raw_event=raw_event)
+        await route_hands_free_text(ctx, routing_deps)
 
-    # Core callback query dispatcher
-    plugin.register_callback_handler(
-        lambda ctx: dispatch_callback(ctx, callback_deps, chat_callback_handler, feature_deps)
-    )
-
-
-async def dispatch_callback(ctx, callback_deps, chat_handler, feature_deps) -> None:
-    """Route unified callback queries to specific handler modules."""
-    data = ctx.query.data
-
-    if data.startswith("chat:"):
-        await chat_handler(ctx, callback_deps)
-    elif data.startswith("feat:"):
-        from handlers.feature_ideation_handlers import feature_callback_handler
-
-        await feature_callback_handler(ctx, feature_deps)
-    elif (
-        data.startswith("pickcmd:")
-        or data.startswith("pickissue:")
-        or data.startswith("flow:close")
-    ):
-        from handlers.callback_command_handlers import core_callback_router
-
-        await core_callback_router(ctx, callback_deps)
-    else:
-        # Let's see if it's an action (logs_, respond_, etc)
-        from handlers.callback_command_handlers import inline_keyboard_handler
-
-        await inline_keyboard_handler(ctx, callback_deps)
+    plugin.register_message_handler(_message_handler)
 
 
 if __name__ == "__main__":

@@ -2,15 +2,14 @@
 
 from unittest.mock import MagicMock, patch
 
-from runtime.agent_monitor import AgentMonitor
-
 from nexus.core.router import WorkflowRouter
+from nexus.core.runtime.agent_monitor import AgentMonitor
 
 
 class TestAgentMonitor:
     """Tests for AgentMonitor class."""
 
-    @patch("runtime.agent_monitor.get_runtime_ops_plugin")
+    @patch("nexus.core.runtime.agent_monitor.get_runtime_ops_plugin")
     def test_kill_agent_success(self, mock_get_runtime_ops):
         """Test kill_agent successfully terminates via runtime-ops plugin."""
         runtime_ops = MagicMock()
@@ -22,7 +21,7 @@ class TestAgentMonitor:
         assert result is True
         runtime_ops.kill_process.assert_called_once_with(12345, force=False)
 
-    @patch("runtime.agent_monitor.get_runtime_ops_plugin")
+    @patch("nexus.core.runtime.agent_monitor.get_runtime_ops_plugin")
     def test_kill_agent_failure(self, mock_get_runtime_ops):
         """Test kill_agent handles plugin kill failures gracefully."""
         runtime_ops = MagicMock()
@@ -33,8 +32,8 @@ class TestAgentMonitor:
         assert result is False
         runtime_ops.kill_process.assert_called_once_with(12345, force=False)
 
-    @patch("runtime.agent_monitor.get_runtime_ops_plugin")
-    @patch("runtime.agent_monitor.time.sleep", return_value=None)
+    @patch("nexus.core.runtime.agent_monitor.get_runtime_ops_plugin")
+    @patch("nexus.core.runtime.agent_monitor.time.sleep", return_value=None)
     def test_kill_agent_escalates_to_force_after_grace(self, _mock_sleep, mock_get_runtime_ops):
         """Escalate to force kill when graceful termination does not stop the PID."""
         runtime_ops = MagicMock()
@@ -49,7 +48,7 @@ class TestAgentMonitor:
         assert runtime_ops.kill_process.call_args_list[0].kwargs == {"force": False}
         assert runtime_ops.kill_process.call_args_list[1].kwargs == {"force": True}
 
-    @patch("runtime.agent_monitor.get_runtime_ops_plugin")
+    @patch("nexus.core.runtime.agent_monitor.get_runtime_ops_plugin")
     @patch("os.path.getmtime")
     @patch("time.time")
     def test_check_timeout_detected(self, mock_time, mock_getmtime, mock_get_runtime_ops):
@@ -66,7 +65,7 @@ class TestAgentMonitor:
         assert timed_out is True
         assert pid == 12345
 
-    @patch("runtime.agent_monitor.get_runtime_ops_plugin")
+    @patch("nexus.core.runtime.agent_monitor.get_runtime_ops_plugin")
     @patch("os.path.getmtime")
     @patch("time.time")
     def test_check_timeout_not_detected(self, mock_time, mock_getmtime, mock_get_runtime_ops):

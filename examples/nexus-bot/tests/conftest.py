@@ -9,9 +9,13 @@ from unittest.mock import patch
 
 import pytest
 
-# Add runtime src directory to Python path for imports
+# Add runtime src and repo root directories to Python path for imports.
 src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+repo_root = Path(__file__).resolve().parents[3]
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REPO_DATA_DIR = _REPO_ROOT / "data"
@@ -111,7 +115,7 @@ def mock_env_vars(monkeypatch, tmp_path):
 @pytest.fixture(autouse=True)
 def mock_audit_log():
     """Auto-use fixture to mock AuditStore.audit_log during tests."""
-    with patch("audit_store.AuditStore.audit_log"):
+    with patch("nexus.core.audit_store.AuditStore.audit_log"):
         yield
 
 

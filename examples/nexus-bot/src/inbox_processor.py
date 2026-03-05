@@ -6,9 +6,13 @@ import re
 import time
 from typing import Any
 
+from nexus.core.config.bootstrap import initialize_runtime
+
+initialize_runtime(configure_logging=False)
+
 # Nexus Core framework imports — orchestration handled by ProcessOrchestrator
 # Import centralized configuration
-from config import (
+from nexus.core.config import (
     BASE_DIR,
     INBOX_PROCESSOR_LOG_FILE,
     NEXUS_CORE_STORAGE_DIR,
@@ -31,164 +35,158 @@ from config import (
     get_tasks_active_dir,
     get_tasks_closed_dir,
 )
-from integrations.inbox_queue import claim_pending_tasks, mark_task_done, mark_task_failed
-from integrations.notifications import (
-    emit_alert,
-    notify_agent_needs_input,
-    notify_workflow_completed,
-)
 from nexus.adapters.git.utils import build_issue_url
-from nexus.core.completion_store import CompletionStore
-from nexus.core.process_orchestrator import ProcessOrchestrator
-from nexus.core.project.repo_utils import (
-    iter_project_configs as _iter_project_configs,
+from nexus.core.auth.access_domain import (
+    auth_enabled as _auth_enabled,
+    check_project_access as _check_project_access,
+    check_repo_access as _check_repo_access,
+    has_setup_ready_user_for_project as _has_setup_ready_user_for_project,
+    resolve_project_polling_git_token as _resolve_project_polling_git_token,
 )
-from nexus.core.project.repo_utils import (
-    project_repos_from_config as _project_repos_from_config,
-)
-from nexus.core.router import WorkflowRouter
-from nexus.core.workspace import WorkspaceManager
-from orchestration.ai_orchestrator import get_orchestrator
-from orchestration.nexus_core_helpers import (
-    complete_step_for_issue,
-    get_git_platform,
-    get_workflow_definition_path,
-    start_workflow,
-)
-from orchestration.plugin_runtime import (
-    get_runtime_ops_plugin,
-    get_workflow_monitor_policy_plugin,
-    get_workflow_policy_plugin,
-    get_workflow_state_plugin,
-)
-from runtime.agent_launcher import (
-    clear_launch_guard,
-    invoke_ai_agent,
-    is_recent_launch,
-)
-from services.comment_monitor_service import (
+from nexus.core.auth.credential_store import bind_issue_requester as _bind_issue_requester
+from nexus.core.comment_monitor_service import (
     run_comment_monitor_cycle as _run_comment_monitor_cycle,
 )
-from services.completion_monitor_service import (
+from nexus.core.completion_monitor_service import (
     post_completion_comments_from_logs as _svc_post_completion_comments_from_logs,
 )
-from services.completion_monitor_service import (
+from nexus.core.completion_monitor_service import (
     run_completion_monitor_cycle as _run_completion_monitor_cycle,
 )
-from services.credential_store import bind_issue_requester as _bind_issue_requester
+from nexus.core.completion_store import CompletionStore
 from services.credential_store import get_issue_requester as _get_issue_requester
 from services.credential_store import list_bound_issue_numbers as _list_bound_issue_numbers
-from services.feature_registry_service import FeatureRegistryService
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.feature_registry_service import FeatureRegistryService
+from nexus.core.inbox.inbox_issue_context_service import (
     find_task_file_for_issue as _svc_find_task_file_for_issue,
 )
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.inbox.inbox_issue_context_service import (
     get_initial_agent_from_workflow as _svc_get_initial_agent_from_workflow,
 )
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.inbox.inbox_issue_context_service import (
     resolve_project_for_issue as _svc_resolve_project_for_issue,
 )
-from services.inbox.inbox_issue_context_service import (
+from nexus.core.inbox.inbox_issue_context_service import (
     resolve_project_from_task_file as _svc_resolve_project_from_task_file,
 )
-from services.inbox.inbox_persistence_service import (
+from nexus.core.inbox.inbox_persistence_service import (
     get_completion_replay_window_seconds as _svc_get_completion_replay_window_seconds,
 )
-from services.inbox.inbox_persistence_service import (
+from nexus.core.inbox.inbox_persistence_service import (
     load_json_state_file as _svc_load_json_state_file,
 )
-from services.inbox.inbox_persistence_service import (
+from nexus.core.inbox.inbox_persistence_service import (
     save_json_state_file as _svc_save_json_state_file,
 )
-from services.inbox.inbox_processor_entry_service import (
+from nexus.core.inbox.inbox_processor_entry_service import (
     drain_postgres_inbox_queue_once as _svc_drain_postgres_inbox_queue_once,
 )
-from services.inbox.inbox_processor_entry_service import (
+from nexus.core.inbox.inbox_processor_entry_service import (
     run_inbox_processor_main as _svc_run_inbox_processor_main,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     extract_repo_from_issue_url as _svc_extract_repo_from_issue_url,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     reroute_webhook_task_to_project as _svc_reroute_webhook_task_to_project,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_git_dir as _svc_resolve_git_dir,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_git_dir_for_repo as _svc_resolve_git_dir_for_repo,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_git_dirs as _svc_resolve_git_dirs,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_project_for_repo as _svc_resolve_project_for_repo,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_project_from_path as _svc_resolve_project_from_path,
 )
-from services.inbox.inbox_repo_path_service import (
+from nexus.core.inbox.inbox_repo_path_service import (
     resolve_repo_strict as _svc_resolve_repo_strict,
 )
-from services.inbox.inbox_runtime_singletons_service import (
+from nexus.core.inbox.inbox_runtime_singletons_service import (
     get_completion_store as _svc_get_completion_store,
 )
-from services.inbox.inbox_runtime_singletons_service import (
+from nexus.core.inbox.inbox_runtime_singletons_service import (
     get_process_orchestrator as _svc_get_process_orchestrator,
 )
-from services.inbox.inbox_signal_probe_service import (
+from nexus.core.inbox.inbox_signal_probe_service import (
     read_latest_local_completion as _svc_read_latest_local_completion,
 )
-from services.inbox.inbox_signal_probe_service import (
+from nexus.core.inbox.inbox_signal_probe_service import (
     read_latest_structured_comment as _svc_read_latest_structured_comment,
 )
-from services.inbox.inbox_sop_naming_service import (
+from nexus.core.inbox.inbox_sop_naming_service import (
     generate_issue_name_with_ai as _svc_generate_issue_name_with_ai,
     get_sop_tier_for_task as _svc_get_sop_tier_for_task,
     refine_issue_content_with_ai as _svc_refine_issue_content_with_ai,
     render_checklist_from_workflow as _svc_render_checklist_from_workflow,
     render_fallback_checklist as _svc_render_fallback_checklist,
 )
-from services.inbox.inbox_task_processor_service import (
+from nexus.core.inbox.inbox_task_processor_service import (
     process_task_context as _svc_process_task_context,
 )
-from services.inbox.inbox_task_processor_service import (
+from nexus.core.inbox.inbox_task_processor_service import (
     process_task_payload as _svc_process_task_payload,
 )
-from services.issue_finalize_service import (
+from nexus.core.integrations.inbox_queue import claim_pending_tasks, mark_task_done, mark_task_failed
+from nexus.core.integrations.notifications import (
+    emit_alert,
+    notify_agent_needs_input,
+    notify_workflow_completed,
+)
+from nexus.core.issue_finalize import (
     cleanup_worktree as _finalize_cleanup_worktree,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     close_issue as _finalize_close_issue,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     create_pr_from_changes as _finalize_create_pr_from_changes,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     finalize_workflow as _svc_finalize_workflow,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     find_existing_pr as _finalize_find_existing_pr,
 )
-from services.issue_finalize_service import (
+from nexus.core.issue_finalize import (
     verify_workflow_terminal_before_finalize as _verify_workflow_terminal_before_finalize,
 )
-from services.issue_lifecycle_service import (
+from nexus.core.issue_lifecycle import (
     create_issue as _create_issue,
 )
-from services.issue_lifecycle_service import (
+from nexus.core.issue_lifecycle import (
     rename_task_file_and_sync_issue_body as _rename_task_file_and_sync_issue_body,
 )
-from services.merge_queue_service import (
+from nexus.core.merge_queue import (
     enqueue_merge_queue_prs as _enqueue_merge_queue_prs,
 )
-from services.merge_queue_service import (
+from nexus.core.merge_queue import (
     merge_queue_auto_merge_once_with_token_resolver as _merge_queue_auto_merge_once,
 )
-from services.processor_loops_service import (
+from nexus.core.orchestration.ai_orchestrator import get_orchestrator
+from nexus.core.orchestration.nexus_core_helpers import (
+    complete_step_for_issue,
+    get_git_platform,
+    get_workflow_definition_path,
+    start_workflow,
+)
+from nexus.core.orchestration.plugin_runtime import (
+    get_runtime_ops_plugin,
+    get_workflow_monitor_policy_plugin,
+    get_workflow_policy_plugin,
+    get_workflow_state_plugin,
+)
+from nexus.core.process_orchestrator import ProcessOrchestrator
+from nexus.core.processor_loops import (
     run_processor_loop as _run_processor_loop,
 )
-from services.processor_runtime_state import (
+from nexus.core.processor_runtime_state import (
     ProcessorRuntimeState,
 )
 from services.project_access_service import (
@@ -199,52 +197,66 @@ from services.project_access_service import (
     has_setup_ready_user_for_project as _has_setup_ready_user_for_project,
 )
 from services.repo_resolution_service import (
+from nexus.core.project.repo_resolution import (
     resolve_repo_for_issue as _service_resolve_repo_for_issue,
 )
-from services.runtime_mode_service import is_issue_process_running, is_postgres_backend
-from services.startup_recovery_service import (
+from nexus.core.project.repo_utils import (
+    iter_project_configs as _iter_project_configs,
+)
+from nexus.core.project.repo_utils import (
+    project_repos_from_config as _project_repos_from_config,
+)
+from nexus.core.router import WorkflowRouter
+from nexus.core.runtime.agent_launcher import (
+    clear_launch_guard,
+    invoke_ai_agent,
+    is_recent_launch,
+)
+from nexus.core.runtime_mode import is_issue_process_running, is_postgres_backend
+from nexus.core.startup_recovery import (
     build_startup_workflow_payload_loader as _build_startup_workflow_payload_loader,
 )
-from services.startup_recovery_service import (
+from nexus.core.startup_recovery import (
     reconcile_completion_signals_on_startup as _startup_reconcile_completion_signals,
 )
-from services.task_archive_service import (
+from nexus.core.state_manager import HostStateManager
+from nexus.core.task_archive import (
     archive_closed_task_files as _svc_archive_closed_task_files,
 )
-from services.task_context_service import (
+from nexus.core.task_context import (
     load_task_context as _load_task_context,
 )
-from services.task_dispatch_service import (
+from nexus.core.task_dispatch import (
     handle_new_task as _handle_new_task,
 )
-from services.task_dispatch_service import (
+from nexus.core.task_dispatch import (
     handle_webhook_task as _handle_webhook_task,
 )
-from services.tier_resolution_service import (
+from nexus.core.tier_resolution import (
     resolve_tier_for_issue as _resolve_tier_for_issue,
 )
-from services.workflow.workflow_pr_monitor_service import (
+from nexus.core.workflow_runtime.workflow_pr_monitor_service import (
     build_bot_comments_getter as _build_bot_comments_getter,
 )
-from services.workflow.workflow_pr_monitor_service import (
+from nexus.core.workflow_runtime.workflow_pr_monitor_service import (
     build_workflow_issue_number_lister as _build_workflow_issue_number_lister,
 )
-from services.workflow.workflow_pr_monitor_service import (
+from nexus.core.workflow_runtime.workflow_pr_monitor_service import (
     check_and_notify_pr as _service_check_and_notify_pr,
 )
-from services.workflow.workflow_recovery_service import (
+from nexus.core.workflow_runtime.workflow_recovery_service import (
     recover_orphaned_running_agents as _svc_recover_orphaned_running_agents,
 )
-from services.workflow.workflow_recovery_service import (
+from nexus.core.workflow_runtime.workflow_recovery_service import (
     run_stuck_agents_cycle as _run_stuck_agents_cycle,
 )
-from services.workflow.workflow_unmapped_recovery_service import (
-    recover_unmapped_issues_from_completions as _service_recover_unmapped_issues_from_completions,
-)
-from services.workflow_signal_sync import (
+from nexus.core.workflow_runtime.workflow_signal_sync import (
     normalize_agent_reference as _normalize_agent_reference,
 )
-from state_manager import HostStateManager
+from nexus.core.workflow_runtime.workflow_unmapped_recovery_service import (
+    recover_unmapped_issues_from_completions as _service_recover_unmapped_issues_from_completions,
+)
+from nexus.core.workspace import WorkspaceManager
 
 _STEP_COMPLETE_COMMENT_RE = re.compile(
     r"^\s*##\s+.+?\bcomplete\b\s+—\s+([0-9a-z_-]+)\s*$",
@@ -307,8 +319,8 @@ _STALE_WORKTREE_MAX_AGE_HOURS = max(
     int(os.getenv("NEXUS_STALE_WORKTREE_MAX_AGE_HOURS", "168")),
 )
 _last_stale_worktree_cleanup_ts = 0.0
-from integrations.workflow_state_factory import get_workflow_state as _get_wf_state
-from integrations.workflow_state_factory import get_storage_backend as _get_storage_backend
+from nexus.core.integrations.workflow_state_factory import get_workflow_state as _get_wf_state
+from nexus.core.integrations.workflow_state_factory import get_storage_backend as _get_storage_backend
 
 
 _WORKFLOW_STATE_PLUGIN_KWARGS = {
@@ -329,7 +341,13 @@ COMPLETION_COMMENTS_FILE = os.path.join(NEXUS_STATE_DIR, "completion_comments.js
 
 
 def load_failed_lookups():
-    return _svc_load_json_state_file(path=FAILED_LOOKUPS_FILE, logger=logger, warn_only=False)
+    return _svc_load_json_state_file(
+        path=FAILED_LOOKUPS_FILE,
+        logger=logger,
+        warn_only=False,
+        storage_backend=NEXUS_STORAGE_BACKEND,
+        state_key="failed_task_lookups",
+    )
 
 
 def save_failed_lookups(lookups):
@@ -338,11 +356,19 @@ def save_failed_lookups(lookups):
         data=lookups if isinstance(lookups, dict) else {},
         logger=logger,
         warn_only=False,
+        storage_backend=NEXUS_STORAGE_BACKEND,
+        state_key="failed_task_lookups",
     )
 
 
 def load_completion_comments():
-    return _svc_load_json_state_file(path=COMPLETION_COMMENTS_FILE, logger=logger, warn_only=True)
+    return _svc_load_json_state_file(
+        path=COMPLETION_COMMENTS_FILE,
+        logger=logger,
+        warn_only=True,
+        storage_backend=NEXUS_STORAGE_BACKEND,
+        state_key="completion_comments",
+    )
 
 
 def save_completion_comments(comments):
@@ -351,6 +377,8 @@ def save_completion_comments(comments):
         data=comments if isinstance(comments, dict) else {},
         logger=logger,
         warn_only=True,
+        storage_backend=NEXUS_STORAGE_BACKEND,
+        state_key="completion_comments",
     )
 
 
@@ -1116,6 +1144,43 @@ def _recover_unmapped_issues_from_completions(max_relaunches: int = 20) -> int:
 
 def check_agent_comments():
     """Monitor Git issues for agent comments requesting input across all projects."""
+    allow_service_token_fallback = str(
+        os.getenv("NEXUS_ALLOW_SERVICE_GIT_TOKEN_FALLBACK", "true")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    polling_token_by_project: dict[str, str] = {}
+    polling_token_owner_by_project: dict[str, str] = {}
+
+    def _get_cached_polling_token(project_key: str) -> str:
+        cache_key = project_key.lower()
+        if cache_key in polling_token_by_project:
+            return polling_token_by_project.get(cache_key) or ""
+        token, token_owner = _resolve_project_polling_git_token(project_key)
+        polling_token_by_project[cache_key] = str(token or "")
+        polling_token_owner_by_project[cache_key] = str(token_owner or "")
+        if token and token_owner:
+            logger.debug(
+                "Using per-user polling token for project %s (nexus_id=%s).",
+                project_key,
+                token_owner,
+            )
+        return polling_token_by_project.get(cache_key) or ""
+
+    def _should_poll_project(project_key: str) -> bool:
+        if not _has_setup_ready_user_for_project(project_key):
+            return False
+        if allow_service_token_fallback:
+            return True
+        return bool(_get_cached_polling_token(project_key))
+
+    def _polling_git_platform(repo: str, project_name: str | None = None):
+        project_key = str(project_name or get_default_project()).strip()
+        token_override: str | None = None
+        if _auth_enabled():
+            cached = _get_cached_polling_token(project_key)
+            token_override = cached or None
+
+        return get_git_platform(repo, project_name=project_name, token_override=token_override)
+
     _run_comment_monitor_cycle(
         logger=logger,
         iter_projects=lambda: _iter_project_configs(PROJECT_CONFIG, get_repos),
@@ -1123,7 +1188,7 @@ def check_agent_comments():
         get_repo=get_repo,
         list_workflow_issue_numbers=_build_workflow_issue_number_lister(
             get_workflow_monitor_policy_plugin=get_workflow_monitor_policy_plugin,
-            get_git_platform=get_git_platform,
+            get_git_platform=_polling_git_platform,
             workflow_labels=_WORKFLOW_MONITOR_LABELS,
             list_bound_issue_numbers=(
                 _list_bound_workflow_issue_numbers if _auth_enabled() else None
@@ -1131,7 +1196,7 @@ def check_agent_comments():
         ),
         get_bot_comments=_build_bot_comments_getter(
             get_workflow_monitor_policy_plugin=get_workflow_monitor_policy_plugin,
-            get_git_platform=get_git_platform,
+            get_git_platform=_polling_git_platform,
             bot_author="Ghabs",
             resolve_issue_token=_resolve_issue_requester_token,
             require_issue_requester_token=_auth_enabled(),
@@ -1140,7 +1205,7 @@ def check_agent_comments():
         notified_comments=PROCESSOR_RUNTIME_STATE.notified_comments,
         clear_polling_failures=_clear_polling_failures,
         record_polling_failure=_record_polling_failure,
-        should_poll_project=_has_setup_ready_user_for_project if _auth_enabled() else None,
+        should_poll_project=_should_poll_project if _auth_enabled() else None,
     )
 
 
@@ -1352,7 +1417,7 @@ def _process_filesystem_inbox_once(base_dir: str) -> None:
 
 
 def main():
-    from orchestration.nexus_core_helpers import setup_event_handlers
+    from nexus.core.orchestration.nexus_core_helpers import setup_event_handlers
 
     _svc_run_inbox_processor_main(
         logger=logger,

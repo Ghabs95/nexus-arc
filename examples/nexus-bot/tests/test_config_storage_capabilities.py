@@ -1,4 +1,4 @@
-from config_storage_capabilities import build_storage_capabilities
+from nexus.core.storage.capabilities import build_storage_capabilities
 
 
 def test_build_storage_capabilities_splits_storage_vs_workflow_backends():

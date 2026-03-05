@@ -14,8 +14,8 @@ from nexus.core.models import AuditEvent
 logger = logging.getLogger(__name__)
 
 
-class AuditStore:
-    """Centralized audit storage and retrieval."""
+class WorkflowAuditStore:
+    """Storage-level audit store bound to a StorageBackend."""
 
     def __init__(self, storage: StorageBackend):
         """
@@ -46,3 +46,7 @@ class AuditStore:
     async def get_workflow_history(self, workflow_id: str, limit: int = 100) -> list[AuditEvent]:
         """Get audit history for a specific workflow."""
         return await self.storage.get_audit_log(workflow_id)
+
+
+# Backward compatibility alias for existing imports.
+AuditStore = WorkflowAuditStore

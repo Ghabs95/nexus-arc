@@ -24,19 +24,12 @@ from telegram.ext import (
 )
 
 from alerting import init_alerting_system
-from analytics import get_stats_report
-from audit_store import AuditStore
-from commands.workflow import (
-    pause_handler as workflow_pause_handler,
-)
-from commands.workflow import (
-    resume_handler as workflow_resume_handler,
-)
-from commands.workflow import (
-    stop_handler as workflow_stop_handler,
-)
+from nexus.core.config.bootstrap import initialize_runtime
+
+initialize_runtime(configure_logging=False)
+
 # Import configuration from centralized config module
-from config import (
+from nexus.core.config import (
     AI_PERSONA,
     BASE_DIR,
     LOGS_DIR,
@@ -68,225 +61,205 @@ from config import (
     get_tasks_logs_dir,
     get_track_short_projects,
 )
-from error_handling import format_error_for_user
-from handlers.audio_transcription_handler import (
+from nexus.adapters.git.utils import build_issue_url, resolve_repo
+from nexus.core.analytics.reporting import get_stats_report
+from nexus.core.audit_store import AuditStore
+from nexus.core.auth import (
+    check_project_access as _svc_check_project_access,
+)
+from nexus.core.auth import create_login_session_for_user
+from nexus.core.auth import (
+    get_setup_status as _svc_get_setup_status,
+)
+from nexus.core.auth import register_onboarding_message as _svc_register_onboarding_message
+from nexus.core.command_contract import (
+    validate_command_parity,
+    validate_required_command_interface,
+)
+from nexus.core.completion import scan_for_completions
+from nexus.core.error_handling import format_error_for_user
+from nexus.core.feature_registry_service import FeatureRegistryService
+from nexus.core.git.direct_issue_plugin_service import (
+    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
+)
+from nexus.core.handlers.audio_transcription_handler import (
     AudioTranscriptionDeps,
     transcribe_telegram_voice,
 )
-from handlers.bug_report_handler import handle_report_bug
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.bug_report_handler import handle_report_bug
+from nexus.core.handlers.callback_command_handlers import (
     CallbackHandlerDeps,
 )
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.callback_command_handlers import (
     close_flow_handler as callback_close_flow_handler,
 )
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.callback_command_handlers import (
     flow_close_handler as callback_flow_close_handler,
 )
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.callback_command_handlers import (
     inline_keyboard_handler as callback_inline_keyboard_handler,
 )
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.callback_command_handlers import (
     issue_picker_handler as callback_issue_picker_handler,
 )
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.callback_command_handlers import (
     menu_callback_handler as callback_menu_callback_handler,
 )
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.callback_command_handlers import (
     monitor_project_picker_handler as callback_monitor_project_picker_handler,
 )
-from handlers.callback_command_handlers import (
+from nexus.core.handlers.callback_command_handlers import (
     project_picker_handler as callback_project_picker_handler,
 )
-from handlers.chat_command_handlers import (
+from nexus.core.handlers.chat_command_handlers import (
     chat_agents_handler as core_chat_agents_handler,
     chat_callback_handler as core_chat_callback_handler,
     chat_menu_handler as core_chat_menu_handler,
 )
-from handlers.common_routing import extract_json_dict, route_task_with_context
-from handlers.feature_ideation_handlers import (
+from nexus.core.handlers.common_routing import extract_json_dict, route_task_with_context
+from nexus.core.handlers.feature_ideation_handlers import (
     FeatureIdeationHandlerDeps,
     handle_feature_ideation_request,
     is_feature_ideation_request,
 )
-from handlers.feature_ideation_handlers import (
+from nexus.core.handlers.feature_ideation_handlers import (
     feature_callback_handler as core_feature_callback_handler,
 )
-from handlers.feature_registry_command_handlers import (
+from nexus.core.handlers.feature_registry_command_handlers import (
     FeatureRegistryCommandDeps,
     feature_done_handler as core_feature_done_handler,
     feature_forget_handler as core_feature_forget_handler,
     feature_list_handler as core_feature_list_handler,
 )
-from handlers.hands_free_routing_handler import (
+from nexus.core.handlers.hands_free_routing_handler import (
     HandsFreeRoutingDeps,
     resolve_pending_project_selection,
     route_hands_free_text,
 )
-from handlers.inbox_routing_handler import (
+from nexus.core.handlers.inbox_routing_handler import (
     PROJECTS,
     TYPES,
     process_inbox_task,
     save_resolved_task,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     IssueHandlerDeps,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     assign_handler as issue_assign_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     comments_handler as issue_comments_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     implement_handler as issue_implement_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     myissues_handler as issue_myissues_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     plan_handler as issue_plan_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     prepare_handler as issue_prepare_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     respond_handler as issue_respond_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     track_handler as issue_track_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     tracked_handler as issue_tracked_handler,
 )
-from handlers.issue_command_handlers import (
+from nexus.core.handlers.issue_command_handlers import (
     untrack_handler as issue_untrack_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     MonitoringHandlersDeps,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     active_handler as monitoring_active_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     fuse_handler as monitoring_fuse_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     logs_handler as monitoring_logs_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     logsfull_handler as monitoring_logsfull_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     status_handler as monitoring_status_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     tail_handler as monitoring_tail_handler,
 )
-from handlers.monitoring_command_handlers import (
+from nexus.core.handlers.monitoring_command_handlers import (
     tailstop_handler as monitoring_tailstop_handler,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     OpsHandlerDeps,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     agents_handler as ops_agents_handler,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     audit_handler as ops_audit_handler,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     direct_handler as ops_direct_handler,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     inboxq_handler as ops_inboxq_handler,
 )
-from handlers.ops_command_handlers import (
+from nexus.core.handlers.ops_command_handlers import (
     stats_handler as ops_stats_handler,
 )
-from handlers.visualize_command_handlers import (
+from nexus.core.handlers.visualize_command_handlers import (
     VisualizeHandlerDeps,
 )
-from handlers.visualize_command_handlers import (
+from nexus.core.handlers.visualize_command_handlers import (
     visualize_handler as workflow_visualize_handler,
 )
-from handlers.watch_command_handlers import (
+from nexus.core.handlers.watch_command_handlers import (
     WatchHandlerDeps,
 )
-from handlers.watch_command_handlers import (
+from nexus.core.handlers.watch_command_handlers import (
     watch_handler as workflow_watch_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     WorkflowHandlerDeps,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     continue_handler as workflow_continue_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     forget_handler as workflow_forget_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     kill_handler as workflow_kill_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     pause_handler as workflow_pause_picker_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     reconcile_handler as workflow_reconcile_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     reprocess_handler as workflow_reprocess_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     resume_handler as workflow_resume_picker_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     stop_handler as workflow_stop_picker_handler,
 )
-from handlers.workflow_command_handlers import (
+from nexus.core.handlers.workflow_command_handlers import (
     wfstate_handler as workflow_wfstate_handler,
 )
-from inbox_processor import _normalize_agent_reference, get_sop_tier
-from nexus.adapters.git.utils import build_issue_url, resolve_repo
-from nexus.core.completion import scan_for_completions
-from nexus.core.utils.logging_filters import install_secret_redaction
-from nexus.plugins.builtin.ai_runtime_plugin import AIProvider
-from orchestration.ai_orchestrator import get_orchestrator
-from orchestration.nexus_core_helpers import get_workflow_definition_path
-from orchestration.plugin_runtime import (
-    get_profiled_plugin,
-    get_runtime_ops_plugin,
-    get_workflow_state_plugin,
-)
-from orchestration.telegram.telegram_callback_router import (
-    call_core_callback_handler as _router_call_core_callback_handler,
-)
-from orchestration.telegram.telegram_callback_router import (
-    call_core_chat_handler as _router_call_core_chat_handler,
-)
-from orchestration.telegram.telegram_command_router import (
-    dispatch_command as _router_dispatch_command,
-)
-from orchestration.telegram.telegram_update_bridge import (
-    build_telegram_interactive_ctx as _bridge_build_telegram_interactive_ctx,
-)
-from orchestration.telegram.telegram_update_bridge import (
-    buttons_to_reply_markup as _bridge_buttons_to_reply_markup,
-)
-from project_key_utils import normalize_project_key_optional as _normalize_project_key
-from rate_limiter import RateLimit, get_rate_limiter
-from report_scheduler import ReportScheduler
-from runtime.agent_launcher import get_sop_tier_from_issue, invoke_ai_agent
-from services.auth_session_service import create_login_session_for_user
-from services.command_contract import (
-    validate_command_parity,
-    validate_required_command_interface,
-)
-from services.feature_registry_service import FeatureRegistryService
-from services.git.direct_issue_plugin_service import (
-    get_direct_issue_plugin as _svc_get_direct_issue_plugin,
-)
-from services.memory_service import (
+from nexus.core.memory import (
     append_message,
     create_chat,
     get_active_chat,
@@ -294,224 +267,259 @@ from services.memory_service import (
     get_chat_history,
     rename_chat,
 )
-from services.project.project_catalog_service import (
+from nexus.core.orchestration.ai_orchestrator import get_orchestrator
+from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
+from nexus.core.orchestration.plugin_runtime import (
+    get_profiled_plugin,
+    get_runtime_ops_plugin,
+    get_workflow_state_plugin,
+)
+from nexus.core.orchestration.telegram.telegram_callback_router import (
+    call_core_callback_handler as _router_call_core_callback_handler,
+)
+from nexus.core.orchestration.telegram.telegram_callback_router import (
+    call_core_chat_handler as _router_call_core_chat_handler,
+)
+from nexus.core.orchestration.telegram.telegram_command_router import (
+    dispatch_command as _router_dispatch_command,
+)
+from nexus.core.orchestration.telegram.telegram_update_bridge import (
+    build_telegram_interactive_ctx as _bridge_build_telegram_interactive_ctx,
+)
+from nexus.core.orchestration.telegram.telegram_update_bridge import (
+    buttons_to_reply_markup as _bridge_buttons_to_reply_markup,
+)
+from nexus.core.project.catalog import (
     get_single_project_key as _svc_get_single_project_key,
 )
-from services.project.project_catalog_service import (
+from nexus.core.project.catalog import (
     iter_project_keys as _svc_iter_project_keys,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     default_issue_url as _svc_default_issue_url,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     get_issue_details as _svc_get_issue_details,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     project_issue_url as _svc_project_issue_url,
 )
-from services.project.project_issue_command_deps_service import (
+from nexus.core.project.issue_command_deps import (
     project_repo as _svc_project_repo,
 )
-from services.project_access_service import (
-    check_project_access as _svc_check_project_access,
+from nexus.core.project.key_utils import normalize_project_key_optional as _normalize_project_key
+from nexus.core.report_scheduler import ReportScheduler
+from nexus.core.runtime.bridge import find_task_file_by_issue
+from nexus.core.runtime.bridge import get_sop_tier_from_issue, invoke_ai_agent
+from nexus.core.runtime.workflow_commands import (
+    pause_handler as workflow_pause_handler,
 )
-from services.project_access_service import (
-    get_setup_status as _svc_get_setup_status,
+from nexus.core.runtime.workflow_commands import (
+    resume_handler as workflow_resume_handler,
 )
-from services.telegram.telegram_bootstrap_ui_service import (
+from nexus.core.runtime.workflow_commands import (
+    stop_handler as workflow_stop_handler,
+)
+from nexus.core.state_manager import HostStateManager
+from nexus.core.task_flow.helpers import (
+    get_sop_tier,
+    normalize_agent_reference as _normalize_agent_reference,
+)
+from nexus.core.telegram.telegram_bootstrap_ui_service import (
     build_menu_keyboard as _svc_build_menu_keyboard,
 )
-from services.telegram.telegram_bootstrap_ui_service import (
+from nexus.core.telegram.telegram_bootstrap_ui_service import (
     check_tool_health as _svc_check_tool_health,
 )
-from services.telegram.telegram_bootstrap_ui_service import (
+from nexus.core.telegram.telegram_bootstrap_ui_service import (
     handle_help as _svc_handle_help,
 )
-from services.telegram.telegram_bootstrap_ui_service import (
+from nexus.core.telegram.telegram_bootstrap_ui_service import (
     handle_menu as _svc_handle_menu,
 )
-from services.telegram.telegram_bootstrap_ui_service import (
+from nexus.core.telegram.telegram_bootstrap_ui_service import (
     handle_start as _svc_handle_start,
 )
-from services.telegram.telegram_bootstrap_ui_service import (
+from nexus.core.telegram.telegram_bootstrap_ui_service import (
     on_startup as _svc_on_startup,
 )
-from services.telegram.telegram_chat_misc_service import (
+from nexus.core.telegram.telegram_chat_misc_service import (
     call_core_chat_wrapper as _svc_call_core_chat_wrapper,
 )
-from services.telegram.telegram_chat_misc_service import (
+from nexus.core.telegram.telegram_chat_misc_service import (
     handle_rename_chat as _svc_handle_rename_chat,
 )
-from services.telegram.telegram_command_runtime_service import (
+from nexus.core.telegram.telegram_command_runtime_service import (
     handle_progress_command as _svc_handle_progress_command,
 )
-from services.telegram.telegram_command_runtime_service import (
+from nexus.core.telegram.telegram_command_runtime_service import (
     rate_limited as _svc_rate_limited,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_audio_transcription_handler_deps as _svc_build_audio_transcription_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_callback_action_handlers as _svc_build_callback_action_handlers,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_callback_handler_deps as _svc_build_callback_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_feature_ideation_handler_deps as _svc_build_feature_ideation_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_hands_free_routing_handler_deps as _svc_build_hands_free_routing_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_issue_handler_deps as _svc_build_issue_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_monitoring_handler_deps as _svc_build_monitoring_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_ops_handler_deps as _svc_build_ops_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_visualize_handler_deps as _svc_build_visualize_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_watch_handler_deps as _svc_build_watch_handler_deps,
 )
-from services.telegram.telegram_handler_deps_service import (
+from nexus.core.telegram.telegram_handler_deps_service import (
     build_workflow_handler_deps as _svc_build_workflow_handler_deps,
 )
-from services.telegram.telegram_hands_free_service import handle_hands_free_message
-from services.telegram.telegram_interactive_ctx_service import (
+from nexus.core.telegram.telegram_hands_free_service import handle_hands_free_message
+from nexus.core.telegram.telegram_interactive_ctx_service import (
     ctx_call_telegram_handler as _svc_ctx_call_telegram_handler,
 )
-from services.telegram.telegram_interactive_ctx_service import (
+from nexus.core.telegram.telegram_interactive_ctx_service import (
     ctx_dispatch_command as _svc_ctx_dispatch_command,
 )
-from services.telegram.telegram_interactive_ctx_service import (
+from nexus.core.telegram.telegram_interactive_ctx_service import (
     ctx_ensure_project as _svc_ctx_ensure_project,
 )
-from services.telegram.telegram_interactive_ctx_service import (
+from nexus.core.telegram.telegram_interactive_ctx_service import (
     ctx_ensure_project_issue as _svc_ctx_ensure_project_issue,
 )
-from services.telegram.telegram_interactive_ctx_service import (
+from nexus.core.telegram.telegram_interactive_ctx_service import (
     ctx_prompt_issue_selection as _svc_ctx_prompt_issue_selection,
 )
-from services.telegram.telegram_interactive_ctx_service import (
+from nexus.core.telegram.telegram_interactive_ctx_service import (
     ctx_prompt_project_selection as _svc_ctx_prompt_project_selection,
 )
-from services.telegram.telegram_interactive_ctx_service import (
+from nexus.core.telegram.telegram_interactive_ctx_service import (
     ctx_telegram_runtime as _svc_ctx_telegram_runtime,
 )
-from services.telegram.telegram_issue_selection_service import (
+from nexus.core.telegram.telegram_issue_selection_service import (
     ensure_project_issue as _svc_ensure_project_issue,
 )
-from services.telegram.telegram_issue_selection_service import (
+from nexus.core.telegram.telegram_issue_selection_service import (
     handle_pending_issue_input as _svc_handle_pending_issue_input,
 )
-from services.telegram.telegram_issue_selection_service import (
+from nexus.core.telegram.telegram_issue_selection_service import (
     list_project_issues as _svc_list_project_issues,
 )
-from services.telegram.telegram_issue_selection_service import (
+from nexus.core.telegram.telegram_issue_selection_service import (
     parse_project_issue_args as _svc_parse_project_issue_args,
 )
-from services.telegram.telegram_main_bootstrap_service import (
+from nexus.core.telegram.telegram_main_bootstrap_service import (
     alerting_enabled as _svc_alerting_enabled,
 )
-from services.telegram.telegram_main_bootstrap_service import (
+from nexus.core.telegram.telegram_main_bootstrap_service import (
     allowed_updates_all_types as _svc_allowed_updates_all_types,
 )
-from services.telegram.telegram_main_bootstrap_service import (
+from nexus.core.telegram.telegram_main_bootstrap_service import (
     build_command_handler_map as _svc_build_command_handler_map,
 )
-from services.telegram.telegram_main_bootstrap_service import (
+from nexus.core.telegram.telegram_main_bootstrap_service import (
     build_post_init_with_scheduler as _svc_build_post_init_with_scheduler,
 )
-from services.telegram.telegram_main_bootstrap_service import (
+from nexus.core.telegram.telegram_main_bootstrap_service import (
     register_application_handlers as _svc_register_application_handlers,
 )
-from services.telegram.telegram_main_bootstrap_service import (
+from nexus.core.telegram.telegram_main_bootstrap_service import (
     reports_enabled as _svc_reports_enabled,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     extract_issue_number_from_file as _svc_extract_issue_number_from_file,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     extract_project_from_nexus_path as _svc_extract_project_from_nexus_path,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     find_issue_log_files as _svc_find_issue_log_files,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     find_task_logs as _svc_find_task_logs,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     get_project_logs_dir as _svc_get_project_logs_dir,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     get_project_root as _svc_get_project_root,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     read_latest_log_full as _svc_read_latest_log_full,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     read_latest_log_tail as _svc_read_latest_log_tail,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     read_log_matches as _svc_read_log_matches,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     resolve_project_config_from_task as _svc_resolve_project_config_from_task,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     resolve_project_root_from_task_path as _svc_resolve_project_root_from_task_path,
 )
-from services.telegram.telegram_project_logs_service import (
+from nexus.core.telegram.telegram_project_logs_service import (
     search_logs_for_issue as _svc_search_logs_for_issue,
 )
-from services.telegram.telegram_selection_flow_service import (
+from nexus.core.telegram.telegram_selection_flow_service import (
     cancel_selection_flow as _svc_cancel_selection_flow,
 )
-from services.telegram.telegram_selection_flow_service import (
+from nexus.core.telegram.telegram_selection_flow_service import (
     project_selected_flow as _svc_project_selected_flow,
 )
-from services.telegram.telegram_selection_flow_service import (
+from nexus.core.telegram.telegram_selection_flow_service import (
     start_selection_flow as _svc_start_selection_flow,
 )
-from services.telegram.telegram_selection_flow_service import (
+from nexus.core.telegram.telegram_selection_flow_service import (
     type_selected_flow as _svc_type_selected_flow,
 )
-from services.telegram.telegram_task_capture_service import (
+from nexus.core.telegram.telegram_task_capture_service import (
     handle_save_task_selection,
     handle_task_confirmation_callback,
 )
-from services.telegram.telegram_ui_prompts_service import (
+from nexus.core.telegram.telegram_ui_prompts_service import (
     prompt_issue_selection as _svc_prompt_issue_selection,
 )
-from services.telegram.telegram_ui_prompts_service import (
+from nexus.core.telegram.telegram_ui_prompts_service import (
     prompt_project_selection as _svc_prompt_project_selection,
 )
-from services.telegram.telegram_workflow_probe_service import (
+from nexus.core.telegram.telegram_workflow_probe_service import (
     get_expected_running_agent_from_workflow as _svc_get_expected_running_agent_from_workflow,
 )
-from services.workflow.workflow_control_service import (
+from nexus.core.user_manager import get_user_manager
+from nexus.core.utils.logging_filters import install_secret_redaction
+from nexus.core.workflow_runtime.workflow_control_service import (
     kill_issue_agent,
     prepare_continue_context,
 )
-from services.workflow.workflow_ops_service import (
+from nexus.core.workflow_runtime.workflow_ops_service import (
     build_workflow_snapshot,
     fetch_workflow_state_snapshot,
     reconcile_issue_from_signals,
 )
-from services.workflow_signal_sync import (
+from nexus.core.workflow_runtime.workflow_signal_sync import (
     extract_structured_completion_signals,
     read_latest_local_completion,
     write_local_completion_from_signal,
 )
-from services.workflow_watch_service import get_workflow_watch_service
-from state_manager import HostStateManager
-from user_manager import get_user_manager
-from utils.task_utils import find_task_file_by_issue
+from nexus.core.workflow_runtime.workflow_watch_service import get_workflow_watch_service
+from nexus.plugins.builtin.ai_runtime_plugin import AIProvider
+from nexus.core.rate_limiter import RateLimit, get_rate_limiter
 
 # --- LOGGING ---
 logger = logging.getLogger(__name__)
@@ -660,7 +668,7 @@ feature_registry_service = FeatureRegistryService(
 )
 
 DEFAULT_REPO = get_default_repo()
-from integrations.workflow_state_factory import get_workflow_state as _get_wf_state
+from nexus.core.integrations.workflow_state_factory import get_workflow_state as _get_wf_state
 
 _WORKFLOW_STATE_PLUGIN_KWARGS = {
     "storage_dir": NEXUS_CORE_STORAGE_DIR,
@@ -753,7 +761,7 @@ def _watch_handler_deps() -> WatchHandlerDeps:
 
 
 def _monitoring_handler_deps() -> MonitoringHandlersDeps:
-    from runtime.nexus_agent_runtime import get_retry_fuse_status
+    from nexus.core.runtime.nexus_agent_runtime import get_retry_fuse_status
 
     return _svc_build_monitoring_handler_deps(
         logger=logger,
@@ -824,7 +832,7 @@ def _issue_handler_deps() -> IssueHandlerDeps:
 
 
 def _get_inbox_queue_overview(limit: int) -> dict[str, Any]:
-    from integrations.inbox_queue import get_queue_overview
+    from nexus.core.integrations.inbox_queue import get_queue_overview
 
     return get_queue_overview(limit=limit)
 
@@ -832,7 +840,7 @@ def _get_inbox_queue_overview(limit: int) -> dict[str, Any]:
 def _enqueue_inbox_task(
     *, project_key: str, workspace: str, filename: str, markdown_content: str
 ) -> int:
-    from integrations.inbox_queue import enqueue_task
+    from nexus.core.integrations.inbox_queue import enqueue_task
 
     return enqueue_task(
         project_key=project_key,
@@ -1539,8 +1547,6 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     requested_provider = str((context.args[0] if context.args else "") or "").strip().lower()
-    if requested_provider not in {"github", "gitlab"}:
-        requested_provider = "gitlab" if NEXUS_GITLAB_CLIENT_ID else "github"
     if requested_provider == "github" and not NEXUS_GITHUB_CLIENT_ID:
         await update.effective_message.reply_text(
             "⚠️ GitHub OAuth is not configured. Use `/login gitlab`.",
@@ -1560,10 +1566,63 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         discord_user_id=str(update.effective_user.id),
         discord_username=getattr(update.effective_user, "username", None),
     )
+    available_providers: list[str] = []
+    if NEXUS_GITHUB_CLIENT_ID:
+        available_providers.append("github")
+    if NEXUS_GITLAB_CLIENT_ID:
+        available_providers.append("gitlab")
+    if not available_providers:
+        await update.effective_message.reply_text(
+            "⚠️ No OAuth providers are configured. Ask an admin to configure GitHub/GitLab OAuth.",
+        )
+        return
+
+    if not requested_provider:
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    f"Continue with {provider.title()}",
+                    url=f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={provider}",
+                )
+            ]
+            for provider in available_providers
+        ]
+        sent = await update.effective_message.reply_text(
+            (
+                "🔐 Setup required before task execution.\n\n"
+                "Choose your Git provider to continue OAuth onboarding."
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            disable_web_page_preview=True,
+        )
+        try:
+            _svc_register_onboarding_message(
+                session_id=session_id,
+                chat_platform="telegram",
+                chat_id=str(getattr(sent, "chat_id", "") or getattr(update.effective_chat, "id", "")),
+                message_id=str(getattr(sent, "message_id", "")),
+            )
+        except Exception as exc:
+            logger.warning("Failed to register Telegram onboarding message for session %s: %s", session_id, exc)
+        return
+
+    if requested_provider not in {"github", "gitlab"}:
+        await update.effective_message.reply_text(
+            "⚠️ Invalid provider. Use `/login github` or `/login gitlab`, or run `/login` to pick from menu.",
+            parse_mode="Markdown",
+        )
+        return
+
+    if requested_provider not in available_providers:
+        await update.effective_message.reply_text(
+            f"⚠️ {requested_provider.title()} OAuth is not configured in this environment.",
+        )
+        return
+
     login_url = (
         f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={requested_provider}"
     )
-    await update.effective_message.reply_text(
+    sent = await update.effective_message.reply_text(
         (
             "🔐 Setup required before task execution.\n\n"
             f"1. Open: {login_url}\n"
@@ -1571,7 +1630,17 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "3. Add Codex/OpenAI, Gemini, and/or Claude key, or use Copilot with linked GitHub OAuth\n"
             "4. Run `/setup_status`"
         ),
+        disable_web_page_preview=True,
     )
+    try:
+        _svc_register_onboarding_message(
+            session_id=session_id,
+            chat_platform="telegram",
+            chat_id=str(getattr(sent, "chat_id", "") or getattr(update.effective_chat, "id", "")),
+            message_id=str(getattr(sent, "message_id", "")),
+        )
+    except Exception as exc:
+        logger.warning("Failed to register Telegram onboarding message for session %s: %s", session_id, exc)
 
 
 async def setup_status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1593,7 +1662,7 @@ async def setup_status_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         f"- Codex key set: {'✅' if status.get('codex_key_set') else '❌'}",
         f"- Gemini key set: {'✅' if status.get('gemini_key_set') else '❌'}",
         f"- Claude key set: {'✅' if status.get('claude_key_set') else '❌'}",
-        f"- Copilot ready (GitHub linked): {'✅' if status.get('copilot_ready') else '❌'}",
+        f"- Copilot ready (GitHub OAuth or Copilot Token): {'✅' if status.get('copilot_ready') else '❌'}",
         f"- Org/group verified: {'✅' if status.get('org_verified') else '❌'}",
         f"- Project access: `{int(status.get('project_access_count') or 0)}`",
         f"- Projects: {projects_line}",
@@ -1602,7 +1671,7 @@ async def setup_status_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if not status.get("ready"):
         lines.append("")
         lines.append("Run `/login` to complete any missing steps.")
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 async def whoami_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1622,7 +1691,7 @@ async def whoami_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"- GitHub login: `{setup.get('github_login') or 'n/a'}`")
         lines.append(f"- GitLab username: `{setup.get('gitlab_username') or 'n/a'}`")
         lines.append(f"- Ready: {'✅' if setup.get('ready') else '❌'}")
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 def build_menu_keyboard(button_rows, include_back=True):

@@ -1,4 +1,4 @@
-from services.task_context_service import load_task_context
+from nexus.core.task_context import load_task_context
 
 
 def test_load_task_context_resolves_project_from_inbox_path(tmp_path):

@@ -87,8 +87,10 @@ if placeholder(get("TELEGRAM_TOKEN")) and placeholder(get("DISCORD_TOKEN")):
     errors.append("Set at least one bot token: TELEGRAM_TOKEN or DISCORD_TOKEN")
 
 if auth_enabled:
-    if lower(get("NEXUS_STORAGE_BACKEND")) != "postgres":
-        errors.append("NEXUS_AUTH_ENABLED=true requires NEXUS_STORAGE_BACKEND=postgres")
+    if lower(get("NEXUS_STORAGE_BACKEND")) not in {"postgres", "database"}:
+        errors.append(
+            "NEXUS_AUTH_ENABLED=true requires NEXUS_STORAGE_BACKEND=postgres (alias: database)"
+        )
     require_non_placeholder("NEXUS_STORAGE_DSN")
     require_non_placeholder("NEXUS_PUBLIC_BASE_URL")
     require_non_placeholder("NEXUS_CREDENTIALS_MASTER_KEY")

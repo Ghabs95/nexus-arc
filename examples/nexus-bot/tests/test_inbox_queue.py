@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import integrations.inbox_queue as inbox_queue
 import pytest
+
+import nexus.core.integrations.inbox_queue as inbox_queue
 
 
 def _insert_row(*, engine, project_key: str, workspace: str, filename: str, status: str, body: str):

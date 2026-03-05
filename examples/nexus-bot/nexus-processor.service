@@ -3,24 +3,16 @@ Description=Nexus Inbox Processor
 After=network.target
 
 [Service]
-# Adjust User/Group to match your server (e.g., ubuntu)
+Type=simple
 User=ubuntu
-Group=ubuntu
 WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
+EnvironmentFile=/opt/nexus/.env
+Environment="PYTHONUNBUFFERED=1"
 # Include virtualenv and system paths so `gh` and other system binaries are available
 Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python src/inbox_processor.py
 Restart=always
 RestartSec=10
-# Environment variables can be loaded from file or set here
-EnvironmentFile=/opt/nexus/.env
-Environment="PYTHONUNBUFFERED=1"
-# Required configuration (in .env):
-#   - PROJECT_CONFIG_PATH: Path to project config YAML (e.g., config/project_config.yaml)
-#   - TELEGRAM_TOKEN: Telegram bot token for alerts
-#   - GITHUB_TOKEN: GitHub token for gh CLI authentication
-#   - BASE_DIR: Base directory for workspace resolution
-# Required: gh CLI must be authenticated with GITHUB_TOKEN
 
 [Install]
 WantedBy=multi-user.target

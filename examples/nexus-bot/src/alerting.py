@@ -14,9 +14,9 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from integrations.audit_query_factory import get_audit_query
-from integrations.notifications import emit_alert
-from state_manager import HostStateManager
+from nexus.core.integrations.audit_query_factory import get_audit_query
+from nexus.core.integrations.notifications import emit_alert
+from nexus.core.state_manager import HostStateManager
 
 logger = logging.getLogger(__name__)
 

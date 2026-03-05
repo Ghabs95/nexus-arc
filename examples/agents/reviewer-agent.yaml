@@ -67,6 +67,21 @@ spec:
        - Performance concerns
        - Test coverage
        - Consistency with project conventions (PEP 8, type hints, 100-char lines)
+       - Framework vs example placement policy compliance
+
+    3a. Enforce feature placement policy (blocking):
+       - Classify each feature as:
+         - `FRAMEWORK`: reusable capabilities, core abstractions, runtime behavior,
+           APIs, tool/memory/orchestration/transport logic.
+         - `EXAMPLE`: demo wiring, sample UX text, tutorial-only glue in
+           `examples/nexus-bot`.
+       - If reusable logic appears in `examples/nexus-bot`, request changes.
+       - If a `FRAMEWORK` feature is added/changed, verify there is corresponding
+         usage in `examples/nexus-bot` to validate and demonstrate it.
+       - If framework files change without matching example-consumer updates,
+         request changes unless the PR clearly states why no example update is needed.
+       - Example files must consume framework APIs; they must not re-implement
+         framework behavior.
 
     4. Run regression checks before approving:
        - For Nexus ARC, run `make premerge-core` and record the pass/fail summary.
@@ -84,7 +99,7 @@ spec:
     6. Based on your findings, either:
        - **Approve** (no blocking issues), or
        - **Request changes** (blocking issues found, including missing/failing
-         full regression)
+         full regression, or placement policy violations)
 
     7. Post a **concise** summary comment on the issue with your decision.
        Include a one-line regression summary (e.g. "Full regression: 355 passed, 0 failed")

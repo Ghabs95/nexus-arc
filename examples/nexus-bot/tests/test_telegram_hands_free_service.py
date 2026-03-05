@@ -1,8 +1,10 @@
 import logging
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
-from services.telegram.telegram_hands_free_service import handle_hands_free_message
+
+from nexus.core.telegram.telegram_hands_free_service import handle_hands_free_message
 
 
 class _Msg:
@@ -51,6 +53,10 @@ async def _none_transcribe(*_a, **_k):
     return None
 
 
+def _rename_chat(_user_id: int, _chat_id: Any, _title: str) -> Any:
+    return False
+
+
 @pytest.mark.asyncio
 async def test_hands_free_unauthorized_returns_early():
     update = _update(user_id=999, text="hello")
@@ -62,7 +68,7 @@ async def test_hands_free_unauthorized_returns_early():
         logger=logging.getLogger("test"),
         allowed_user_ids={1, 2},
         get_active_chat=lambda _u: None,
-        rename_chat=lambda *_a: False,
+        rename_chat=_rename_chat,
         chat_menu_handler=_false_async,
         handle_pending_issue_input=_false_async,
         transcribe_voice_message=_none_transcribe,
@@ -91,7 +97,7 @@ async def test_hands_free_pending_chat_rename_cancel():
         logger=logging.getLogger("test"),
         allowed_user_ids=None,
         get_active_chat=lambda _u: None,
-        rename_chat=lambda *_a: False,
+        rename_chat=_rename_chat,
         chat_menu_handler=_false_async,
         handle_pending_issue_input=_false_async,
         transcribe_voice_message=_none_transcribe,
@@ -125,7 +131,7 @@ async def test_hands_free_command_guard_ignores_commands():
         logger=logging.getLogger("test"),
         allowed_user_ids=None,
         get_active_chat=lambda _u: None,
-        rename_chat=lambda *_a: False,
+        rename_chat=_rename_chat,
         chat_menu_handler=_false_async,
         handle_pending_issue_input=_false_async,
         transcribe_voice_message=_none_transcribe,
@@ -164,7 +170,7 @@ async def test_hands_free_pending_task_edit_builds_confirmation_preview():
         logger=logging.getLogger("test"),
         allowed_user_ids=None,
         get_active_chat=lambda _u: None,
-        rename_chat=lambda *_a: False,
+        rename_chat=_rename_chat,
         chat_menu_handler=_false_async,
         handle_pending_issue_input=_false_async,
         transcribe_voice_message=_none_transcribe,

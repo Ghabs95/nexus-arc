@@ -1,21 +1,20 @@
 [Unit]
-Description=Nexus GitHub Webhook Server
+Description=Nexus Webhook Server
 After=network.target
 
 [Service]
 Type=simple
 User=ubuntu
 WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
+EnvironmentFile=/opt/nexus/.env
+Environment="PYTHONUNBUFFERED=1"
+# Include system paths so system binaries (e.g. /usr/bin/gh) are available
+Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python3 /opt/nexus-arc/examples/nexus-bot/src/webhook_server.py
 Restart=always
 RestartSec=10
 StandardOutput=append:/opt/nexus-arc/examples/nexus-bot/logs/webhook.log
 StandardError=append:/opt/nexus-arc/examples/nexus-bot/logs/webhook_error.log
-
-# Environment
-Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONUNBUFFERED=1"
-EnvironmentFile=/opt/nexus/.env
 
 [Install]
 WantedBy=multi-user.target

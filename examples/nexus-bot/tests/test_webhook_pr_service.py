@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from services.webhook_pr_service import handle_pull_request_event
+from nexus.core.webhook.pr_service import handle_pull_request_event
 
 
 class _Policy:

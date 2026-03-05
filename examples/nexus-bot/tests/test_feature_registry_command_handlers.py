@@ -1,12 +1,15 @@
 import logging
+from typing import cast
 
 import pytest
-from handlers.feature_registry_command_handlers import (
+
+from nexus.core.handlers.feature_registry_command_handlers import (
     FeatureRegistryCommandDeps,
     feature_done_handler,
     feature_forget_handler,
     feature_list_handler,
 )
+from nexus.core.interactive.context import InteractiveContext
 
 
 class _Ctx:
@@ -65,7 +68,7 @@ async def test_feature_done_adds_record_and_echoes_feature_id():
     registry = _RegistryStub()
     ctx = _Ctx(args=["nexus", "Two-factor", "auth"])
 
-    await feature_done_handler(ctx, _deps(registry))
+    await feature_done_handler(cast(InteractiveContext, cast(object, ctx)), _deps(registry))
 
     assert registry.rows == [
         {
@@ -87,7 +90,7 @@ async def test_feature_list_is_deterministic_with_source_issue_suffix():
     ]
     ctx = _Ctx(args=["nexus"])
 
-    await feature_list_handler(ctx, _deps(registry))
+    await feature_list_handler(cast(InteractiveContext, cast(object, ctx)), _deps(registry))
 
     expected = (
         "📚 Implemented features for *Nexus*:\n"
@@ -106,12 +109,12 @@ async def test_feature_forget_removes_by_title_then_reports_missing():
     deps = _deps(registry)
 
     remove_ctx = _Ctx(args=["nexus", "SLA", "alerts"])
-    await feature_forget_handler(remove_ctx, deps)
+    await feature_forget_handler(cast(InteractiveContext, cast(object, remove_ctx)), deps)
     assert "Removed implemented feature" in remove_ctx.replies[-1]
     assert registry.rows == []
 
     missing_ctx = _Ctx(args=["nexus", "SLA", "alerts"])
-    await feature_forget_handler(missing_ctx, deps)
+    await feature_forget_handler(cast(InteractiveContext, cast(object, missing_ctx)), deps)
     assert "Feature not found" in missing_ctx.replies[-1]
 
 
@@ -125,9 +128,9 @@ async def test_registry_disabled_short_circuits_commands():
     list_ctx = _Ctx(args=["nexus"])
     forget_ctx = _Ctx(args=["nexus", "feat_1"])
 
-    await feature_done_handler(done_ctx, deps)
-    await feature_list_handler(list_ctx, deps)
-    await feature_forget_handler(forget_ctx, deps)
+    await feature_done_handler(cast(InteractiveContext, cast(object, done_ctx)), deps)
+    await feature_list_handler(cast(InteractiveContext, cast(object, list_ctx)), deps)
+    await feature_forget_handler(cast(InteractiveContext, cast(object, forget_ctx)), deps)
 
     for ctx in (done_ctx, list_ctx, forget_ctx):
         assert "Feature registry is disabled" in ctx.replies[-1]
@@ -142,9 +145,9 @@ async def test_usage_messages_when_project_or_args_invalid():
     list_ctx = _Ctx(args=[])
     forget_ctx = _Ctx(args=["nexus"])
 
-    await feature_done_handler(done_ctx, deps)
-    await feature_list_handler(list_ctx, deps)
-    await feature_forget_handler(forget_ctx, deps)
+    await feature_done_handler(cast(InteractiveContext, cast(object, done_ctx)), deps)
+    await feature_list_handler(cast(InteractiveContext, cast(object, list_ctx)), deps)
+    await feature_forget_handler(cast(InteractiveContext, cast(object, forget_ctx)), deps)
 
     assert done_ctx.replies[-1] == "Usage: `/feature_done <project> <title>`"
     assert list_ctx.replies[-1] == "Usage: `/feature_list <project>`"

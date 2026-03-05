@@ -1,7 +1,7 @@
-from services.project.project_issue_command_deps_service import default_issue_url
-from services.project.project_issue_command_deps_service import get_issue_details
-from services.project.project_issue_command_deps_service import project_issue_url
-from services.project.project_issue_command_deps_service import project_repo
+from nexus.core.project.issue_command_deps import default_issue_url
+from nexus.core.project.issue_command_deps import get_issue_details
+from nexus.core.project.issue_command_deps import project_issue_url
+from nexus.core.project.issue_command_deps import project_repo
 
 
 def test_project_repo_resolves_from_project_config():

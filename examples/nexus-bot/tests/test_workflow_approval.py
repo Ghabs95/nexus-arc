@@ -1,20 +1,9 @@
 """Tests for workflow approval gate feature."""
 
 import asyncio
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock
 
-# Ensure src is on the path (conftest.py handles this, but be explicit)
-src_path = Path(__file__).parent.parent / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
-
-# nexus-arc path
-nexus_core_path = Path(__file__).parent.parent.parent / "nexus-arc"
-if str(nexus_core_path) not in sys.path:
-    sys.path.insert(0, str(nexus_core_path))
-
+import nexus.core.config as config
 from nexus.core.models import (
     Agent,
     ApprovalGate,
@@ -25,6 +14,7 @@ from nexus.core.models import (
     WorkflowStep,
 )
 from nexus.core.workflow import WorkflowDefinition, WorkflowEngine
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,16 +243,14 @@ class TestWorkflowEngineWithApprovalGates:
 
 class TestWorkflowStateApproval:
     def test_set_and_get_pending_approval(self, tmp_path, monkeypatch):
-        import config
-
         monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
 
         # Reset singleton so factory re-creates with tmp_path
-        import integrations.workflow_state_factory as wsf
+        import nexus.core.integrations.workflow_state_factory as wsf
 
         monkeypatch.setattr(wsf, "_instance", None)
 
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         store = get_workflow_state()
         store.set_pending_approval(
@@ -281,28 +269,24 @@ class TestWorkflowStateApproval:
         assert pending["approval_timeout"] == 3600
 
     def test_get_pending_approval_returns_none_when_absent(self, tmp_path, monkeypatch):
-        import config
-
         monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
 
-        import integrations.workflow_state_factory as wsf
+        import nexus.core.integrations.workflow_state_factory as wsf
 
         monkeypatch.setattr(wsf, "_instance", None)
 
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         assert get_workflow_state().get_pending_approval("99") is None
 
     def test_clear_pending_approval(self, tmp_path, monkeypatch):
-        import config
-
         monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
 
-        import integrations.workflow_state_factory as wsf
+        import nexus.core.integrations.workflow_state_factory as wsf
 
         monkeypatch.setattr(wsf, "_instance", None)
 
-        from integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.integrations.workflow_state_factory import get_workflow_state
 
         store = get_workflow_state()
         store.set_pending_approval(

@@ -2,6 +2,10 @@
 
 This folder is now the canonical home for the Telegram bot runtime that previously lived in `ghabs/nexus/src`.
 
+Bootstrap/runtime lifecycle reference:
+
+- [`docs/CONFIG_BOOTSTRAP_LIFECYCLE.md`](../../docs/CONFIG_BOOTSTRAP_LIFECYCLE.md)
+
 ## What is included
 
 - `src/`: Bot runtime, handlers, processor, webhook server, health check
@@ -82,7 +86,8 @@ Service files in this folder are pre-pointed to:
 Copy and enable as needed:
 
 ```bash
-sudo cp nexus-bot.service /etc/systemd/system/
+sudo cp nexus-telegram.service /etc/systemd/system/
+sudo cp nexus-discord.service /etc/systemd/system/
 sudo cp nexus-processor.service /etc/systemd/system/
 sudo cp nexus-webhook.service /etc/systemd/system/
 sudo cp nexus-health.service /etc/systemd/system/

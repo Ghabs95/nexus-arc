@@ -2,8 +2,9 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-from services.workflow import workflow_reprocess_continue_service as continue_service
-from services.workflow.workflow_reprocess_continue_service import (
+
+from nexus.core.workflow_runtime import workflow_reprocess_continue_service as continue_service
+from nexus.core.workflow_runtime.workflow_reprocess_continue_service import (
     _maybe_reset_continue_workflow_position,
     _launch_continue_agent,
     handle_continue,

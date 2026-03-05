@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock
 
-from services.startup_recovery_service import reconcile_completion_signals_on_startup
+from nexus.core.startup_recovery import reconcile_completion_signals_on_startup
 
 
 def test_startup_recovery_returns_when_no_mappings(tmp_path):

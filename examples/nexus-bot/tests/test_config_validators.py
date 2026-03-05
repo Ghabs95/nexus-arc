@@ -1,6 +1,6 @@
 import pytest
 
-from config_validators import validate_project_config
+from nexus.core.config.validators import validate_project_config
 
 
 def test_validate_project_config_rejects_invalid_tool_pref_shape():

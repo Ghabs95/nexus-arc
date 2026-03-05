@@ -1,7 +1,8 @@
 import types
 
 import pytest
-from orchestration.telegram.telegram_update_bridge import (
+
+from nexus.core.orchestration.telegram.telegram_update_bridge import (
     _clip_telegram_text,
     _normalize_telegram_markdown,
     build_telegram_interactive_ctx,

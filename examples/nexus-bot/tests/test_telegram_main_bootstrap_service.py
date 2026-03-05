@@ -1,4 +1,4 @@
-from services.telegram import telegram_main_bootstrap_service as svc
+from nexus.core.telegram import telegram_main_bootstrap_service as svc
 
 
 def test_build_command_handler_map_includes_plan():

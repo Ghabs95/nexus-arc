@@ -1,7 +1,7 @@
 import types
 from unittest.mock import MagicMock
 
-from services.comment_monitor_service import (
+from nexus.core.comment_monitor_service import (
     comment_needs_user_input,
     comment_preview,
     run_comment_monitor_cycle,

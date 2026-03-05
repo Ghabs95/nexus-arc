@@ -1,12 +1,9 @@
 """Tests for state_manager module."""
 
-import sys
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from state_manager import HostStateManager
+from nexus.core.state_manager import HostStateManager
 
 
 class TestTrackedIssues:
@@ -16,8 +13,8 @@ class TestTrackedIssues:
         """Test loading tracked issues when store is empty."""
         plugin = MagicMock()
         plugin.load_json.return_value = {}
-        with patch("state_manager._get_host_state_backend", return_value="filesystem"):
-            with patch("state_manager._get_state_store_plugin", return_value=plugin):
+        with patch("nexus.core.state_manager._get_host_state_backend", return_value="filesystem"):
+            with patch("nexus.core.state_manager._get_state_store_plugin", return_value=plugin):
                 result = HostStateManager.load_tracked_issues()
                 assert result == {}
 
@@ -26,15 +23,15 @@ class TestTrackedIssues:
         test_data = {"123": {"project": "test", "status": "active"}}
         plugin = MagicMock()
         plugin.load_json.return_value = test_data
-        with patch("state_manager._get_host_state_backend", return_value="filesystem"):
-            with patch("state_manager._get_state_store_plugin", return_value=plugin):
+        with patch("nexus.core.state_manager._get_host_state_backend", return_value="filesystem"):
+            with patch("nexus.core.state_manager._get_state_store_plugin", return_value=plugin):
                 result = HostStateManager.load_tracked_issues()
                 assert result == test_data
 
     def test_load_tracked_issues_plugin_missing(self):
         """Test loading when plugin is unavailable."""
-        with patch("state_manager._get_host_state_backend", return_value="filesystem"):
-            with patch("state_manager._get_state_store_plugin", return_value=None):
+        with patch("nexus.core.state_manager._get_host_state_backend", return_value="filesystem"):
+            with patch("nexus.core.state_manager._get_state_store_plugin", return_value=None):
                 result = HostStateManager.load_tracked_issues()
                 assert result == {}
 
@@ -42,8 +39,8 @@ class TestTrackedIssues:
         """Test saving tracked issues."""
         test_data = {"111": {"project": "test", "status": "active"}}
         plugin = MagicMock()
-        with patch("state_manager._get_host_state_backend", return_value="filesystem"):
-            with patch("state_manager._get_state_store_plugin", return_value=plugin):
+        with patch("nexus.core.state_manager._get_host_state_backend", return_value="filesystem"):
+            with patch("nexus.core.state_manager._get_state_store_plugin", return_value=plugin):
                 HostStateManager.save_tracked_issues(test_data)
                 plugin.save_json.assert_called_once()
                 assert plugin.save_json.call_args.args[1] == test_data
@@ -79,8 +76,8 @@ class TestMergeQueue:
     def test_load_merge_queue_empty(self):
         plugin = MagicMock()
         plugin.load_json.return_value = {}
-        with patch("state_manager._get_host_state_backend", return_value="filesystem"):
-            with patch("state_manager._get_state_store_plugin", return_value=plugin):
+        with patch("nexus.core.state_manager._get_host_state_backend", return_value="filesystem"):
+            with patch("nexus.core.state_manager._get_state_store_plugin", return_value=plugin):
                 assert HostStateManager.load_merge_queue() == {}
 
     def test_enqueue_merge_candidate_manual(self):
@@ -156,8 +153,8 @@ class TestLaunchedAgents:
         """Test loading launched agents when store is empty."""
         plugin = MagicMock()
         plugin.load_json.return_value = {}
-        with patch("state_manager._get_host_state_backend", return_value="filesystem"):
-            with patch("state_manager._get_state_store_plugin", return_value=plugin):
+        with patch("nexus.core.state_manager._get_host_state_backend", return_value="filesystem"):
+            with patch("nexus.core.state_manager._get_state_store_plugin", return_value=plugin):
                 result = HostStateManager.load_launched_agents()
                 assert result == {}
 
@@ -171,8 +168,8 @@ class TestLaunchedAgents:
         }
         plugin = MagicMock()
         plugin.load_json.return_value = test_data
-        with patch("state_manager._get_host_state_backend", return_value="filesystem"):
-            with patch("state_manager._get_state_store_plugin", return_value=plugin):
+        with patch("nexus.core.state_manager._get_host_state_backend", return_value="filesystem"):
+            with patch("nexus.core.state_manager._get_state_store_plugin", return_value=plugin):
                 result = HostStateManager.load_launched_agents()
 
                 # Old entry should be filtered out (>2 minute window)
