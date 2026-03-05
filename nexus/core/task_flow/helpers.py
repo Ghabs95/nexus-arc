@@ -22,6 +22,9 @@ from nexus.core.merge_queue import enqueue_merge_queue_prs
 from nexus.core.orchestration.plugin_runtime import get_workflow_policy_plugin, get_workflow_state_plugin
 from nexus.core.runtime_mode import is_issue_process_running
 from nexus.core.task_archive import archive_closed_task_files
+from nexus.core.workflow_runtime.workflow_signal_sync import (
+    normalize_agent_reference as _normalize_agent_reference_from_signal_sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,14 @@ _WORKFLOW_STATE_PLUGIN_KWARGS = {
     "issue_to_workflow_id": lambda n: get_workflow_state().get_workflow_id(n),
     "issue_to_workflow_map_setter": lambda n, w: get_workflow_state().map_issue(n, w),
 }
+
+
+def normalize_agent_reference(agent_ref: str | None) -> str | None:
+    """Normalize agent aliases/mentions to canonical agent identifier."""
+    if agent_ref is None:
+        return None
+    normalized = _normalize_agent_reference_from_signal_sync(str(agent_ref))
+    return normalized or None
 
 
 def get_sop_tier(task_type: str, title: str | None = None, body: str | None = None):

@@ -20,9 +20,10 @@ from nexus.core.memory import (
     set_active_chat,
     update_chat_metadata,
 )
+from nexus.core.interactive.context import InteractiveContext
 
 if TYPE_CHECKING:
-    from nexus.core.interactive.context import InteractiveContext
+    pass
 
 logger = logging.getLogger(__name__)
 
