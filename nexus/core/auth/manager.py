@@ -81,6 +81,15 @@ class AuthManager:
     def get_session_and_setup_status(self, session_id: str) -> dict[str, Any]:
         return _auth_sessions.get_session_and_setup_status(session_id=session_id)
 
+    def get_latest_login_session_status(self, nexus_id: str) -> dict[str, Any]:
+        return _auth_sessions.get_latest_login_session_status(nexus_id=nexus_id)
+
+    def format_login_session_ref(self, session_id: str) -> str:
+        return _auth_sessions.format_login_session_ref(session_id=session_id)
+
+    def resolve_login_session_id(self, session_ref_or_id: str) -> str:
+        return _auth_sessions.resolve_login_session_id(session_ref_or_id=session_ref_or_id)
+
     def get_setup_status(self, nexus_id: str) -> dict[str, Any]:
         return _project_access.get_setup_status(nexus_id=nexus_id)
 
@@ -168,6 +177,18 @@ def store_ai_provider_keys(
 
 def get_session_and_setup_status(session_id: str) -> dict[str, Any]:
     return auth_manager.get_session_and_setup_status(session_id=session_id)
+
+
+def get_latest_login_session_status(nexus_id: str) -> dict[str, Any]:
+    return auth_manager.get_latest_login_session_status(nexus_id=nexus_id)
+
+
+def format_login_session_ref(session_id: str) -> str:
+    return auth_manager.format_login_session_ref(session_id=session_id)
+
+
+def resolve_login_session_id(session_ref_or_id: str) -> str:
+    return auth_manager.resolve_login_session_id(session_ref_or_id=session_ref_or_id)
 
 
 def get_setup_status(nexus_id: str) -> dict[str, Any]:

@@ -69,6 +69,12 @@ from nexus.core.auth import (
 )
 from nexus.core.auth import create_login_session_for_user
 from nexus.core.auth import (
+    format_login_session_ref as _svc_format_login_session_ref,
+)
+from nexus.core.auth import (
+    get_latest_login_session_status as _svc_get_latest_login_session_status,
+)
+from nexus.core.auth import (
     get_setup_status as _svc_get_setup_status,
 )
 from nexus.core.auth import register_onboarding_message as _svc_register_onboarding_message
@@ -1566,6 +1572,7 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         discord_user_id=str(update.effective_user.id),
         discord_username=getattr(update.effective_user, "username", None),
     )
+    session_ref = _svc_format_login_session_ref(session_id) or session_id
     available_providers: list[str] = []
     if NEXUS_GITHUB_CLIENT_ID:
         available_providers.append("github")
@@ -1582,7 +1589,7 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton(
                     f"Continue with {provider.title()}",
-                    url=f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={provider}",
+                    url=f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_ref}&provider={provider}",
                 )
             ]
             for provider in available_providers
@@ -1590,9 +1597,11 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent = await update.effective_message.reply_text(
             (
                 "🔐 Setup required before task execution.\n\n"
+                f"Session reference: `{session_ref}`\n"
                 "Choose your Git provider to continue OAuth onboarding."
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
             disable_web_page_preview=True,
         )
         try:
@@ -1620,16 +1629,18 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     login_url = (
-        f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={requested_provider}"
+        f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_ref}&provider={requested_provider}"
     )
     sent = await update.effective_message.reply_text(
         (
             "🔐 Setup required before task execution.\n\n"
+            f"Session reference: `{session_ref}`\n"
             f"1. Open: {login_url}\n"
             f"2. Sign in with {requested_provider.title()}\n"
             "3. Add Codex/OpenAI, Gemini, and/or Claude key, or use Copilot with linked GitHub OAuth\n"
             "4. Run `/setup_status`"
         ),
+        parse_mode="Markdown",
         disable_web_page_preview=True,
     )
     try:
@@ -1646,6 +1657,7 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def setup_status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_or_create_telegram_user(update.effective_user)
     status = _svc_get_setup_status(str(user.nexus_id))
+    latest_login = _svc_get_latest_login_session_status(str(user.nexus_id))
     if not status.get("auth_enabled"):
         await update.effective_message.reply_text("ℹ️ Auth onboarding is disabled in this environment.")
         return
@@ -1668,6 +1680,11 @@ async def setup_status_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         f"- Projects: {projects_line}",
         f"- Ready: {'✅' if status.get('ready') else '❌'}",
     ]
+    if latest_login.get("exists"):
+        latest_ref = str(latest_login.get("session_ref") or latest_login.get("session_id") or "").strip()
+        latest_state = str(latest_login.get("status") or "unknown").strip()
+        if latest_ref:
+            lines.append(f"- Last login session: `{latest_ref}` ({latest_state})")
     if not status.get("ready"):
         lines.append("")
         lines.append("Run `/login` to complete any missing steps.")

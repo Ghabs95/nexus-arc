@@ -8,6 +8,34 @@ from nexus.core.auth import credential_store as store_svc
 from nexus.core.auth import oauth_onboarding_domain as auth_svc
 
 
+def test_login_session_ref_roundtrip():
+    session_id = "0123456789abcdef0123456789abcdef"
+    session_ref = auth_svc.format_login_session_ref(session_id)
+
+    assert session_ref.startswith("lsr_")
+    assert auth_svc.resolve_login_session_id(session_ref) == session_id
+    assert auth_svc.resolve_login_session_id(session_id) == session_id
+
+
+def test_get_session_and_setup_status_accepts_session_ref(monkeypatch):
+    session = SimpleNamespace(
+        session_id="0123456789abcdef0123456789abcdef",
+        nexus_id="nexus-1",
+        status="pending",
+        oauth_provider="github",
+        expires_at=datetime.now(tz=UTC) + timedelta(minutes=10),
+        last_error=None,
+    )
+    monkeypatch.setattr(auth_svc, "get_auth_session", lambda sid: session if sid == session.session_id else None)
+    monkeypatch.setattr(auth_svc, "get_setup_status", lambda _nid: {"ready": False})
+
+    payload = auth_svc.get_session_and_setup_status(auth_svc.format_login_session_ref(session.session_id))
+
+    assert payload["exists"] is True
+    assert payload["session_id"] == session.session_id
+    assert payload["session_ref"] == auth_svc.format_login_session_ref(session.session_id)
+
+
 def test_store_ai_provider_keys_accepts_claude_only(monkeypatch):
     session = SimpleNamespace(
         session_id="session-1",

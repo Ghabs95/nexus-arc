@@ -23,6 +23,7 @@ from urllib.parse import quote
 
 import requests
 from flask import Flask, jsonify, make_response, redirect, request, send_from_directory
+from werkzeug.exceptions import NotFound
 
 from nexus.core.config.bootstrap import initialize_runtime
 
@@ -97,10 +98,16 @@ from nexus.core.auth import (
     complete_gitlab_oauth as _svc_complete_gitlab_oauth,
 )
 from nexus.core.auth import (
+    format_login_session_ref as _svc_format_login_session_ref,
+)
+from nexus.core.auth import (
     get_session_and_setup_status as _svc_get_session_and_setup_status,
 )
 from nexus.core.auth import (
     refresh_stale_access_grants as _svc_refresh_stale_access_grants,
+)
+from nexus.core.auth import (
+    resolve_login_session_id as _svc_resolve_login_session_id,
 )
 from nexus.core.auth import (
     start_oauth_flow as _svc_start_oauth_flow,
@@ -135,7 +142,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), "static"))
+def _resolve_visualizer_static_folder() -> str:
+    module_static = os.path.join(os.path.dirname(__file__), "static")
+    fallback_static = "/app/src/static"
+    candidates = (module_static, fallback_static)
+    for candidate in candidates:
+        visualizer_file = os.path.join(candidate, "visualizer.html")
+        if os.path.isfile(visualizer_file):
+            return candidate
+    return module_static
+
+
+_VISUALIZER_STATIC_FOLDER = _resolve_visualizer_static_folder()
+if not os.path.isfile(os.path.join(_VISUALIZER_STATIC_FOLDER, "visualizer.html")):
+    logger.warning(
+        "Visualizer asset missing; expected visualizer.html under %s",
+        _VISUALIZER_STATIC_FOLDER,
+    )
+
+app = Flask(__name__, static_folder=_VISUALIZER_STATIC_FOLDER)
 _socketio_async_mode = str(os.getenv("NEXUS_SOCKETIO_ASYNC_MODE", "threading")).strip().lower()
 if _socketio_async_mode not in {"threading", "eventlet", "gevent", "gevent_uwsgi"}:
     _socketio_async_mode = "threading"
@@ -228,7 +253,8 @@ def _resolve_ready_web_session(session_id: str | None = None) -> tuple[str, dict
     setup = payload.get("setup")
     if not isinstance(setup, dict) or not bool(setup.get("ready")):
         return "", None
-    return candidate, payload
+    resolved_session_id = str(payload.get("session_id") or "").strip() or candidate
+    return resolved_session_id, payload
 
 
 def _set_web_session_cookie(response, session_id: str) -> None:
@@ -339,15 +365,15 @@ def _render_login_page(*, message_html: str = "", session_hint: str = ""):
 <p>Authenticate using the same OAuth onboarding used by Telegram/Discord <code>/login</code>.</p>
 {message_html}
 <form method="get" action="/auth/start" autocomplete="off">
-  <label for="session"><strong>Session ID</strong></label>
-  <input id="session" name="session" type="text" value="{session_value}" placeholder="Paste the session from /login link" spellcheck="false" autocapitalize="off" autocorrect="off" required />
+  <label for="session"><strong>Session Reference</strong></label>
+  <input id="session" name="session" type="text" value="{session_value}" placeholder="Paste the session reference from /login" spellcheck="false" autocapitalize="off" autocorrect="off" required />
   <label for="provider"><strong>Provider</strong></label>
   <select id="provider" name="provider" style="width:100%; padding:0.6rem; border-radius:8px; border:1px solid #94a3b8;">
     {provider_options}
   </select>
   <button type="submit" class="form-submit">Continue Login</button>
 </form>
-<p><small>Tip: run <code>/login</code> in Telegram or Discord, then paste the session value from that link.</small></p>
+<p><small>Tip: run <code>/login</code> in Telegram or Discord, then paste the session reference shown in chat.</small></p>
 """
     return _render_auth_message("Nexus Login", body, status_code=200)
 
@@ -849,10 +875,17 @@ def _notify_onboarding_message(
     session_id: str,
     text: str,
 ) -> None:
+    resolved_session_id = _svc_resolve_login_session_id(session_id)
+    if not resolved_session_id:
+        return
     try:
-        record = _svc_get_auth_session(str(session_id))
+        record = _svc_get_auth_session(str(resolved_session_id))
     except Exception as exc:
-        logger.warning("Failed to load auth session %s for onboarding message update: %s", session_id, exc)
+        logger.warning(
+            "Failed to load auth session %s for onboarding message update: %s",
+            resolved_session_id,
+            exc,
+        )
         return
     if not record:
         return
@@ -873,7 +906,7 @@ def _notify_onboarding_message(
     except Exception as exc:
         logger.warning(
             "Failed to update onboarding message for session %s (%s:%s/%s): %s",
-            session_id,
+            resolved_session_id,
             platform,
             chat_id,
             message_id,
@@ -889,17 +922,20 @@ def auth_start():
             "Auth onboarding is disabled in this environment.",
             status_code=404,
         )
-    session_id = str(request.args.get("session", "")).strip()
-    if not session_id:
+    session_value = str(request.args.get("session", "")).strip()
+    if not session_value:
         return _render_auth_message("Invalid Request", "Missing <code>session</code> parameter.", status_code=400)
+    resolved_session_id = _svc_resolve_login_session_id(session_value)
+    if not resolved_session_id:
+        return _render_auth_message("Invalid Request", "Invalid <code>session</code> parameter.", status_code=400)
     provider = str(request.args.get("provider", "")).strip().lower()
     if not provider:
         provider = "gitlab" if os.getenv("NEXUS_GITLAB_CLIENT_ID") else "github"
     try:
-        oauth_url, _state = _svc_start_oauth_flow(session_id, provider=provider)
+        oauth_url, _state = _svc_start_oauth_flow(session_value, provider=provider)
     except Exception as exc:
         _notify_onboarding_message(
-            session_id=session_id,
+            session_id=resolved_session_id,
             text=f"❌ OAuth start failed for {provider.title()}: {exc}\nRun /login to retry.",
         )
         return _render_auth_message("Login Error", f"Failed to start OAuth: <code>{exc}</code>", status_code=400)
@@ -952,6 +988,7 @@ def auth_github_callback():
             )
 
     session_id = str(result.get("session_id") or "").strip()
+    session_ref = _svc_format_login_session_ref(session_id)
     grants_count = int(result.get("grants_count") or 0)
     github_login = str(result.get("github_login") or "").strip()
     setup_payload = _svc_get_session_and_setup_status(session_id)
@@ -963,8 +1000,9 @@ def auth_github_callback():
     form_body = f"""
 <p>GitHub login linked successfully as <strong>{github_login or "unknown"}</strong>.</p>
 <p>Project grants resolved: <strong>{grants_count}</strong>.</p>
+<p>Session reference: <code>{session_ref or session_id}</code>.</p>
     """ + _render_ai_key_form(
-        session_id=session_id,
+        session_id=session_ref or session_id,
         copilot_checked=True,
         show_copilot_option=True,
         copilot_token_set=bool(isinstance(setup, dict) and setup.get("copilot_token_set")),
@@ -1040,6 +1078,7 @@ def auth_gitlab_callback():
             )
 
     session_id = str(result.get("session_id") or "").strip()
+    session_ref = _svc_format_login_session_ref(session_id)
     grants_count = int(result.get("grants_count") or 0)
     gitlab_username = str(result.get("gitlab_username") or "").strip()
     setup_payload = _svc_get_session_and_setup_status(session_id)
@@ -1052,8 +1091,9 @@ def auth_gitlab_callback():
     form_body = f"""
 <p>GitLab account linked successfully as <strong>{gitlab_username or "unknown"}</strong>.</p>
 <p>Project grants resolved: <strong>{grants_count}</strong>.</p>
+<p>Session reference: <code>{session_ref or session_id}</code>.</p>
     """ + _render_ai_key_form(
-        session_id=session_id,
+        session_id=session_ref or session_id,
         copilot_checked=copilot_ready,
         show_copilot_option=False,
         copilot_token_set=bool(isinstance(setup, dict) and setup.get("copilot_token_set")),
@@ -1464,7 +1504,19 @@ def visualizer():
     if request.args.get("session"):
         response = make_response(redirect("/visualizer", code=302))
     else:
-        response = make_response(send_from_directory(app.static_folder, "visualizer.html"))
+        try:
+            response = make_response(send_from_directory(app.static_folder, "visualizer.html"))
+        except NotFound:
+            visualizer_path = os.path.join(app.static_folder or "", "visualizer.html")
+            logger.exception("Visualizer asset not found at %s", visualizer_path)
+            return _render_auth_message(
+                "Visualizer Unavailable",
+                (
+                    "Visualizer assets could not be loaded. "
+                    "Rebuild the image and ensure <code>src/static/visualizer.html</code> is present."
+                ),
+                status_code=503,
+            )
     if mode == "session" and session_id:
         _set_web_session_cookie(response, session_id)
     elif mode == "token":

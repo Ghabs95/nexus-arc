@@ -182,6 +182,12 @@ from nexus.core.auth import (
     create_login_session_for_user as _svc_create_login_session_for_user,
 )
 from nexus.core.auth import (
+    format_login_session_ref as _svc_format_login_session_ref,
+)
+from nexus.core.auth import (
+    get_latest_login_session_status as _svc_get_latest_login_session_status,
+)
+from nexus.core.auth import (
     get_setup_status as _svc_get_setup_status,
 )
 from nexus.core.auth import register_onboarding_message as _svc_register_onboarding_message
@@ -2008,12 +2014,13 @@ async def login_command(
         discord_user_id=str(interaction.user.id),
         discord_username=getattr(interaction.user, "name", None),
     )
+    session_ref = _svc_format_login_session_ref(session_id) or session_id
 
     if not selected_provider:
         view = discord.ui.View()
         for auth_provider in available_providers:
             login_url = (
-                f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={auth_provider}"
+                f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_ref}&provider={auth_provider}"
             )
             view.add_item(
                 discord.ui.Button(
@@ -2026,6 +2033,7 @@ async def login_command(
             dm_channel = await interaction.user.create_dm()
             sent = await dm_channel.send(
                 "🔐 Setup required before task execution.\n\n"
+                f"Session reference: `{session_ref}`\n"
                 "Choose your Git provider to continue OAuth onboarding.",
                 view=view,
             )
@@ -2065,12 +2073,13 @@ async def login_command(
         return
 
     login_url = (
-        f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_id}&provider={selected_provider}"
+        f"{NEXUS_PUBLIC_BASE_URL}/auth/start?session={session_ref}&provider={selected_provider}"
     )
     try:
         dm_channel = await interaction.user.create_dm()
         sent = await dm_channel.send(
             "🔐 Setup required before task execution.\n\n"
+            f"Session reference: `{session_ref}`\n"
             f"1. Open: <{login_url}>\n"
             f"2. Sign in with {selected_provider.title()}\n"
             "3. Add Codex/OpenAI, Gemini, and/or Claude key, or use Copilot with linked GitHub OAuth\n"
@@ -2108,6 +2117,7 @@ async def setup_status_command(interaction: discord.Interaction):
         return
     user = _get_or_create_discord_user(interaction.user)
     status = _svc_get_setup_status(str(user.nexus_id))
+    latest_login = _svc_get_latest_login_session_status(str(user.nexus_id))
     if not status.get("auth_enabled"):
         await interaction.response.send_message(
             "ℹ️ Auth onboarding is disabled in this environment.",
@@ -2133,6 +2143,11 @@ async def setup_status_command(interaction: discord.Interaction):
         f"- Projects: {projects_line}",
         f"- Ready: {'✅' if status.get('ready') else '❌'}",
     ]
+    if latest_login.get("exists"):
+        latest_ref = str(latest_login.get("session_ref") or latest_login.get("session_id") or "").strip()
+        latest_state = str(latest_login.get("status") or "unknown").strip()
+        if latest_ref:
+            lines.append(f"- Last login session: `{latest_ref}` ({latest_state})")
     if not status.get("ready"):
         lines.append("")
         lines.append("Run `/login` to complete any missing steps.")

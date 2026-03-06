@@ -409,6 +409,18 @@ def get_auth_session(session_id: str) -> AuthSessionRecord | None:
         return _row_to_session(row) if row else None
 
 
+def get_latest_auth_session_for_nexus(nexus_id: str) -> AuthSessionRecord | None:
+    engine = _get_engine()
+    with Session(engine) as session:
+        row = (
+            session.query(_AuthSessionRow)
+            .filter(_AuthSessionRow.nexus_id == str(nexus_id))
+            .order_by(_AuthSessionRow.created_at.desc())
+            .first()
+        )
+        return _row_to_session(row) if row else None
+
+
 def update_auth_session(
     *,
     session_id: str,

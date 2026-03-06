@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,7 @@ from nexus.core.auth.credential_store import (
     find_user_credentials_by_gitlab_identity,
     get_auth_session,
     get_auth_session_by_state,
+    get_latest_auth_session_for_nexus,
     get_user_credentials,
     update_auth_session,
     upsert_ai_provider_keys,
@@ -83,6 +85,34 @@ def _gitlab_base_url() -> str:
     ).strip().rstrip("/")
 
 
+_SESSION_REF_PREFIX = "lsr_"
+
+
+def format_login_session_ref(session_id: str) -> str:
+    normalized = str(session_id or "").strip()
+    if not normalized:
+        return ""
+    encoded = base64.urlsafe_b64encode(normalized.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"{_SESSION_REF_PREFIX}{encoded}"
+
+
+def resolve_login_session_id(session_ref_or_id: str) -> str:
+    candidate = str(session_ref_or_id or "").strip()
+    if not candidate:
+        return ""
+    if candidate.startswith(_SESSION_REF_PREFIX):
+        encoded = candidate[len(_SESSION_REF_PREFIX) :]
+        if not encoded:
+            return ""
+        padding = "=" * ((4 - (len(encoded) % 4)) % 4)
+        try:
+            decoded = base64.urlsafe_b64decode((encoded + padding).encode("ascii")).decode("utf-8")
+        except Exception:
+            return ""
+        return str(decoded or "").strip()
+    return candidate
+
+
 def create_login_session_for_user(
     *,
     nexus_id: str,
@@ -125,17 +155,18 @@ def start_oauth_flow(session_id: str, provider: str = "github") -> tuple[str, st
     base_url = _required_env("NEXUS_PUBLIC_BASE_URL").rstrip("/")
     state = secrets.token_urlsafe(32)
 
-    record = get_auth_session(str(session_id))
+    resolved_session_id = resolve_login_session_id(session_id)
+    record = get_auth_session(str(resolved_session_id))
     if not record:
         raise ValueError("Invalid session")
     if record.expires_at < _now_utc():
-        update_auth_session(session_id=str(session_id), status="expired")
+        update_auth_session(session_id=str(resolved_session_id), status="expired")
         raise ValueError("Session expired")
 
     from nexus.core.auth.credential_store import hash_oauth_state
 
     update_auth_session(
-        session_id=str(session_id),
+        session_id=str(resolved_session_id),
         oauth_provider=auth_provider,
         oauth_state_hash=hash_oauth_state(state),
         status="pending",
@@ -541,11 +572,12 @@ def store_ai_provider_keys(
     copilot_github_token: str | None = None,
     allow_copilot: bool = False,
 ) -> dict[str, Any]:
-    session_record = get_auth_session(str(session_id))
+    resolved_session_id = resolve_login_session_id(session_id)
+    session_record = get_auth_session(str(resolved_session_id))
     if not session_record:
         raise ValueError("Invalid session")
     if session_record.expires_at < _now_utc():
-        update_auth_session(session_id=str(session_id), status="expired")
+        update_auth_session(session_id=str(resolved_session_id), status="expired")
         raise ValueError("Session expired")
     if session_record.status not in {"oauth_done", "completed"}:
         raise ValueError("OAuth step is not complete yet")
@@ -631,7 +663,7 @@ def store_ai_provider_keys(
     )
 
     update_auth_session(
-        session_id=str(session_id),
+        session_id=str(resolved_session_id),
         status="completed",
         last_error="",
         used_at=_now_utc(),
@@ -640,6 +672,7 @@ def store_ai_provider_keys(
     status = get_setup_status(session_record.nexus_id)
     return {
         "session_id": session_record.session_id,
+        "session_ref": format_login_session_ref(session_record.session_id),
         "nexus_id": session_record.nexus_id,
         "ready": bool(status.get("ready")),
         "project_access_count": int(status.get("project_access_count") or 0),
@@ -647,17 +680,35 @@ def store_ai_provider_keys(
 
 
 def get_session_and_setup_status(session_id: str) -> dict[str, Any]:
-    session_record = get_auth_session(str(session_id))
+    resolved_session_id = resolve_login_session_id(session_id)
+    session_record = get_auth_session(str(resolved_session_id))
     if not session_record:
         return {"exists": False}
     setup = get_setup_status(session_record.nexus_id)
     return {
         "exists": True,
         "session_id": session_record.session_id,
+        "session_ref": format_login_session_ref(session_record.session_id),
         "status": session_record.status,
         "provider": session_record.oauth_provider,
         "expires_at": session_record.expires_at.isoformat() if session_record.expires_at else None,
         "last_error": session_record.last_error,
         "nexus_id": session_record.nexus_id,
         "setup": setup,
+    }
+
+
+def get_latest_login_session_status(nexus_id: str) -> dict[str, Any]:
+    record = get_latest_auth_session_for_nexus(str(nexus_id))
+    if not record:
+        return {"exists": False}
+    return {
+        "exists": True,
+        "session_id": record.session_id,
+        "session_ref": format_login_session_ref(record.session_id),
+        "status": record.status,
+        "provider": record.oauth_provider,
+        "expires_at": record.expires_at.isoformat() if record.expires_at else None,
+        "last_error": record.last_error,
+        "nexus_id": record.nexus_id,
     }

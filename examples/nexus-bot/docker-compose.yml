@@ -1,4 +1,4 @@
-name: nexus-telegram
+name: nexus
 
 services:
   bot:
