@@ -5,6 +5,7 @@ import os
 import time
 from typing import Any
 
+from src.alerting import init_alerting_system
 from telegram import (
     Bot,
     BotCommand,
@@ -23,7 +24,6 @@ from telegram.ext import (
     filters,
 )
 
-from src.alerting import init_alerting_system
 from nexus.core.config.bootstrap import initialize_runtime
 
 initialize_runtime(configure_logging=False)

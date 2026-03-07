@@ -14,7 +14,6 @@ initialize_runtime(configure_logging=False)
 # Import centralized configuration
 from nexus.core.config import (
     BASE_DIR,
-    INBOX_PROCESSOR_LOG_FILE,
     NEXUS_CORE_STORAGE_DIR,
     NEXUS_FEATURE_REGISTRY_DEDUP_SIMILARITY,
     NEXUS_FEATURE_REGISTRY_ENABLED,

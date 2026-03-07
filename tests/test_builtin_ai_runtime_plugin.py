@@ -2,8 +2,8 @@
 
 import subprocess
 
-import nexus.core.config as config_mod
 import nexus.core.auth.access_domain as access_domain
+import nexus.core.config as config_mod
 from nexus.plugins.builtin.ai_runtime_plugin import AIOrchestrator, AIProvider, RateLimitedError
 
 

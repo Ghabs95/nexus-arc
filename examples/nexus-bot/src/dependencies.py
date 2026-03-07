@@ -14,7 +14,6 @@ from nexus.core.config import (
     ORCHESTRATOR_CONFIG,
     PROJECT_CONFIG,
     TELEGRAM_ALLOWED_USER_IDS,
-    TELEGRAM_BOT_LOG_FILE,
     TELEGRAM_TOKEN,
     get_default_repo,
     get_repo,

@@ -1,0 +1,24 @@
+nexus:
+  agents_dir: sample/nexus-agents
+  workspace: sample/nexus
+  git_repo: sample-org/nexus-repo
+test-project:
+  agents_dir: sample/test-agents
+  workspace: sample/test
+  git_repo: sample-org/test-repo
+my-project:
+  agents_dir: sample/my-agents
+  workspace: sample/my
+  git_repo: sample-org/my-repo
+sample_core:
+  agents_dir: sample/agents
+  workspace: sample/core
+  git_repo: sample-org/core-repo
+sample_app:
+  agents_dir: sample/app-agents
+  workspace: sample/app
+  git_repo: sample-org/app-repo
+sample_ops:
+  agents_dir: sample/ops-agents
+  workspace: sample/ops
+  git_repo: sample-org/ops-repo

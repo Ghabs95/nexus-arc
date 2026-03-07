@@ -3,10 +3,11 @@ from collections.abc import Mapping
 from inspect import isawaitable
 from typing import Any
 
-from nexus.core.command_visibility import filter_visible_commands
-from nexus.core.storage.capabilities import get_storage_capabilities
 from telegram import Update
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
+
+from nexus.core.command_visibility import filter_visible_commands
+from nexus.core.storage.capabilities import get_storage_capabilities
 
 
 def build_post_init_with_scheduler(

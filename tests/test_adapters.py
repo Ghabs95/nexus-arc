@@ -6,11 +6,10 @@ extras installed.
 """
 
 import asyncio
-import json
 import os
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 

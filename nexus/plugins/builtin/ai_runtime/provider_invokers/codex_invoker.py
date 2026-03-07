@@ -3,8 +3,8 @@ import subprocess
 import time
 from typing import Any, Callable
 
-from .agent_invokers import _start_output_tee
 from .agent_invokers import _monitor_process_lifecycle, _redact_command_for_logs
+from .agent_invokers import _start_output_tee
 
 
 def _cleanup_empty_rollout_files(*, logger: Any, codex_home: str | None = None) -> int:

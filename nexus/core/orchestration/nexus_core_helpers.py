@@ -10,7 +10,6 @@ import os
 from typing import Any
 
 from nexus.adapters.git.factory import resolve_git_platform_class
-from nexus.adapters.git.gitlab import GitLabPlatform
 from nexus.adapters.storage.file import FileStorage
 from nexus.core.audit_store import AuditStore
 from nexus.core.config import (
@@ -273,9 +272,8 @@ def get_git_platform(
         if should_fallback:
             token = str((os.getenv(token_var, "")).strip() if allow_service_token_fallback else "")
 
-    platform_cls = resolve_git_platform_class(platform_type)
-
     if platform_type == "gitlab":
+        platform_cls = resolve_git_platform_class("gitlab")
         if not token:
             raise ValueError(
                 f"GitLab token required for project '{project_key}'. "
@@ -295,6 +293,7 @@ def get_git_platform(
             "Provide requester-scoped token_override (env fallback may be disabled).",
             project_key,
         )
+    platform_cls = resolve_git_platform_class("github")
     return platform_cls(repo=repo_name, token=token)
 
 

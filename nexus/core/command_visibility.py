@@ -4,7 +4,6 @@ from collections.abc import Iterable
 
 from nexus.core.storage.capabilities import get_storage_capabilities
 
-
 FILESYSTEM_ONLY_COMMANDS = frozenset(
     {
         "active",

@@ -1,10 +1,7 @@
 import types
 
-import pytest
-
-from discord import app_commands
-
 import discord_bot as svc
+import pytest
 
 
 class _Response:
