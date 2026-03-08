@@ -148,7 +148,7 @@ async def handle_save_task_selection(
 
     requester_nexus_id = str(requester_context.get("nexus_id") or "").strip()
     requester_block = (
-        f"\n**Requester Nexus ID:** `{requester_nexus_id}`"
+        f"**Requester Nexus ID:** `{requester_nexus_id}`\n"
         if requester_nexus_id
         else ""
     )
@@ -161,7 +161,7 @@ async def handle_save_task_selection(
         f"{refined_text}\n\n"
         f"---\n"
         f"**Source:** inbox\n"
-        f"{requester_block}\n"
+        f"{requester_block}"
         f"---\n"
         f"**Raw Input:**\n{text}"
     )

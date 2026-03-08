@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,8 +24,6 @@ async def download_telegram_photo(
     try:
         new_file = await context.bot.get_file(photo_file_id)
         file_path = getattr(new_file, "file_path", "") or ""
-        import os
-
         filename = os.path.basename(file_path) or f"photo_{index + 1}.jpg"
         deps.logger.info("📷 Photo attachment captured: %s (file_id=%s)", filename, photo_file_id)
         return ImageAttachment(
