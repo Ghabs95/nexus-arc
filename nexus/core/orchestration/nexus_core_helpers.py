@@ -85,29 +85,30 @@ async def _setup_socketio_event_bridge(bus: EventBus) -> None:
                     status=status,
                 )
 
-                # 3. Emit updated mermaid diagram
-                engine = get_workflow_engine()
-                workflow = await engine.get_workflow(workflow_id)
-                if workflow:
-                    steps_data = []
-                    for s in workflow.steps:
-                        steps_data.append(
+                # 3. Emit updated mermaid diagram (skip for skipped steps to reduce I/O)
+                if event.event_type != "step.skipped":
+                    engine = get_workflow_engine()
+                    workflow = await engine.get_workflow(workflow_id)
+                    if workflow:
+                        steps_data = []
+                        for s in workflow.steps:
+                            steps_data.append(
+                                {
+                                    "name": s.name,
+                                    "status": s.status.value,
+                                    "agent": {"name": s.agent.name},
+                                }
+                            )
+                        diagram = build_mermaid_diagram(steps_data, issue)
+                        HostStateManager.emit_transition(
+                            "mermaid_diagram",
                             {
-                                "name": s.name,
-                                "status": s.status.value,
-                                "agent": {"name": s.agent.name},
-                            }
+                                "issue": issue,
+                                "workflow_id": workflow_id,
+                                "diagram": diagram,
+                                "timestamp": event.timestamp.timestamp(),
+                            },
                         )
-                    diagram = build_mermaid_diagram(steps_data, issue)
-                    HostStateManager.emit_transition(
-                        "mermaid_diagram",
-                        {
-                            "issue": issue,
-                            "workflow_id": workflow_id,
-                            "diagram": diagram,
-                            "timestamp": event.timestamp.timestamp(),
-                        },
-                    )
 
         # 4. Handle workflow completion
         elif event.event_type in ("workflow.completed", "workflow.failed"):

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from nexus.adapters.storage.base import StorageBackend
+from nexus.core.events import EventBus, NexusEvent, StepSkipped, WorkflowCompleted
 from nexus.core.models import (
     Agent,
     AuditEvent,
@@ -79,9 +80,9 @@ def _make_step(step_num: int, name: str, routes=None, condition=None) -> Workflo
     )
 
 
-async def _engine_with_workflow(workflow: Workflow) -> tuple:
+async def _engine_with_workflow(workflow: Workflow, event_bus: EventBus | None = None) -> tuple:
     storage = InMemoryStorage()
-    engine = WorkflowEngine(storage=storage)
+    engine = WorkflowEngine(storage=storage, event_bus=event_bus)
     await storage.save_workflow(workflow)
     return engine, storage
 
@@ -306,3 +307,74 @@ async def test_on_success_jumps_to_named_step_not_sequential():
     assert design.status == StepStatus.PENDING
     assert develop.status == StepStatus.RUNNING
     assert wf.current_step == develop.step_num
+
+
+# ---------------------------------------------------------------------------
+# StepSkipped event emission for router bypass
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_router_bypass_emits_step_skipped_event():
+    """Router evaluation bypass must emit a StepSkipped event on the EventBus."""
+    develop = _make_step(1, "develop")
+    review = _make_step(2, "review")
+    router = _make_step(
+        3,
+        "route_review",
+        routes=[
+            {"when": "review['decision'] == 'approved'", "goto": "deploy"},
+            {"default": True, "goto": "develop"},
+        ],
+    )
+    deploy = _make_step(4, "deploy")
+
+    wf = _make_workflow([develop, review, router, deploy])
+    bus = EventBus()
+    emitted: list[NexusEvent] = []
+    bus.subscribe("step.skipped", lambda e: emitted.append(e))
+
+    engine, _ = await _engine_with_workflow(wf, event_bus=bus)
+    # develop → done, review activated
+    await engine.complete_step("wf-test", step_num=1, outputs={"pr": "1"})
+    # review → approved; router is bypassed (skipped), deploy activated
+    await engine.complete_step("wf-test", step_num=2, outputs={"decision": "approved"})
+
+    assert len(emitted) == 1
+    skipped_event = emitted[0]
+    assert isinstance(skipped_event, StepSkipped)
+    assert skipped_event.step_name == "route_review"
+    assert skipped_event.workflow_id == "wf-test"
+    assert skipped_event.reason == "router evaluated"
+
+
+# ---------------------------------------------------------------------------
+# WorkflowCompleted step-count tests for the final_step path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_final_step_workflow_completed_carries_step_counts():
+    """WorkflowCompleted emitted via the final_step path must include step counts."""
+    implement = _make_step(1, "implement")
+    close_loop = _make_step(2, "close_loop")
+    close_loop.final_step = True
+    close_rejected = _make_step(3, "close_rejected")
+
+    wf = _make_workflow([implement, close_loop, close_rejected])
+    bus = EventBus()
+    completed_events: list[NexusEvent] = []
+    bus.subscribe("workflow.completed", lambda e: completed_events.append(e))
+
+    engine, _ = await _engine_with_workflow(wf, event_bus=bus)
+    await engine.complete_step("wf-test", step_num=1, outputs={})
+    await engine.complete_step("wf-test", step_num=2, outputs={})
+
+    assert len(completed_events) == 1
+    evt = completed_events[0]
+    assert isinstance(evt, WorkflowCompleted)
+    # implement + close_loop completed; close_rejected stays PENDING (not counted)
+    assert evt.total_steps == 3
+    assert evt.completed_steps == 2
+    assert evt.skipped_steps == 0
+    assert evt.failed_steps == 0

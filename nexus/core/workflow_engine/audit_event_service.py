@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Awaitable, Callable
 
 from nexus.core.events import NexusEvent, WorkflowCompleted
-from nexus.core.models import Workflow, WorkflowState, WorkflowStep
+from nexus.core.models import StepStatus, Workflow, WorkflowState, WorkflowStep
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,15 @@ async def finalize_terminal_success(
         {"step_num": step_num, "step_name": step_name, "error": None},
     )
     logger.info("Completed step %s in workflow %s", step_num, workflow_id)
-    await emit(WorkflowCompleted(workflow_id=workflow_id))
+    await emit(
+        WorkflowCompleted(
+            workflow_id=workflow_id,
+            total_steps=len(workflow.steps),
+            completed_steps=sum(1 for s in workflow.steps if s.status == StepStatus.COMPLETED),
+            failed_steps=sum(1 for s in workflow.steps if s.status == StepStatus.FAILED),
+            skipped_steps=sum(1 for s in workflow.steps if s.status == StepStatus.SKIPPED),
+        )
+    )
     if on_workflow_complete:
         try:
             await on_workflow_complete(workflow, outputs)

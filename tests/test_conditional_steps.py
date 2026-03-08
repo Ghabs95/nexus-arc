@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nexus.adapters.storage.base import StorageBackend
+from nexus.core.events import EventBus, NexusEvent, StepSkipped, WorkflowCompleted
 from nexus.core.models import (
     Agent,
     AuditEvent,
@@ -96,9 +97,9 @@ class InMemoryStorage(StorageBackend):
         return 0
 
 
-async def engine_with_workflow(workflow: Workflow) -> tuple:
+async def engine_with_workflow(workflow: Workflow, event_bus: EventBus | None = None) -> tuple:
     storage = InMemoryStorage()
-    engine = WorkflowEngine(storage=storage)
+    engine = WorkflowEngine(storage=storage, event_bus=event_bus)
     await storage.save_workflow(workflow)
     return engine, storage
 
@@ -265,3 +266,103 @@ async def test_router_condition_error_does_not_match_first_branch():
     assert result.steps[2].status == StepStatus.PENDING
     assert result.steps[3].status == StepStatus.RUNNING
     assert result.current_step == 4
+
+
+# ---------------------------------------------------------------------------
+# StepSkipped event emission tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_condition_false_emits_step_skipped_event():
+    """A condition-false skip must emit a StepSkipped event on the EventBus."""
+    step1 = make_step(1, "analyze")
+    step2 = make_step(2, "detailed_design", condition="result['tier'] == 'high'")
+    wf = make_workflow([step1, step2])
+
+    bus = EventBus()
+    emitted: list[NexusEvent] = []
+    bus.subscribe("step.skipped", lambda e: emitted.append(e))
+
+    engine, _ = await engine_with_workflow(wf, event_bus=bus)
+    await engine.complete_step("wf-test", step_num=1, outputs={"tier": "low"})
+
+    assert len(emitted) == 1
+    skipped_event = emitted[0]
+    assert isinstance(skipped_event, StepSkipped)
+    assert skipped_event.step_name == "detailed_design"
+    assert skipped_event.workflow_id == "wf-test"
+    assert "Condition evaluated to False" in skipped_event.reason
+
+
+@pytest.mark.asyncio
+async def test_chained_condition_false_emits_multiple_step_skipped_events():
+    """Each condition-false skip in a chain must emit its own StepSkipped event."""
+    step1 = make_step(1, "analyze")
+    step2 = make_step(2, "design", condition="result['tier'] == 'high'")
+    step3 = make_step(3, "review", condition="result['tier'] == 'high'")
+    wf = make_workflow([step1, step2, step3])
+
+    bus = EventBus()
+    emitted: list[NexusEvent] = []
+    bus.subscribe("step.skipped", lambda e: emitted.append(e))
+
+    engine, _ = await engine_with_workflow(wf, event_bus=bus)
+    await engine.complete_step("wf-test", step_num=1, outputs={"tier": "low"})
+
+    assert len(emitted) == 2
+    names = [e.step_name for e in emitted]  # type: ignore[attr-defined]
+    assert "design" in names
+    assert "review" in names
+
+
+# ---------------------------------------------------------------------------
+# WorkflowCompleted step-count tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_workflow_completed_counts_include_skipped_steps():
+    """WorkflowCompleted event must carry correct step counts when steps are skipped."""
+    step1 = make_step(1, "analyze")
+    step2 = make_step(2, "detailed_design", condition="result['tier'] == 'high'")
+    wf = make_workflow([step1, step2])
+
+    bus = EventBus()
+    completed_events: list[NexusEvent] = []
+    bus.subscribe("workflow.completed", lambda e: completed_events.append(e))
+
+    engine, _ = await engine_with_workflow(wf, event_bus=bus)
+    await engine.complete_step("wf-test", step_num=1, outputs={"tier": "low"})
+
+    assert len(completed_events) == 1
+    evt = completed_events[0]
+    assert isinstance(evt, WorkflowCompleted)
+    assert evt.total_steps == 2
+    assert evt.completed_steps == 1
+    assert evt.skipped_steps == 1
+    assert evt.failed_steps == 0
+
+
+@pytest.mark.asyncio
+async def test_workflow_completed_counts_all_completed_steps():
+    """WorkflowCompleted event counts must reflect all steps completing normally."""
+    step1 = make_step(1, "analyze")
+    step2 = make_step(2, "implement")
+    wf = make_workflow([step1, step2])
+
+    bus = EventBus()
+    completed_events: list[NexusEvent] = []
+    bus.subscribe("workflow.completed", lambda e: completed_events.append(e))
+
+    engine, _ = await engine_with_workflow(wf, event_bus=bus)
+    await engine.complete_step("wf-test", step_num=1, outputs={})
+    await engine.complete_step("wf-test", step_num=2, outputs={})
+
+    assert len(completed_events) == 1
+    evt = completed_events[0]
+    assert isinstance(evt, WorkflowCompleted)
+    assert evt.total_steps == 2
+    assert evt.completed_steps == 2
+    assert evt.skipped_steps == 0
+    assert evt.failed_steps == 0
