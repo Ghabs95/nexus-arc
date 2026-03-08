@@ -38,7 +38,7 @@ def _render_task_markdown(
     context = requester_context if isinstance(requester_context, dict) else {}
     requester_nexus_id = str(context.get("nexus_id") or "").strip()
     requester_block = (
-        f"\n**Requester Nexus ID:** `{requester_nexus_id}`"
+        f"**Requester Nexus ID:** `{requester_nexus_id}`\n"
         if requester_nexus_id
         else ""
     )
@@ -60,7 +60,7 @@ def _render_task_markdown(
         f"{attachments_block}"
         f"---\n"
         f"**Source:** inbox\n"
-        f"{requester_block}\n"
+        f"{requester_block}"
         f"---\n"
         f"**Raw Input:**\n{raw_text}"
     )

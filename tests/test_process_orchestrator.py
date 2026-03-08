@@ -15,6 +15,7 @@ from nexus.core.models import (
 from nexus.core.process_orchestrator import (
     AgentRuntime,
     ProcessOrchestrator,
+    _canonical_agent_ref,
     _is_terminal,
 )
 
@@ -187,6 +188,40 @@ class TestIsTerminal:
 
 
 # ---------------------------------------------------------------------------
+# _canonical_agent_ref
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalAgentRef:
+    def test_plain_name(self):
+        assert _canonical_agent_ref("summarizer") == "summarizer"
+
+    def test_at_prefixed(self):
+        assert _canonical_agent_ref("@summarizer") == "summarizer"
+
+    def test_backtick_wrapped(self):
+        assert _canonical_agent_ref("`summarizer`") == "summarizer"
+
+    def test_at_and_backtick(self):
+        assert _canonical_agent_ref("@`summarizer`") == "summarizer"
+
+    def test_parenthesized_label(self):
+        assert _canonical_agent_ref("close_loop (summarizer)") == "summarizer"
+
+    def test_empty_string(self):
+        assert _canonical_agent_ref("") == ""
+
+    def test_none_value(self):
+        assert _canonical_agent_ref(None) == ""
+
+    def test_mixed_case(self):
+        assert _canonical_agent_ref("@Summarizer") == "summarizer"
+
+    def test_whitespace_only(self):
+        assert _canonical_agent_ref("   ") == ""
+
+
+# ---------------------------------------------------------------------------
 # scan_and_process_completions
 # ---------------------------------------------------------------------------
 
@@ -277,25 +312,6 @@ class TestScanAndProcessCompletions:
 
     def test_engine_terminal_self_loop_label_finalizes(self):
         """Decorated final-step labels should not relaunch the same completed agent."""
-        runtime = StubRuntime()
-        wf = _make_workflow(WorkflowState.RUNNING)
-        wf.steps[0].agent.name = "close_loop (summarizer)"
-
-        async def complete(issue, agent, outputs, event_id=""):
-            return wf
-
-        orc = _orchestrator(runtime, complete)
-        det = self._fake_detection(agent_type="summarizer", next_agent="", is_done=True)
-
-        with patch("nexus.core.process_orchestrator.scan_for_completions", return_value=[det]):
-            orc.scan_and_process_completions("/base", set())
-
-        assert runtime.launched == []
-        assert len(runtime.finalized) == 1
-        assert runtime.finalized[0]["issue"] == "42"
-
-    def test_engine_terminal_self_loop_label_finalizes(self):
-        """Engine labels like 'close_loop (summarizer)' should not relaunch summarizer."""
         runtime = StubRuntime()
         wf = _make_workflow(WorkflowState.RUNNING)
         wf.steps[0].agent.name = "close_loop (summarizer)"
