@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
 
-from nexus.core.events import NexusEvent, StepStarted
+from nexus.core.events import NexusEvent, StepSkipped, StepStarted
 from nexus.core.models import StepStatus, Workflow, WorkflowState, WorkflowStep
 
 
@@ -96,6 +96,15 @@ async def advance_after_success(
                     "reason": "router evaluated",
                 },
             )
+            await emit(
+                StepSkipped(
+                    workflow_id=workflow_id,
+                    step_num=next_step.step_num,
+                    step_name=next_step.name,
+                    agent_type=next_step.agent.name,
+                    reason="router evaluated",
+                )
+            )
             workflow.current_step = next_step.step_num
             target = resolve_route(workflow, next_step, context)
             if target is None:
@@ -136,6 +145,15 @@ async def advance_after_success(
                 "condition": next_step.condition,
                 "reason": f"Condition evaluated to False: {next_step.condition}",
             },
+        )
+        await emit(
+            StepSkipped(
+                workflow_id=workflow_id,
+                step_num=next_step.step_num,
+                step_name=next_step.name,
+                agent_type=next_step.agent.name,
+                reason=f"Condition evaluated to False: {next_step.condition}",
+            )
         )
         workflow.current_step = next_step.step_num
         next_step = workflow.get_next_step()

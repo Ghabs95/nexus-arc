@@ -58,6 +58,16 @@
             const node = cy.getElementById(wfId);
             if (node.length) {
                 node.style('border-color', data.status === 'success' ? '#3fb950' : '#f85149');
+                const label = data.summary || `Workflow ${data.status}`;
+                node.data('label', label);
+            }
+            if (data.summary) {
+                const badge = document.getElementById('workflow-summary-badge');
+                if (badge) {
+                    badge.textContent = data.summary;
+                    badge.style.color = data.status === 'success' ? '#3fb950' : '#f85149';
+                    badge.style.display = 'block';
+                }
             }
         });
 
@@ -256,6 +266,7 @@
     <h1>Nexus Workflow Visualizer</h1>
     <span id="status-text">Connecting…</span>
 </header>
+<div id="workflow-summary-badge" style="display:none; text-align:center; padding:4px 12px; font-size:0.85rem; font-weight:600;"></div>
 <div id="tabs">
     <div class="tab active" onclick="showTab('graph')">Network Graph (Cytoscape)</div>
     <div class="tab" onclick="showTab('mermaid')">Workflow Diagram (Mermaid)</div>

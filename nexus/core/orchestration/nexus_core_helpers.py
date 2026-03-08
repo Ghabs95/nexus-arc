@@ -73,6 +73,7 @@ async def _setup_socketio_event_bridge(bus: EventBus) -> None:
                 "step.started": "running",
                 "step.completed": "done",
                 "step.failed": "failed",
+                "step.skipped": "skipped",
             }
             status = status_map.get(event.event_type)
             if status:
@@ -111,13 +112,29 @@ async def _setup_socketio_event_bridge(bus: EventBus) -> None:
         # 4. Handle workflow completion
         elif event.event_type in ("workflow.completed", "workflow.failed"):
             status = "success" if event.event_type == "workflow.completed" else "failed"
+            total_steps = getattr(event, "total_steps", 0)
+            completed_steps = getattr(event, "completed_steps", 0)
+            failed_steps = getattr(event, "failed_steps", 0)
+            skipped_steps = getattr(event, "skipped_steps", 0)
+            if total_steps:
+                summary = (
+                    f"Workflow {status}: {completed_steps}/{total_steps} steps completed"
+                    + (f", {skipped_steps} skipped" if skipped_steps else "")
+                    + (f", {failed_steps} failed" if failed_steps else "")
+                )
+            else:
+                summary = f"Workflow {status}"
             HostStateManager.emit_transition(
                 "workflow_completed",
                 {
                     "issue": issue,
                     "workflow_id": workflow_id,
                     "status": status,
-                    "summary": f"Workflow {status}",
+                    "summary": summary,
+                    "total_steps": total_steps,
+                    "completed_steps": completed_steps,
+                    "failed_steps": failed_steps,
+                    "skipped_steps": skipped_steps,
                     "timestamp": event.timestamp.timestamp(),
                 },
             )

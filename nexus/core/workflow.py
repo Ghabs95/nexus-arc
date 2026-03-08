@@ -279,7 +279,19 @@ class WorkflowEngine:
                 return workflow
 
             if workflow.state == WorkflowState.COMPLETED and activated_step is None:
-                await self._emit(WorkflowCompleted(workflow_id=workflow_id))
+                _total = len(workflow.steps)
+                _completed = sum(1 for s in workflow.steps if s.status == StepStatus.COMPLETED)
+                _failed = sum(1 for s in workflow.steps if s.status == StepStatus.FAILED)
+                _skipped = sum(1 for s in workflow.steps if s.status == StepStatus.SKIPPED)
+                await self._emit(
+                    WorkflowCompleted(
+                        workflow_id=workflow_id,
+                        total_steps=_total,
+                        completed_steps=_completed,
+                        failed_steps=_failed,
+                        skipped_steps=_skipped,
+                    )
+                )
         else:
             # Workflow failed
             workflow.state = WorkflowState.FAILED

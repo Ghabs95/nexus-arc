@@ -57,6 +57,10 @@ class WorkflowCompleted(NexusEvent):
     """Emitted when a workflow finishes all steps successfully."""
 
     event_type: str = "workflow.completed"
+    total_steps: int = 0
+    completed_steps: int = 0
+    failed_steps: int = 0
+    skipped_steps: int = 0
 
 
 @dataclass
@@ -111,6 +115,17 @@ class StepFailed(NexusEvent):
     step_name: str = ""
     agent_type: str = ""
     error: str = ""
+
+
+@dataclass
+class StepSkipped(NexusEvent):
+    """Emitted when a workflow step is skipped (condition evaluated False or router bypass)."""
+
+    event_type: str = "step.skipped"
+    step_num: int = 0
+    step_name: str = ""
+    agent_type: str = ""
+    reason: str = ""
 
 
 @dataclass
