@@ -3,8 +3,10 @@
 Provides rich Telegram notifications with interactive buttons for quick actions.
 """
 
+import asyncio
 import logging
 import re
+import threading
 from typing import Any, Sequence
 
 from nexus.adapters.git.utils import build_issue_url
@@ -12,6 +14,47 @@ from nexus.core.config import TELEGRAM_CHAT_ID, TELEGRAM_TOKEN, get_repo, PROJEC
 from nexus.core.orchestration.plugin_runtime import get_profiled_plugin
 
 logger = logging.getLogger(__name__)
+
+_EVENTBUS_LOOP_LOCK = threading.Lock()
+_EVENTBUS_LOOP: asyncio.AbstractEventLoop | None = None
+_EVENTBUS_LOOP_THREAD: threading.Thread | None = None
+
+
+def _run_eventbus_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Run a dedicated loop for sync-to-async EventBus emits."""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+def _get_eventbus_loop() -> asyncio.AbstractEventLoop:
+    """Get or start a dedicated background loop for EventBus emits."""
+    global _EVENTBUS_LOOP, _EVENTBUS_LOOP_THREAD
+    with _EVENTBUS_LOOP_LOCK:
+        if (
+            _EVENTBUS_LOOP is not None
+            and _EVENTBUS_LOOP.is_running()
+            and not _EVENTBUS_LOOP.is_closed()
+        ):
+            return _EVENTBUS_LOOP
+
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(
+            target=_run_eventbus_loop,
+            args=(loop,),
+            daemon=True,
+            name="nexus-eventbus-loop",
+        )
+        thread.start()
+        _EVENTBUS_LOOP = loop
+        _EVENTBUS_LOOP_THREAD = thread
+        return loop
+
+
+def _emit_eventbus_sync(*, bus: Any, event: Any, timeout: float = 10.0) -> None:
+    """Emit an EventBus event from sync code without spinning a new loop per call."""
+    loop = _get_eventbus_loop()
+    future = asyncio.run_coroutine_threadsafe(bus.emit(event), loop)
+    future.result(timeout=timeout)
 
 
 def _extract_issue_number(text: str) -> str:
@@ -761,8 +804,6 @@ def emit_alert(
     Returns:
         ``True`` if the alert was delivered by at least one channel.
     """
-    import asyncio
-
     from nexus.core.events import AlertAction, SystemAlert
 
     try:
@@ -809,8 +850,26 @@ def emit_alert(
             if loop and loop.is_running():
                 # Already in an async context — schedule as a task
                 loop.create_task(bus.emit(event))
+                logger.info(
+                    "Alert EventBus emit scheduled via active loop "
+                    "(path=async-task severity=%s source=%s workflow_id=%s issue=%s project=%s)",
+                    severity,
+                    source,
+                    workflow_id or "",
+                    resolved_issue,
+                    resolved_project,
+                )
             else:
-                asyncio.run(bus.emit(event))
+                _emit_eventbus_sync(bus=bus, event=event)
+                logger.info(
+                    "Alert EventBus emit delivered via background bridge "
+                    "(path=sync-bridge severity=%s source=%s workflow_id=%s issue=%s project=%s)",
+                    severity,
+                    source,
+                    workflow_id or "",
+                    resolved_issue,
+                    resolved_project,
+                )
             return True
         except Exception as exc:
             logger.warning("EventBus emit failed, falling back to direct send: %s", exc)

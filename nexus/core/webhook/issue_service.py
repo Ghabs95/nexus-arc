@@ -28,6 +28,9 @@ def handle_issue_opened_event(
     get_inbox_storage_backend=None,
     enqueue_task=None,
     cleanup_worktree_for_issue=None,
+    bind_issue_requester=None,
+    find_user_credentials_by_github_identity=None,
+    find_user_credentials_by_gitlab_identity=None,
 ) -> dict[str, Any]:
     """Handle parsed issue webhook event and create inbox task file when applicable."""
     action = event.get("action")
@@ -149,6 +152,67 @@ def handle_issue_opened_event(
                 "issue": issue_number,
             }
 
+        # Best-effort requester binding for webhook-created issues so later
+        # agent launches can resolve user-scoped API credentials.
+        requester_nexus_id = None
+        issue_number_str = str(issue_number or "").strip()
+        issue_author_norm = str(issue_author or "").strip().lstrip("@").strip()
+        issue_url_norm = str(issue_url or "").strip()
+        if issue_number_str.isdigit() and issue_author_norm and issue_url_norm:
+            try:
+                if bind_issue_requester is None:
+                    from nexus.core.auth.credential_store import bind_issue_requester as _bind
+
+                    bind_issue_requester = _bind
+                if find_user_credentials_by_github_identity is None:
+                    from nexus.core.auth.credential_store import (
+                        find_user_credentials_by_github_identity as _find_github,
+                    )
+
+                    find_user_credentials_by_github_identity = _find_github
+                if find_user_credentials_by_gitlab_identity is None:
+                    from nexus.core.auth.credential_store import (
+                        find_user_credentials_by_gitlab_identity as _find_gitlab,
+                    )
+
+                    find_user_credentials_by_gitlab_identity = _find_gitlab
+
+                platform = str(
+                    (project_config.get(str(project_key), {}) or {}).get("git_platform") or "github"
+                ).strip().lower()
+                if platform == "gitlab" and callable(find_user_credentials_by_gitlab_identity):
+                    record = find_user_credentials_by_gitlab_identity(
+                        gitlab_username=issue_author_norm
+                    )
+                elif callable(find_user_credentials_by_github_identity):
+                    record = find_user_credentials_by_github_identity(github_login=issue_author_norm)
+                else:
+                    record = None
+
+                resolved_nexus_id = str(getattr(record, "nexus_id", "") or "").strip()
+                if resolved_nexus_id and callable(bind_issue_requester):
+                    bind_issue_requester(
+                        repo_key=str(repo_name),
+                        issue_number=int(issue_number_str),
+                        issue_url=issue_url_norm,
+                        project_key=str(project_key),
+                        requester_nexus_id=resolved_nexus_id,
+                    )
+                    requester_nexus_id = resolved_nexus_id
+                    logger.info(
+                        "🔐 Bound webhook issue requester: issue=#%s repo=%s author=%s nexus_id=%s",
+                        issue_number_str,
+                        repo_name,
+                        issue_author_norm,
+                        resolved_nexus_id,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Could not bind webhook issue requester for issue #%s: %s",
+                    issue_number_str,
+                    exc,
+                )
+
         workspace_abs = os.path.join(base_dir, str(project_workspace or ""))
         inbox_dir = get_inbox_dir(workspace_abs, project_key)
         task_filename = f"issue_{issue_number}.md"
@@ -208,6 +272,7 @@ The actual agent assignment depends on the current project's workflow configurat
             "title": issue_title,
             "agent_type": agent_type,
             "repository": repo_name,
+            "requester_nexus_id": requester_nexus_id,
         }
     except Exception as exc:
         logger.error(

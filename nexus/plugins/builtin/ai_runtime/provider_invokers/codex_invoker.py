@@ -65,6 +65,14 @@ def invoke_codex_cli(
     if not check_tool_available(codex_provider):
         raise tool_unavailable_error("Codex CLI not available")
 
+    effective_openai_key = str(
+        (env or {}).get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+    ).strip()
+    if not effective_openai_key:
+        raise tool_unavailable_error(
+            "Codex requires OPENAI_API_KEY for this launch context"
+        )
+
     _cleanup_empty_rollout_files(logger=logger)
 
     # Force writable workspace + network permission so Codex can post issue comments
@@ -72,6 +80,7 @@ def invoke_codex_cli(
     cmd = [
         codex_cli_path,
         "exec",
+        "--skip-git-repo-check",
         "--sandbox",
         "workspace-write",
         "-c",
@@ -89,7 +98,9 @@ def invoke_codex_cli(
 
     logger.info("🤖 Launching Codex CLI agent")
     logger.info("   Workspace: %s", workspace_dir)
-    logger.info("   Log: %s", log_path)
+    log_debug = getattr(logger, "debug", None) or getattr(logger, "info", None)
+    if callable(log_debug):
+        log_debug("   Log: %s", log_path)
 
     try:
         merged_env = {**os.environ}
@@ -127,6 +138,42 @@ def invoke_codex_cli(
             logger=logger,
             output_label="codex",
         )
+
+        def _read_log_excerpt(max_chars: int = 3000) -> str:
+            try:
+                with open(log_path, encoding="utf-8", errors="replace") as handle:
+                    data = handle.read()
+                if len(data) <= max_chars:
+                    return data
+                return data[-max_chars:]
+            except Exception:
+                return ""
+
+        # Detect near-immediate startup/auth failures so the orchestrator can
+        # fallback to another provider in the same launch cycle.
+        exit_code = None
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            exit_code = process.poll()
+            if exit_code is not None:
+                break
+            time.sleep(0.5)
+
+        if exit_code is not None:
+            excerpt = _read_log_excerpt().lower()
+            auth_markers = (
+                "401 unauthorized",
+                "missing bearer",
+                "authentication in header",
+                "invalid_api_key",
+                "missing api key",
+            )
+            if any(marker in excerpt for marker in auth_markers):
+                raise tool_unavailable_error(
+                    f"Codex authentication failed (exit={exit_code})"
+                )
+            raise tool_unavailable_error(f"Codex exited immediately (exit={exit_code})")
+
         logger.info("🚀 Codex launched (PID: %s)", process.pid)
         return process.pid
     except Exception as exc:

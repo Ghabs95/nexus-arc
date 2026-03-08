@@ -134,6 +134,19 @@ def _resolve_requester_token_for_issue(
         return None
     requester_nexus_id = get_issue_requester(str(repo), str(issue_number))
     if not requester_nexus_id:
+        # Fallback to URL-bound requester lookup for cases where repo-key
+        # formatting differs from stored bindings.
+        try:
+            platform = str(get_project_platform(str(project_name or "")) or "").strip().lower()
+            issue_url = build_issue_url(
+                str(repo),
+                str(issue_number),
+                {"git_platform": platform or "github"},
+            )
+            requester_nexus_id = get_issue_requester_by_url(issue_url)
+        except Exception:
+            requester_nexus_id = None
+    if not requester_nexus_id:
         return None
     user_env, env_error = build_execution_env(str(requester_nexus_id))
     if env_error:
@@ -1059,7 +1072,16 @@ def invoke_ai_agent(
 
     effective_requester_nexus_id = str(requester_nexus_id or "").strip() or None
     if auth_enabled() and not effective_requester_nexus_id and issue_url:
-        effective_requester_nexus_id = get_issue_requester_by_url(str(issue_url))
+        issue_url_str = str(issue_url)
+        effective_requester_nexus_id = get_issue_requester_by_url(issue_url_str)
+        if not effective_requester_nexus_id:
+            issue_num_match = re.search(r"/issues/(\d+)(?:$|[/?#])", issue_url_str)
+            issue_repo = _extract_repo_from_issue_url(issue_url_str)
+            if issue_num_match and issue_repo:
+                effective_requester_nexus_id = get_issue_requester(
+                    str(issue_repo),
+                    str(issue_num_match.group(1)),
+                )
 
     # Resolve project-specific API token
     from nexus.core.orchestration.nexus_core_helpers import _get_project_config

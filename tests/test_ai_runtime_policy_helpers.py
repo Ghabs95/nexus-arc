@@ -494,6 +494,23 @@ def test_codex_invoker_unavailable_and_success(monkeypatch, tmp_path):
     except RuntimeError as exc:
         assert "Codex CLI not available" in str(exc)
 
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    try:
+        invoke_codex_cli(
+            check_tool_available=lambda provider: True,
+            codex_provider=AIProvider.CODEX,
+            codex_cli_path="codex",
+            codex_model="",
+            get_tasks_logs_dir=lambda workspace, subdir: str(tmp_path),
+            tool_unavailable_error=RuntimeError,
+            logger=logger,
+            agent_prompt="do work",
+            workspace_dir="/tmp/work",
+        )
+        assert False, "expected missing key error"
+    except RuntimeError as exc:
+        assert "OPENAI_API_KEY" in str(exc)
+
     monkeypatch.setattr(codex_mod.time, "strftime", lambda fmt: "20260101_120000")
     captured: dict[str, Any] = {}
     codex_home = tmp_path / ".codex"
@@ -509,6 +526,9 @@ def test_codex_invoker_unavailable_and_success(monkeypatch, tmp_path):
         pid = 4321
         stdout = None
 
+        def poll(self):
+            return None
+
     def _fake_popen(cmd, cwd, stdin, stdout, stderr, env, text, bufsize):
         captured["cmd"] = cmd
         captured["cwd"] = cwd
@@ -520,6 +540,14 @@ def test_codex_invoker_unavailable_and_success(monkeypatch, tmp_path):
 
     monkeypatch.setattr(codex_mod.subprocess, "Popen", _fake_popen)
     monkeypatch.setattr(codex_mod, "_start_output_tee", lambda **kwargs: None)
+    tick = {"value": 946685000.0}
+
+    def _fake_time():
+        tick["value"] += 10.0
+        return tick["value"]
+
+    monkeypatch.setattr(codex_mod.time, "time", _fake_time)
+    monkeypatch.setattr(codex_mod.time, "sleep", lambda _seconds: None)
     pid = invoke_codex_cli(
         check_tool_available=lambda provider: True,
         codex_provider=AIProvider.CODEX,
@@ -532,12 +560,13 @@ def test_codex_invoker_unavailable_and_success(monkeypatch, tmp_path):
         workspace_dir=str(tmp_path / "repo"),
         issue_num="83",
         log_subdir="nexus",
-        env={"FOO": "BAR"},
+        env={"FOO": "BAR", "OPENAI_API_KEY": "test-key"},
     )
     assert pid == 4321
     assert captured["cmd"] == [
         "codex",
         "exec",
+        "--skip-git-repo-check",
         "--sandbox",
         "workspace-write",
         "-c",
@@ -551,6 +580,7 @@ def test_codex_invoker_unavailable_and_success(monkeypatch, tmp_path):
     assert captured["text"] is True
     assert captured["bufsize"] == 1
     assert isinstance(captured["env"], dict) and captured["env"]["FOO"] == "BAR"
+    assert captured["env"]["OPENAI_API_KEY"] == "test-key"
     assert os.path.exists(non_empty_rollout)
     assert not os.path.exists(empty_rollout)
 

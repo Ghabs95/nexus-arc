@@ -213,3 +213,53 @@ def test_handle_issue_opened_with_workflow_label_notifies_but_skips_task_creatio
     assert result["status"] == "notified_only"
     assert result["reason"] == "self-created issue (has workflow label)"
     assert notifications == ["created:110:workflow"]
+
+
+def test_handle_issue_opened_event_binds_requester_identity(tmp_path):
+    inbox_dir = tmp_path / "workspace-a" / ".nexus" / "inbox" / "proj-a"
+    captured: dict[str, str] = {}
+
+    class _Cred:
+        nexus_id = "nexus-user-123"
+
+    result = handle_issue_opened_event(
+        event={
+            "action": "opened",
+            "number": 111,
+            "title": "Auth binding test",
+            "body": "Use stored credentials",
+            "author": "alice",
+            "url": "https://github.com/acme/repo/issues/111",
+            "labels": [],
+            "repo": "acme/repo",
+        },
+        logger=MagicMock(),
+        policy=_Policy(),
+        notify_lifecycle=lambda _m: True,
+        emit_alert=lambda *args, **kwargs: True,
+        project_config={
+            "proj-a": {
+                "workspace": "workspace-a",
+                "git_repo": "acme/repo",
+            },
+            "system_operations": {"default": "triage", "inbox": "triage"},
+        },
+        base_dir=str(tmp_path),
+        project_repos=lambda key, cfg, get_repos: cfg.get("git_repos", [cfg.get("git_repo")]),
+        get_repos=lambda _key: [],
+        get_tasks_active_dir=lambda root, project: str(
+            tmp_path / "workspace-a" / ".nexus" / "tasks" / project / "active"
+        ),
+        get_inbox_dir=lambda root, project: str(inbox_dir),
+        bind_issue_requester=lambda **kwargs: captured.update(
+            {k: str(v) for k, v in kwargs.items()}
+        ),
+        find_user_credentials_by_github_identity=lambda **_kwargs: _Cred(),
+        find_user_credentials_by_gitlab_identity=lambda **_kwargs: None,
+    )
+
+    assert result["status"] == "task_created"
+    assert result["requester_nexus_id"] == "nexus-user-123"
+    assert captured["repo_key"] == "acme/repo"
+    assert captured["issue_number"] == "111"
+    assert captured["requester_nexus_id"] == "nexus-user-123"
