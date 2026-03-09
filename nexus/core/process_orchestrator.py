@@ -776,11 +776,17 @@ class ProcessOrchestrator:
                 self._runtime.clear_launch_guard(issue_num)
 
                 try:
+                    retry_exclusions = self._merge_retry_exclusions(
+                        current_entry.get("exclude_tools")
+                        if isinstance(current_entry, dict)
+                        else None,
+                        crashed_tool,
+                    )
                     pid_new, _ = self._runtime.launch_agent(
                         issue_num,
                         agent_type,
                         trigger_source="dead-agent-retry",
-                        exclude_tools=[crashed_tool] if crashed_tool else None,
+                        exclude_tools=retry_exclusions,
                     )
                     if pid_new:
                         logger.info(f"🔄 Dead-agent retry launched: {agent_type} for #{issue_num}")
@@ -1002,10 +1008,15 @@ class ProcessOrchestrator:
             if will_retry:
                 self._runtime.clear_launch_guard(issue_num)
                 try:
+                    retry_exclusions = self._merge_retry_exclusions(
+                        agent_data.get("exclude_tools") if isinstance(agent_data, dict) else None,
+                        crashed_tool,
+                    )
                     self._runtime.launch_agent(
                         issue_num,
                         expected_agent,
                         trigger_source="orphan-timeout-retry",
+                        exclude_tools=retry_exclusions,
                     )
                 except Exception as exc:
                     logger.error(f"Orphaned-step retry exception for issue #{issue_num}: {exc}")
@@ -1031,11 +1042,15 @@ class ProcessOrchestrator:
         if will_retry:
             self._runtime.clear_launch_guard(issue_num)
             try:
+                retry_exclusions = self._merge_retry_exclusions(
+                    agent_data.get("exclude_tools") if isinstance(agent_data, dict) else None,
+                    crashed_tool,
+                )
                 self._runtime.launch_agent(
                     issue_num,
                     agent_type,
                     trigger_source="timeout-retry",
-                    exclude_tools=[crashed_tool] if crashed_tool else None,
+                    exclude_tools=retry_exclusions,
                 )
             except Exception as exc:
                 logger.error(f"Timeout retry exception for issue #{issue_num}: {exc}")
@@ -1054,6 +1069,30 @@ class ProcessOrchestrator:
         if isinstance(timeout, (int, float)) and int(timeout) > 0:
             return int(timeout)
         return int(os.getenv("NEXUS_AGENT_TIMEOUT", "3600"))
+
+    @staticmethod
+    def _merge_retry_exclusions(
+        existing_exclusions: Any,
+        crashed_tool: str | None,
+    ) -> list[str] | None:
+        merged: list[str] = []
+        seen: set[str] = set()
+
+        def _add(value: Any) -> None:
+            name = str(value or "").strip().lower()
+            if not name or name in seen:
+                return
+            seen.add(name)
+            merged.append(name)
+
+        if isinstance(existing_exclusions, (list, tuple, set)):
+            for value in existing_exclusions:
+                _add(value)
+        elif existing_exclusions:
+            _add(existing_exclusions)
+
+        _add(crashed_tool)
+        return merged or None
 
 
 # ---------------------------------------------------------------------------
@@ -1079,5 +1118,4 @@ def _canonical_agent_ref(agent_ref: str | None) -> str:
         raw = alias_match.group(1).strip()
 
     return raw.lower()
-
 

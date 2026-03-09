@@ -17,6 +17,7 @@ Example::
 import asyncio
 import json
 import logging
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -122,10 +123,36 @@ class GitLabPlatform(GitPlatform):
         await self.update_issue(issue_id, state="closed")
 
     async def search_linked_prs(self, issue_id: str) -> list[PullRequest]:
-        """GitLab links MRs to issues via the project's MR API; search by title keyword."""
+        """Find merge requests linked to an issue."""
+        issue_token = str(issue_id or "").strip()
+        if not issue_token:
+            return []
+
+        issue_ref_pattern = re.compile(
+            rf"(?:#{re.escape(issue_token)}\b|{re.escape(self._repo)}#{re.escape(issue_token)}\b|"
+            rf"{re.escape(self._repo)}/-/issues/{re.escape(issue_token)}\b|/-/issues/{re.escape(issue_token)}\b)",
+            re.IGNORECASE,
+        )
+
+        # Prefer direct open-MR scanning over search indexing.
+        try:
+            open_mrs = await self._get(
+                f"projects/{self._encoded_repo}/merge_requests?state=open&per_page=100"
+            )
+            linked_open_mrs: list[PullRequest] = []
+            for mr in open_mrs if isinstance(open_mrs, list) else []:
+                title = str(mr.get("title") or "")
+                body = str(mr.get("description") or "")
+                if issue_ref_pattern.search(f"{title}\n{body}"):
+                    linked_open_mrs.append(self._to_pr(mr))
+            if linked_open_mrs:
+                return linked_open_mrs
+        except Exception:
+            pass
+
         mrs = await self._get(
             f"projects/{self._encoded_repo}/merge_requests"
-            f"?state=all&search=%23{issue_id}&per_page=20"
+            f"?state=all&search=%23{issue_token}&per_page=20"
         )
         return [self._to_pr(mr) for mr in mrs]
 

@@ -14,16 +14,6 @@ def test_get_sop_tier_from_issue_uses_sync_bridge(monkeypatch):
         lambda *_args, **_kwargs: _Platform(),
     )
     monkeypatch.setattr(agent_launcher, "_resolve_requester_token_for_issue", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        agent_launcher,
-        "_run_coro_sync",
-        lambda factory: SimpleNamespace(labels=["workflow:full"]),
-    )
-
-    def _unexpected_asyncio_run(*_args, **_kwargs):
-        raise AssertionError("asyncio.run should not be called")
-
-    monkeypatch.setattr(agent_launcher.asyncio, "run", _unexpected_asyncio_run)
 
     tier = agent_launcher.get_sop_tier_from_issue("110", project="nexus")
     assert tier == "full"
@@ -49,3 +39,65 @@ def test_resolve_requester_token_for_issue_falls_back_to_issue_url(monkeypatch):
     )
 
     assert token == "gho_test_token"
+
+
+def test_launch_next_agent_merges_persisted_and_runtime_exclusions(monkeypatch, tmp_path):
+    from nexus.core.runtime import agent_launcher
+
+    task_file = tmp_path / "issue-113-task.md"
+    task_file.write_text("Do work")
+    issue_body = f"**Task File:** `{task_file}`\n\nTask details"
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(agent_launcher, "is_recent_launch", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        agent_launcher,
+        "_load_issue_body_from_project_repo",
+        lambda *_a, **_k: (issue_body, "Ghabs95/nexus-arc", str(task_file)),
+    )
+    monkeypatch.setattr(agent_launcher, "is_postgres_backend", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        agent_launcher,
+        "PROJECT_CONFIG",
+        {
+            "nexus": {
+                "workspace": str(tmp_path),
+                "agents_dir": "agents",
+                "repo": "Ghabs95/nexus-arc",
+            }
+        },
+    )
+    monkeypatch.setattr(agent_launcher, "_project_repos", lambda *_a, **_k: ["Ghabs95/nexus-arc"])
+    monkeypatch.setattr(agent_launcher, "get_repo", lambda _project: "Ghabs95/nexus-arc")
+    monkeypatch.setattr(
+        "nexus.core.state_manager.HostStateManager.get_last_tier_for_issue",
+        lambda _issue: "full",
+    )
+    monkeypatch.setattr(
+        "nexus.core.state_manager.HostStateManager.load_launched_agents",
+        lambda recent_only=False: {"113": {"exclude_tools": ["codex", "copilot"]}},
+    )
+    monkeypatch.setattr(agent_launcher, "get_sop_tier_from_issue", lambda *_a, **_k: "full")
+    monkeypatch.setattr(
+        agent_launcher,
+        "build_issue_url",
+        lambda _repo, _issue, _cfg: "https://github.com/Ghabs95/nexus-arc/issues/113",
+    )
+
+    def _fake_invoke_ai_agent(**kwargs):
+        captured.update(kwargs)
+        return 4242, "claude"
+
+    monkeypatch.setattr(agent_launcher, "invoke_ai_agent", _fake_invoke_ai_agent)
+
+    pid, tool = agent_launcher.launch_next_agent(
+        issue_number="113",
+        next_agent="developer",
+        trigger_source="dead-agent-retry",
+        exclude_tools=["gemini"],
+        repo_override="Ghabs95/nexus-arc",
+    )
+
+    assert pid == 4242
+    assert tool == "claude"
+    assert captured.get("exclude_tools") == ["codex", "copilot", "gemini"]

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import subprocess
 from datetime import UTC, datetime
 
@@ -217,34 +218,79 @@ class GitHubPlatform(GitPlatform):
 
     async def search_linked_prs(self, issue_id: str) -> list[PullRequest]:
         """Find PRs linked to this issue."""
-        # Search for PRs mentioning this issue
-        args = [
-            "pr",
-            "list",
-            "--search",
-            f"#{issue_id}",
-            "--json",
-            "number,title,state,headRefName,baseRefName,url",
-        ]
+        issue_token = str(issue_id or "").strip()
+        if not issue_token:
+            return []
 
         try:
-            output = self._run_gh_command(args)
-            data = json.loads(output)
+            issue_ref_pattern = re.compile(
+                rf"(?:#{re.escape(issue_token)}\b|{re.escape(self.repo)}#{re.escape(issue_token)}\b|"
+                rf"https?://github\.com/{re.escape(self.repo)}/issues/{re.escape(issue_token)}\b)",
+                re.IGNORECASE,
+            )
 
-            prs = []
-            for pr_data in data:
-                pr = PullRequest(
-                    id=str(pr_data["number"]),
-                    number=pr_data["number"],
-                    title=pr_data["title"],
-                    state=pr_data["state"].lower(),
-                    head_branch=pr_data["headRefName"],
-                    base_branch=pr_data["baseRefName"],
-                    url=pr_data["url"],
-                    linked_issues=[issue_id],
+            # Prefer direct open-PR scanning over search to avoid index lag.
+            open_list_output = self._run_gh_command(
+                [
+                    "pr",
+                    "list",
+                    "--state",
+                    "open",
+                    "--limit",
+                    "100",
+                    "--json",
+                    "number,title,body,state,headRefName,baseRefName,url",
+                ]
+            )
+            open_list_data = json.loads(open_list_output)
+
+            linked_open_prs: list[PullRequest] = []
+            for pr_data in open_list_data:
+                title = str(pr_data.get("title") or "")
+                body = str(pr_data.get("body") or "")
+                if not issue_ref_pattern.search(f"{title}\n{body}"):
+                    continue
+                linked_open_prs.append(
+                    PullRequest(
+                        id=str(pr_data["number"]),
+                        number=pr_data["number"],
+                        title=title,
+                        state=str(pr_data.get("state") or "").lower(),
+                        head_branch=str(pr_data.get("headRefName") or ""),
+                        base_branch=str(pr_data.get("baseRefName") or ""),
+                        url=str(pr_data.get("url") or ""),
+                        linked_issues=[issue_token],
+                    )
                 )
-                prs.append(pr)
+            if linked_open_prs:
+                return linked_open_prs
 
+            # Fallback to search query for edge cases where refs are absent in title/body.
+            search_output = self._run_gh_command(
+                [
+                    "pr",
+                    "list",
+                    "--search",
+                    f"#{issue_token}",
+                    "--json",
+                    "number,title,state,headRefName,baseRefName,url",
+                ]
+            )
+            search_data = json.loads(search_output)
+            prs: list[PullRequest] = []
+            for pr_data in search_data:
+                prs.append(
+                    PullRequest(
+                        id=str(pr_data["number"]),
+                        number=pr_data["number"],
+                        title=str(pr_data.get("title") or ""),
+                        state=str(pr_data.get("state") or "").lower(),
+                        head_branch=str(pr_data.get("headRefName") or ""),
+                        base_branch=str(pr_data.get("baseRefName") or ""),
+                        url=str(pr_data.get("url") or ""),
+                        linked_issues=[issue_token],
+                    )
+                )
             return prs
         except RuntimeError:
             return []

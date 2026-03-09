@@ -315,6 +315,71 @@ class TestGitHubPlatform:
         assert mock_put.await_args.args[1]["merge_method"] == "squash"
         assert mock_delete.await_args.args[0] == "repos/owner/repo/git/refs/heads/feature%2Ftest"
 
+    def test_search_linked_prs_prefers_open_pull_scan(self):
+        platform = self._make_platform()
+        open_pulls = [
+            {
+                "id": 9001,
+                "number": 114,
+                "title": "feat: allow users to attach images",
+                "body": "Implements feature.\n\nCloses #113",
+                "state": "open",
+                "head": {"ref": "feat/attach-images-to-input"},
+                "base": {"ref": "develop"},
+                "html_url": "https://github.com/owner/repo/pull/114",
+            }
+        ]
+        with patch.object(platform, "_get", new=AsyncMock(return_value=open_pulls)) as mock_get:
+            prs = asyncio.run(platform.search_linked_prs("113"))
+
+        assert len(prs) == 1
+        assert prs[0].number == 114
+        assert prs[0].state == "open"
+        assert mock_get.await_count == 1
+        assert mock_get.await_args.args[0] == "repos/owner/repo/pulls?state=open&per_page=100"
+
+    def test_search_linked_prs_falls_back_to_search_api(self):
+        platform = self._make_platform()
+        open_pulls = [
+            {
+                "id": 41,
+                "number": 41,
+                "title": "chore: unrelated",
+                "body": "No linked issue in body",
+                "state": "open",
+                "head": {"ref": "chore/unrelated"},
+                "base": {"ref": "main"},
+                "html_url": "https://github.com/owner/repo/pull/41",
+            }
+        ]
+        search_results = {"items": [{"number": 77}]}
+        pr_detail = {
+            "id": 77,
+            "number": 77,
+            "title": "fix: resolve #113",
+            "body": "Closes #113",
+            "state": "open",
+            "head": {"ref": "fix/issue-113"},
+            "base": {"ref": "main"},
+            "html_url": "https://github.com/owner/repo/pull/77",
+        }
+        with patch.object(
+            platform,
+            "_get",
+            new=AsyncMock(side_effect=[open_pulls, search_results, pr_detail]),
+        ) as mock_get:
+            prs = asyncio.run(platform.search_linked_prs("113"))
+
+        assert len(prs) == 1
+        assert prs[0].number == 77
+        assert mock_get.await_count == 3
+        first_call = mock_get.await_args_list[0].args[0]
+        second_call = mock_get.await_args_list[1].args[0]
+        third_call = mock_get.await_args_list[2].args[0]
+        assert first_call == "repos/owner/repo/pulls?state=open&per_page=100"
+        assert second_call.startswith("search/issues?q=")
+        assert third_call == "repos/owner/repo/pulls/77"
+
 
 # ---------------------------------------------------------------------------
 # GitLabPlatform
@@ -461,6 +526,70 @@ class TestGitLabPlatform:
         assert "state=opened" in called_path
         assert "per_page=25" in called_path
         assert "labels=" in called_path
+
+    def test_search_linked_prs_prefers_open_mr_scan(self):
+        platform = self._make_platform()
+        open_mrs = [
+            {
+                "id": 200,
+                "iid": 12,
+                "title": "feat: image attachments",
+                "description": "Implements feature.\n\nCloses #113",
+                "state": "opened",
+                "source_branch": "feat/attach-images-to-input",
+                "target_branch": "develop",
+                "web_url": "https://gitlab.com/mygroup/myproject/-/merge_requests/12",
+            }
+        ]
+        with patch.object(platform, "_get", new=AsyncMock(return_value=open_mrs)) as mock_get:
+            prs = asyncio.run(platform.search_linked_prs("113"))
+
+        assert len(prs) == 1
+        assert prs[0].number == 12
+        assert prs[0].state == "open"
+        assert mock_get.await_count == 1
+        assert mock_get.await_args.args[0].endswith("/merge_requests?state=open&per_page=100")
+
+    def test_search_linked_prs_falls_back_to_search(self):
+        platform = self._make_platform()
+        open_mrs = [
+            {
+                "id": 201,
+                "iid": 77,
+                "title": "chore: unrelated",
+                "description": "No issue reference",
+                "state": "opened",
+                "source_branch": "chore/unrelated",
+                "target_branch": "main",
+                "web_url": "https://gitlab.com/mygroup/myproject/-/merge_requests/77",
+            }
+        ]
+        search_mrs = [
+            {
+                "id": 202,
+                "iid": 88,
+                "title": "fix: resolve #113",
+                "description": "Closes #113",
+                "state": "opened",
+                "source_branch": "fix/issue-113",
+                "target_branch": "main",
+                "web_url": "https://gitlab.com/mygroup/myproject/-/merge_requests/88",
+            }
+        ]
+        with patch.object(
+            platform,
+            "_get",
+            new=AsyncMock(side_effect=[open_mrs, search_mrs]),
+        ) as mock_get:
+            prs = asyncio.run(platform.search_linked_prs("113"))
+
+        assert len(prs) == 1
+        assert prs[0].number == 88
+        assert mock_get.await_count == 2
+        first_call = mock_get.await_args_list[0].args[0]
+        second_call = mock_get.await_args_list[1].args[0]
+        assert first_call.endswith("/merge_requests?state=open&per_page=100")
+        assert "search=%23113" in second_call
 
     def test_create_pr_from_changes_cross_repo_appends_fully_qualified_reference(self, tmp_path):
         platform = self._make_platform()

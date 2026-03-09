@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import subprocess
 import urllib.parse
 from datetime import UTC, datetime
@@ -141,8 +142,34 @@ class GitLabCLIPlatform(GitPlatform):
         await self.update_issue(issue_id, state="closed")
 
     async def search_linked_prs(self, issue_id: str) -> list[PullRequest]:
+        issue_token = str(issue_id or "").strip()
+        if not issue_token:
+            return []
+
         try:
-            items = self._api("GET", f"projects/{self._encoded_repo}/merge_requests?state=all&search=%23{issue_id}&per_page=20")
+            issue_ref_pattern = re.compile(
+                rf"(?:#{re.escape(issue_token)}\b|{re.escape(self._repo)}#{re.escape(issue_token)}\b|"
+                rf"{re.escape(self._repo)}/-/issues/{re.escape(issue_token)}\b|/-/issues/{re.escape(issue_token)}\b)",
+                re.IGNORECASE,
+            )
+
+            open_items = self._api(
+                "GET",
+                f"projects/{self._encoded_repo}/merge_requests?state=open&per_page=100",
+            )
+            linked_open_mrs: list[PullRequest] = []
+            for item in open_items if isinstance(open_items, list) else []:
+                title = str(item.get("title") or "")
+                body = str(item.get("description") or "")
+                if issue_ref_pattern.search(f"{title}\n{body}"):
+                    linked_open_mrs.append(self._to_pr(item))
+            if linked_open_mrs:
+                return linked_open_mrs
+
+            items = self._api(
+                "GET",
+                f"projects/{self._encoded_repo}/merge_requests?state=all&search=%23{issue_token}&per_page=20",
+            )
             return [self._to_pr(item) for item in items]
         except RuntimeError:
             return []

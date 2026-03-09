@@ -142,6 +142,7 @@ def reconcile_completion_signals_on_startup(
         )
 
         drifts = []
+        local_agent = normalize_agent_reference((local_signal or {}).get("agent_type", "")).lower()
         local_next = (local_signal or {}).get("next_agent", "")
         comment_next = (comment_signal or {}).get("next_agent", "")
         comment_completed = (comment_signal or {}).get("completed_agent", "")
@@ -214,6 +215,43 @@ def reconcile_completion_signals_on_startup(
                     exc,
                 )
 
+        if (
+            not comment_signal
+            and local_agent
+            and local_agent == expected_running_agent
+            and local_next
+            and not is_terminal_agent_reference(local_next)
+        ):
+            try:
+                outputs = {
+                    "status": "complete",
+                    "agent_type": local_agent,
+                    "next_agent": local_next,
+                    "summary": "Auto-reconciled on startup from local completion signal",
+                    "source": "startup-local-auto-reconcile",
+                }
+                asyncio.run(
+                    complete_step_for_issue(
+                        str(issue_num),
+                        local_agent,
+                        outputs,
+                        event_id=f"startup:local:{issue_num}",
+                    )
+                )
+                logger.info(
+                    "Startup auto-reconciled issue #%s from local completion: %s -> %s",
+                    issue_num,
+                    local_agent,
+                    local_next,
+                )
+                continue
+            except Exception as exc:
+                logger.debug(
+                    "Startup local auto-reconcile skipped for issue #%s due to error: %s",
+                    issue_num,
+                    exc,
+                )
+
         if local_next and local_next != expected_running_agent:
             drifts.append(f"local next={local_next}")
         if comment_next and comment_next != expected_running_agent:
@@ -227,6 +265,7 @@ def reconcile_completion_signals_on_startup(
         emit_alert(
             f"⚠️ Startup routing drift detected for issue #{issue_num}\n"
             f"Workflow RUNNING: `{expected_running_agent}`\n"
+            f"Local completion from: `{local_agent or 'n/a'}`\n"
             f"Local completion next: `{local_next or 'n/a'}`\n"
             f"Latest structured comment next: `{comment_next or 'n/a'}`\n\n"
             "No automatic state changes were made. Reconcile manually before /continue.",

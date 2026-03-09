@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 import urllib.error
 import urllib.parse
@@ -121,7 +122,31 @@ class GitHubPlatform(GitPlatform):
         logger.info("Closed issue #%s", issue_id)
 
     async def search_linked_prs(self, issue_id: str) -> list[PullRequest]:
-        query = urllib.parse.quote(f'repo:{self.repo} is:pr "#{issue_id}"')
+        issue_token = str(issue_id or "").strip()
+        if not issue_token:
+            return []
+
+        issue_ref_pattern = re.compile(
+            rf"(?:#{re.escape(issue_token)}\b|{re.escape(self.repo)}#{re.escape(issue_token)}\b|"
+            rf"https?://github\.com/{re.escape(self.repo)}/issues/{re.escape(issue_token)}\b)",
+            re.IGNORECASE,
+        )
+
+        # Prefer direct open-PR scanning over Search API to avoid index lag.
+        try:
+            pulls = await self._get(f"repos/{self.repo}/pulls?state=open&per_page=100")
+            linked_open_prs: list[PullRequest] = []
+            for item in pulls if isinstance(pulls, list) else []:
+                title = str(item.get("title") or "")
+                body = str(item.get("body") or "")
+                if issue_ref_pattern.search(f"{title}\n{body}"):
+                    linked_open_prs.append(self._to_pr(item, linked_issues=[issue_token]))
+            if linked_open_prs:
+                return linked_open_prs
+        except RuntimeError:
+            pass
+
+        query = urllib.parse.quote(f'repo:{self.repo} is:pr "#{issue_token}"')
         try:
             search_data = await self._get(f"search/issues?q={query}&per_page=20")
             prs: list[PullRequest] = []
@@ -130,7 +155,7 @@ class GitHubPlatform(GitPlatform):
                 if not pr_number:
                     continue
                 detail = await self._get(f"repos/{self.repo}/pulls/{pr_number}")
-                prs.append(self._to_pr(detail, linked_issues=[str(issue_id)]))
+                prs.append(self._to_pr(detail, linked_issues=[issue_token]))
             return prs
         except RuntimeError:
             return []

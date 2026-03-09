@@ -13,7 +13,7 @@ from nexus.core.completion import budget_completion_payload
 from nexus.core.storage.capabilities import get_storage_capabilities
 
 _STEP_COMPLETE_COMMENT_RE = re.compile(
-    r"^\s*##\s+.+?\bcomplete\b\s+—\s+([a-zA-Z0-9_-]+)\s*$",
+    r"^\s*##\s+.+?\bcomplete\b\s*[-–—:]\s*`?@?([a-zA-Z0-9_-]+)`?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 _READY_FOR_COMMENT_RE = re.compile(
@@ -38,8 +38,6 @@ def extract_structured_completion_signals(comments: list[dict]) -> list[dict[str
     signals: list[dict[str, str]] = []
     for comment in comments or []:
         body = str(comment.get("body", "") or "")
-        if "_Automated comment from Nexus._" in body:
-            continue
 
         complete_match = _STEP_COMPLETE_COMMENT_RE.search(body)
         ready_match = _READY_FOR_COMMENT_RE.search(body)

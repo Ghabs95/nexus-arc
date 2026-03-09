@@ -137,10 +137,37 @@ async def reconcile_issue_from_signals(
 
     signals = extract_structured_completion_signals(data.get("comments", []))
     if not signals:
-        return {
-            "ok": False,
-            "error": f"No structured completion comments found for issue #{issue_num}.",
-        }
+        latest_completion = await _latest_completion_from_storage(str(issue_num))
+        completed_agent = str((latest_completion or {}).get("agent_type") or "").strip().lower()
+        next_agent = str((latest_completion or {}).get("next_agent") or "").strip().lower()
+        if completed_agent and next_agent and next_agent not in {
+            "none",
+            "n/a",
+            "null",
+            "done",
+            "end",
+            "finish",
+            "complete",
+            "",
+        }:
+            signals = [
+                {
+                    "completed_agent": completed_agent,
+                    "next_agent": next_agent,
+                    "comment_id": "db-fallback",
+                }
+            ]
+            logger.warning(
+                "Reconcile issue #%s: no structured comments found; using DB completion fallback %s -> %s",
+                issue_num,
+                completed_agent,
+                next_agent,
+            )
+        else:
+            return {
+                "ok": False,
+                "error": f"No structured completion comments found for issue #{issue_num}.",
+            }
 
     workflow_plugin = get_workflow_state_plugin(
         **workflow_state_plugin_kwargs,

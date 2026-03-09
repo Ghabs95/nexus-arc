@@ -97,8 +97,6 @@ def read_latest_structured_comment(
 
     for comment in reversed(comments or []):
         body = str(getattr(comment, "body", "") or "")
-        if "_Automated comment from Nexus._" in body:
-            continue
 
         complete_match = step_complete_comment_re.search(body)
         next_match = ready_for_comment_re.search(body)

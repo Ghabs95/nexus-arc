@@ -1,4 +1,5 @@
 import os
+import logging
 from collections.abc import Mapping
 from inspect import isawaitable
 from typing import Any
@@ -8,6 +9,8 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
 from nexus.core.command_visibility import filter_visible_commands
 from nexus.core.storage.capabilities import get_storage_capabilities
+
+logger = logging.getLogger(__name__)
 
 
 def build_post_init_with_scheduler(
@@ -88,7 +91,6 @@ def register_application_handlers(
         ("cancel", "cancel", "execute"),
         ("status", "status_handler", "execute"),
         ("inboxq", "inboxq_handler", "execute"),
-        ("inboxretry", "inboxretry_handler", "execute"),
         ("active", "active_handler", "execute"),
         ("progress", "progress_handler", "execute"),
         ("track", "track_handler", "execute"),
@@ -133,7 +135,16 @@ def register_application_handlers(
     for cmd, handler_name, action in command_specs:
         if cmd not in visible_commands:
             continue
-        app.add_handler(CommandHandler(cmd, _wrap(handlers[handler_name], command=cmd, action=action)))
+        try:
+            handler = handlers[handler_name]
+        except KeyError:
+            logger.warning(
+                "Skipping /%s command registration: missing handler key '%s'",
+                cmd,
+                handler_name,
+            )
+            continue
+        app.add_handler(CommandHandler(cmd, _wrap(handler, command=cmd, action=action)))
 
     app.add_handler(CallbackQueryHandler(_wrap(handlers["chat_callback_handler"]), pattern=r"^chat:"))
     app.add_handler(CallbackQueryHandler(_wrap(handlers["menu_callback_handler"]), pattern=r"^menu:"))
@@ -182,7 +193,6 @@ def build_command_handler_map(**handlers):
         "status": handlers["status_handler"],
         "active": handlers["active_handler"],
         "inboxq": handlers["inboxq_handler"],
-        "inboxretry": handlers["inboxretry_handler"],
         "stats": handlers["stats_handler"],
         "logs": handlers["logs_handler"],
         "logsfull": handlers["logsfull_handler"],

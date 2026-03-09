@@ -560,7 +560,7 @@ def test_codex_invoker_unavailable_and_success(monkeypatch, tmp_path):
         workspace_dir=str(tmp_path / "repo"),
         issue_num="83",
         log_subdir="nexus",
-        env={"FOO": "BAR", "OPENAI_API_KEY": "test-key"},
+        env={"FOO": "BAR", "OPENAI_API_KEY": "test-key", "NEXUS_REQUESTER_ID": "31efac50-8610-4b4b-9129-6a48e96a110c"},
     )
     assert pid == 4321
     assert captured["cmd"] == [
@@ -581,6 +581,11 @@ def test_codex_invoker_unavailable_and_success(monkeypatch, tmp_path):
     assert captured["bufsize"] == 1
     assert isinstance(captured["env"], dict) and captured["env"]["FOO"] == "BAR"
     assert captured["env"]["OPENAI_API_KEY"] == "test-key"
+    assert any(
+        "Codex auth diagnostic: issue=83 requester=31efac50... has_openai_key=True openai_key_len=8 env_has_openai=True" in message
+        for level, message in logger.messages
+        if level == "info"
+    )
     assert os.path.exists(non_empty_rollout)
     assert not os.path.exists(empty_rollout)
 

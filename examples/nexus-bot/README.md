@@ -10,7 +10,6 @@ Bootstrap/runtime lifecycle reference:
 
 - `src/`: Bot runtime, handlers, processor, webhook server, health check
 - `config/project_config.yaml`: NXS-only fallback config (not the primary runtime source)
-- `requirements.txt`: Runtime dependencies for this example
 - `nexus-*.service`: systemd service templates
 - `scripts/setup-webhook.sh`: Webhook service setup helper
 
@@ -41,10 +40,12 @@ The bot supports the following key commands across Telegram/Discord:
 - `/menu` - Interactive button menu
 
 ```bash
-cd /opt/nexus-arc/examples/nexus-bot
+cd /opt/nexus-arc
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[nexus-bot]"
+cd examples/nexus-bot
+pip install -e .
 cp .env.example .env
 ```
 

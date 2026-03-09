@@ -68,6 +68,19 @@ def invoke_codex_cli(
     effective_openai_key = str(
         (env or {}).get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
     ).strip()
+
+    requester_hint = str(
+        (env or {}).get("NEXUS_REQUESTER_ID") or os.getenv("NEXUS_REQUESTER_ID") or ""
+    ).strip()
+    masked_requester = f"{requester_hint[:8]}..." if len(requester_hint) > 8 else (requester_hint or "none")
+    logger.info(
+        "🔐 Codex auth diagnostic: issue=%s requester=%s has_openai_key=%s openai_key_len=%s env_has_openai=%s",
+        issue_num or "unknown",
+        masked_requester,
+        bool(effective_openai_key),
+        len(effective_openai_key),
+        bool(str((env or {}).get("OPENAI_API_KEY") or "").strip()),
+    )
     if not effective_openai_key:
         raise tool_unavailable_error(
             "Codex requires OPENAI_API_KEY for this launch context"

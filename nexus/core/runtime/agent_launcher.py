@@ -1137,6 +1137,8 @@ def invoke_ai_agent(
                     env_error,
                 )
                 return None, None
+            # Propagate requester context into provider invokers for masked auth diagnostics.
+            resolved_env["NEXUS_REQUESTER_ID"] = str(effective_requester_nexus_id)
             agent_env = resolved_env
         elif source != "webhook":
             logger.error(
@@ -1487,15 +1489,15 @@ def launch_next_agent(
         )
         return None, None
 
-    # Merge caller-provided exclude_tools with any persisted ones from previous runs
-    if exclude_tools is None:
-        launched_agents = HostStateManager.load_launched_agents(recent_only=False)
-        persisted = launched_agents.get(str(issue_number), {}).get("exclude_tools", [])
-        if persisted:
-            exclude_tools = list(persisted)
-            logger.info(
-                f"Restored persisted exclude_tools for issue #{issue_number}: {exclude_tools}"
-            )
+    # Merge caller-provided exclude_tools with any persisted ones from previous runs.
+    launched_agents = HostStateManager.load_launched_agents(recent_only=False)
+    persisted = launched_agents.get(str(issue_number), {}).get("exclude_tools", [])
+    merged_exclusions = _merge_excluded_tools(persisted, exclude_tools or [])
+    if merged_exclusions:
+        exclude_tools = merged_exclusions
+        logger.info(
+            f"Using merged exclude_tools for issue #{issue_number}: {exclude_tools}"
+        )
 
     issue_url = build_issue_url(repo, str(issue_number), PROJECT_CONFIG.get(project_root or "nexus"))
     agents_abs = os.path.join(BASE_DIR, config["agents_dir"])

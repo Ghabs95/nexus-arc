@@ -283,6 +283,64 @@ async def test_reconcile_issue_from_signals_uses_storage_completion_when_local_d
     assert out["completion_file"] == "dedup-83"
 
 
+async def test_reconcile_issue_from_signals_falls_back_to_db_completion_when_no_comments(
+    monkeypatch,
+):
+    from nexus.core.workflow_runtime import workflow_ops_service as svc
+
+    class _IssuePlugin:
+        def get_issue(self, issue_num, fields):  # noqa: ANN001
+            return {"comments": [], "title": "Issue"}
+
+    class _WorkflowPlugin:
+        def get_workflow_status(self, issue_num):  # noqa: ANN001
+            return {"state": "running", "current_agent": "developer", "current_step": 3, "total_steps": 7}
+
+        def complete_step_for_issue(
+            self, issue_number, completed_agent_type, outputs
+        ):  # noqa: ANN001
+            assert issue_number == "113"
+            assert completed_agent_type == "reviewer"
+            assert outputs.get("next_agent") == "deployer"
+            return {"ok": True}
+
+        def resume_workflow(self, issue_num):  # noqa: ANN001
+            return None
+
+        def pause_workflow(self, issue_num, reason):  # noqa: ANN001
+            return None
+
+    class _Storage:
+        async def list_completions(self, issue_number):  # noqa: ANN001
+            assert issue_number == "113"
+            return [
+                {
+                    "agent_type": "reviewer",
+                    "next_agent": "deployer",
+                    "status": "complete",
+                }
+            ]
+
+        async def save_completion(self, issue_number, agent_type, payload):  # noqa: ANN001
+            return "/tmp/completion_113"
+
+    monkeypatch.setattr(svc, "get_storage_backend", lambda: _Storage())
+    monkeypatch.setattr(svc, "get_workflow_state_plugin", lambda **kwargs: _WorkflowPlugin())
+
+    out = await svc.reconcile_issue_from_signals(
+        issue_num="113",
+        project_key="nexus",
+        repo="owner/repo",
+        get_issue_plugin=lambda repo: _IssuePlugin(),
+        extract_structured_completion_signals=lambda comments: [],
+        workflow_state_plugin_kwargs={},
+        write_local_completion_from_signal=lambda *_a, **_k: "/tmp/completion_summary_113.json",
+    )
+
+    assert out["ok"] is True
+    assert out["signals_applied"] == 1
+
+
 async def test_fetch_workflow_state_snapshot_uses_capabilities_for_mixed_mode(monkeypatch):
     from nexus.core.workflow_runtime import workflow_ops_service as svc
     from nexus.core.storage.capabilities import StorageCapabilities

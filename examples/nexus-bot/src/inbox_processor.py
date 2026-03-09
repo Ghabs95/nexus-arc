@@ -257,7 +257,7 @@ from nexus.core.workflow_runtime.workflow_unmapped_recovery_service import (
 from nexus.core.workspace import WorkspaceManager
 
 _STEP_COMPLETE_COMMENT_RE = re.compile(
-    r"^\s*##\s+.+?\bcomplete\b\s+—\s+([0-9a-z_-]+)\s*$",
+    r"^\s*##\s+.+?\bcomplete\b\s*[-–—:]\s*`?@?([0-9a-z_-]+)`?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 _READY_FOR_COMMENT_RE = re.compile(

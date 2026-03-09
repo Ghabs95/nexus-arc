@@ -237,6 +237,15 @@ async def wfstate_handler(
             "workflow state rows missing in backend. Run /reconcile then /continue "
             "(or /resume if the workflow is paused)."
         )
+    elif "workflow_vs_local" in (snapshot.get("drift_flags") or []):
+        recovery_hint = (
+            "workflow pointer lags completion signal. Run /continue to advance using completion next_agent "
+            "(or /continue <project> <issue#> from:<agent> to force a specific step)."
+        )
+    elif "workflow_vs_comment" in (snapshot.get("drift_flags") or []):
+        recovery_hint = "workflow differs from latest structured comment. Run /reconcile then /continue"
+    elif "local_vs_comment" in (snapshot.get("drift_flags") or []):
+        recovery_hint = "local completion disagrees with comment signal. Run /reconcile, then /wfstate"
 
     def _agent_label_with_canonical(display_value: str, canonical_value: str) -> str:
         display = str(display_value or "").strip()
@@ -292,7 +301,9 @@ async def wfstate_handler(
         "Latest Processor Signal (detail)": processor_line,
         "Recovery Hint": recovery_hint,
         "Drift Flags": (
-            ", ".join(snapshot["drift_flags"]) if snapshot.get("drift_flags") else "none"
+            ", ".join(f"`{flag}`" for flag in snapshot["drift_flags"])
+            if snapshot.get("drift_flags")
+            else "none"
         ),
     }
 
