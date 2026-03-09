@@ -47,7 +47,6 @@ def process_inbox_task_request(
     get_inbox_dir: Callable[[str, str], str],
     requester_context: dict[str, Any] | None = None,
     authorize_project: AuthorizeProjectFn | None = None,
-    images: list[bytes] | None = None,
     attachments: list[Any] | None = None,
 ) -> dict[str, Any]:
     normalized_project_hint = (
@@ -106,7 +105,7 @@ def process_inbox_task_request(
                 "task_type": task_type,
                 "task_name": result.get("task_name", ""),
                 "requester_context": requester_context if isinstance(requester_context, dict) else {},
-                "images": [__import__("base64").b64encode(img).decode("utf-8") for img in images] if images else None,
+                "attachments": attachments or None,
             }
             options = ", ".join(sorted(projects.keys()))
             logger.error(
@@ -154,16 +153,6 @@ def process_inbox_task_request(
                 "message": error_message or "🔒 Unauthorized project access.",
             }
 
-    if images:
-        content += "\n\n### Attachments\n"
-        import base64
-        for i, img in enumerate(images):
-            try:
-                b64 = base64.b64encode(img).decode("utf-8")
-                content += f"\n![Attachment {i+1}](data:image/png;base64,{b64})\n"
-            except Exception as e:
-                logger.error(f"Failed to encode attachment {i+1}: {e}")
-                
     inbox_backend = get_inbox_storage_backend()
     try:
         markdown_content = render_task_markdown(
@@ -275,11 +264,15 @@ def save_resolved_inbox_task_request(
     except TypeError:
         content = refine_task_description(str(pending_project.get("content", text)).strip(), project)
     task_name = str(pending_project.get("task_name", "")).strip()
-
-    if "images" in pending_project and pending_project["images"]:
-        content += "\n\n### Attachments\n"
-        for i, b64 in enumerate(pending_project["images"]):
-            content += f"\n![Attachment {i+1}](data:image/png;base64,{b64})\n"
+    resolved_attachments = (
+        attachments
+        if attachments is not None
+        else (
+            pending_project.get("attachments")
+            if isinstance(pending_project.get("attachments"), list)
+            else None
+        )
+    )
 
     if callable(authorize_project):
         try:
@@ -304,7 +297,7 @@ def save_resolved_inbox_task_request(
             content=str(content),
             raw_text=str(text),
             requester_context=resolved_requester_context,
-            attachments=attachments,
+            attachments=resolved_attachments,
         )
     except TypeError:
         markdown_content = render_task_markdown(

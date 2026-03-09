@@ -11,6 +11,7 @@ from nexus.core.completion import (
     generate_completion_instructions,
     scan_for_completions,
 )
+from nexus.core.completion_store import CompletionStore
 
 
 # ---------------------------------------------------------------------------
@@ -307,3 +308,45 @@ class TestDetectedCompletion:
             summary=s,
         )
         assert d.dedup_key == "5:design:completion_summary_5.json"
+
+
+class _FakeCompletionStorage:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def list_completions(self, issue_number=None):
+        return self.rows
+
+
+class TestCompletionStore:
+    def test_postgres_scan_uses_versioned_db_identity_for_dedup(self):
+        row_v1 = {
+            "_db_id": 10,
+            "_issue_number": "113",
+            "_agent_type": "developer",
+            "issue_number": "113",
+            "agent_type": "developer",
+            "status": "complete",
+            "summary": "v1",
+            "next_agent": "reviewer",
+            "_updated_at": "2026-03-09T00:06:03.000000+00:00",
+        }
+        storage = _FakeCompletionStorage([row_v1])
+        store = CompletionStore(backend="postgres", storage=storage)
+        first = store.scan("113")
+        assert len(first) == 1
+        first_key = first[0].dedup_key
+
+        row_v2 = {
+            **row_v1,
+            "summary": "v2",
+            "_updated_at": "2026-03-09T00:08:29.000000+00:00",
+        }
+        storage.rows = [row_v2]
+        second = store.scan("113")
+        assert len(second) == 1
+        second_key = second[0].dedup_key
+
+        assert first_key.startswith("113:developer:")
+        assert second_key.startswith("113:developer:")
+        assert first_key != second_key

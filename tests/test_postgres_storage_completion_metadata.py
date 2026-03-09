@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -130,3 +131,37 @@ def test_sync_list_completions_applies_completion_budget(
     row = hydrated[0]
     assert len(row["summary"]) <= 900
     assert len(row["key_findings"]) <= 9
+
+
+def test_sync_save_completion_upsert_refreshes_row_recency() -> None:
+    backend = PostgreSQLStorageBackend(connection_string="sqlite:///:memory:")
+    try:
+        backend._sync_save_completion(
+            "113",
+            "developer",
+            {"status": "complete", "summary": "initial implementation", "next_agent": "reviewer"},
+        )
+        time.sleep(0.01)
+        backend._sync_save_completion(
+            "113",
+            "reviewer",
+            {"status": "complete", "summary": "reviewed", "next_agent": "deployer"},
+        )
+
+        before = backend._sync_list_completions("113")
+        assert before[0]["agent_type"] == "reviewer"
+
+        time.sleep(0.01)
+        backend._sync_save_completion(
+            "113",
+            "developer",
+            {"status": "complete", "summary": "updated implementation", "next_agent": "reviewer"},
+        )
+
+        after = backend._sync_list_completions("113")
+        assert after[0]["agent_type"] == "developer"
+        assert after[0]["summary"] == "updated implementation"
+        assert after[0]["_created_at"] != before[0]["_created_at"]
+        assert after[0]["_updated_at"] == after[0]["_created_at"]
+    finally:
+        backend.close()

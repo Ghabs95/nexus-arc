@@ -171,7 +171,7 @@ def _bind_handlers(plugin: InteractiveClientPlugin) -> None:
     routing_deps = get_hands_free_routing_handler_deps()
 
     def _build_ctx(
-        images: list[bytes] | None = None,
+        attachments: list[Any] | None = None,
         *,
         user_id: str,
         text: str,
@@ -185,7 +185,7 @@ def _bind_handlers(plugin: InteractiveClientPlugin) -> None:
             args=list(args or []),
             raw_event=raw_event,
             user_state={},
-            images=images,
+            attachments=attachments,
         )
 
     def _wrap_command_handler(
@@ -200,8 +200,14 @@ def _bind_handlers(plugin: InteractiveClientPlugin) -> None:
             raw_event: Any = None,
             **_kwargs: Any,
         ) -> None:
-            images = _kwargs.get('images', [])
-            ctx = _build_ctx(user_id=user_id, text=text, args=context, raw_event=raw_event, images=images)
+            attachments = _kwargs.get("attachments")
+            ctx = _build_ctx(
+                user_id=user_id,
+                text=text,
+                args=context,
+                raw_event=raw_event,
+                attachments=attachments,
+            )
             if deps is None:
                 await handler(ctx)
                 return
@@ -266,8 +272,14 @@ def _bind_handlers(plugin: InteractiveClientPlugin) -> None:
         raw_event: Any = None,
         **_kwargs: Any,
     ) -> None:
-        images = _kwargs.get('images', [])
-        ctx = _build_ctx(user_id=user_id, text=text, args=[], raw_event=raw_event, images=images)
+        attachments = _kwargs.get("attachments")
+        ctx = _build_ctx(
+            user_id=user_id,
+            text=text,
+            args=[],
+            raw_event=raw_event,
+            attachments=attachments,
+        )
         await route_hands_free_text(ctx, routing_deps)
 
     plugin.register_message_handler(_message_handler)

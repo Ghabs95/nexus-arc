@@ -564,7 +564,6 @@ async def route_hands_free_text(ctx: InteractiveContext, deps: HandsFreeRoutingD
         process_inbox_task=deps.process_inbox_task,
         requester_context=requester_context,
         authorize_project=deps.authorize_project,
-        images=ctx.images,
         attachments=ctx.attachments or None,
     )
 

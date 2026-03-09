@@ -50,6 +50,7 @@ class StubInteractiveContext:
         self.text = update.message.text
         self.user_state = user_data
         self.raw_event = update
+        self.attachments = None
         self.replies = []
         self.edits = []
 

@@ -105,7 +105,6 @@ async def process_inbox_task(
     project_hint: str | None = None,
     requester_context: dict[str, Any] | None = None,
     authorize_project=None,
-    images: list[bytes] | None = None,
     attachments: list[Any] | None = None,
 ) -> dict[str, Any]:
     """
@@ -140,7 +139,6 @@ async def process_inbox_task(
         get_inbox_dir=get_inbox_dir,
         requester_context=requester_context,
         authorize_project=authorize_project,
-        images=images,
         attachments=attachments,
     )
 

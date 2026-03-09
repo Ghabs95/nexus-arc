@@ -439,6 +439,7 @@ class PostgreSQLStorageBackend(StorageBackend):
         payload.setdefault("_agent_type", str(agent_type))
 
         dedup_key = f"{issue_number}:{agent_type}:{status}"
+        now = datetime.now(tz=UTC)
         with Session(self._engine) as session:
             existing = (
                 session.query(_CompletionRow).filter(_CompletionRow.dedup_key == dedup_key).first()
@@ -447,6 +448,8 @@ class PostgreSQLStorageBackend(StorageBackend):
                 existing.data = json.dumps(payload, default=str)
                 existing.summary_text = payload.get("summary", "")
                 existing.status = status
+                # Keep row recency aligned with latest completion payload updates.
+                existing.created_at = now
             else:
                 session.add(
                     _CompletionRow(
@@ -456,6 +459,7 @@ class PostgreSQLStorageBackend(StorageBackend):
                         summary_text=payload.get("summary", ""),
                         data=json.dumps(payload, default=str),
                         dedup_key=dedup_key,
+                        created_at=now,
                     )
                 )
             session.commit()
@@ -492,6 +496,7 @@ class PostgreSQLStorageBackend(StorageBackend):
                 payload["_db_id"] = row.id
                 payload["_dedup_key"] = row.dedup_key
                 payload["_created_at"] = row.created_at.isoformat() if row.created_at else None
+                payload["_updated_at"] = payload["_created_at"]
                 results.append(payload)
             return results
 

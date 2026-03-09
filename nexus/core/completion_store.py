@@ -141,9 +141,12 @@ class CompletionStore:
         results: list[DetectedCompletion] = []
         for row in rows:
             summary = CompletionSummary.from_dict(row)
+            db_id = str(row.get("_db_id", "unknown"))
+            version_raw = str(row.get("_updated_at") or row.get("_created_at") or db_id)
+            version_token = "".join(ch if ch.isalnum() else "-" for ch in version_raw) or "v0"
             results.append(
                 DetectedCompletion(
-                    file_path=f"db://{row.get('_db_id', 'unknown')}",
+                    file_path=f"db://{db_id}_{version_token}",
                     issue_number=str(
                         row.get("issue_number")
                         or row.get("_issue_number")

@@ -135,6 +135,7 @@ from nexus.core.command_contract import (
     validate_required_command_interface,
 )
 from nexus.core.command_visibility import FILESYSTEM_ONLY_COMMANDS
+from nexus.core.models import ImageAttachment
 from nexus.core.storage.capabilities import get_storage_capabilities
 from nexus.core.chat.chat_context_service import (
     CHAT_MODES,
@@ -3257,15 +3258,17 @@ async def on_message(message: discord.Message):
         )
         return
 
-    images = []
+    attachments: list[ImageAttachment] = []
     if message.attachments:
         for attachment in message.attachments:
             if attachment.content_type and attachment.content_type.startswith("image/"):
-                try:
-                    img_data = await attachment.read()
-                    images.append(img_data)
-                except Exception as e:
-                    logger.error(f"Failed to read image attachment: {e}")
+                attachments.append(
+                    ImageAttachment(
+                        file_id=str(attachment.id),
+                        filename=attachment.filename or "image",
+                        mime_type=attachment.content_type or "image/*",
+                    )
+                )
 
     if await _handle_pending_feature_ideation(message, text):
         await status_msg.delete()
@@ -3334,7 +3337,7 @@ async def on_message(message: discord.Message):
             project_hint=project_key,
             requester_context=requester_context,
             authorize_project=_authorize_project_for_requester,
-            images=images if images else None,
+            attachments=attachments if attachments else None,
         )
         if not result.get("success") and "pending_resolution" in result:
             _pending_project_resolution[message.author.id] = result["pending_resolution"]
@@ -3409,7 +3412,7 @@ async def on_message(message: discord.Message):
         process_inbox_task=process_inbox_task,
         requester_context=requester_context,
         authorize_project=_authorize_project_for_requester,
-        images=images if images else None,
+        attachments=attachments if attachments else None,
     )
 
     # Store pending_resolution state if manual project selection is needed

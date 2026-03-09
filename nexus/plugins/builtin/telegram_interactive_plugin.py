@@ -1,11 +1,13 @@
 """Built-in plugin: Telegram interactive client channel."""
 
 import logging
+import os
 from collections.abc import Callable
 from typing import Any
 
 from nexus.adapters.notifications.base import Message
 from nexus.adapters.notifications.interactive import InteractiveClientPlugin
+from nexus.core.models import ImageAttachment
 
 logger = logging.getLogger(__name__)
 
@@ -82,19 +84,31 @@ class TelegramInteractivePlugin(InteractiveClientPlugin):
             async def _msg_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 user_id = str(update.effective_user.id) if update.effective_user else ""
                 text = update.message.text or update.message.caption or ""
-                images = []
+                attachments: list[ImageAttachment] = []
                 if update.message and update.message.photo:
                     try:
                         photo = update.message.photo[-1]
                         file = await context.bot.get_file(photo.file_id)
-                        image_bytes = await file.download_as_bytearray()
-                        images.append(bytes(image_bytes))
+                        file_path = getattr(file, "file_path", "") or ""
+                        filename = os.path.basename(file_path) or "photo.jpg"
+                        attachments.append(
+                            ImageAttachment(
+                                file_id=photo.file_id,
+                                filename=filename,
+                                mime_type="image/jpeg",
+                            )
+                        )
                     except Exception as e:
                         logger.error(f"Failed to read telegram photo: {e}")
 
                 # Ignore empty texts or commands, unless there's an image
-                if (text and not text.startswith("/")) or images:
-                    await self.message_handler(user_id=user_id, text=text, raw_event=update, images=images)  # type: ignore
+                if (text and not text.startswith("/")) or attachments:
+                    await self.message_handler(  # type: ignore
+                        user_id=user_id,
+                        text=text,
+                        raw_event=update,
+                        attachments=attachments,
+                    )
 
             self._app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), _msg_handler))
 

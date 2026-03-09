@@ -27,7 +27,6 @@ class InteractiveContext:
     raw_event: Any
     user_state: dict[str, Any]
     query: Optional["InteractiveQuery"] = None
-    images: list[bytes] | None = None
     attachments: list[Any] | None = None
 
     @property

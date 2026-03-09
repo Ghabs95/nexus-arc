@@ -8,6 +8,7 @@ from typing import Any
 
 from nexus.adapters.notifications.base import Message
 from nexus.adapters.notifications.interactive import InteractiveClientPlugin
+from nexus.core.models import ImageAttachment
 from nexus.plugins.base import PluginKind
 from nexus.plugins.registry import PluginRegistry
 
@@ -120,21 +121,26 @@ class DiscordInteractivePlugin(InteractiveClientPlugin):
                 return
 
             text = message.content or ""
-            
-            images = []
+
+            attachments: list[ImageAttachment] = []
             if message.attachments:
                 for attachment in message.attachments:
                     if attachment.content_type and attachment.content_type.startswith("image/"):
-                        try:
-                            image_bytes = await attachment.read()
-                            images.append(image_bytes)
-                        except Exception as e:
-                            logger.error(f"Failed to read discord attachment: {e}")
+                        attachments.append(
+                            ImageAttachment(
+                                file_id=str(attachment.id),
+                                filename=attachment.filename or "image",
+                                mime_type=attachment.content_type or "image/*",
+                            )
+                        )
 
             if self.message_handler:
                 try:
                     await self.message_handler(
-                        user_id=str(message.author.id), text=text, raw_event=message, images=images
+                        user_id=str(message.author.id),
+                        text=text,
+                        raw_event=message,
+                        attachments=attachments,
                     )
                 except Exception as e:
                     logger.error(f"Error in Discord message handler: {e}", exc_info=True)
