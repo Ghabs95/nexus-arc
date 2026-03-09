@@ -12,15 +12,15 @@ from nexus.core.models import (
     WorkflowState,
     WorkflowStep,
 )
-from nexus.core.workflow_runtime.completion_errors import (
-    CompletionSchemaError,
-    CompletionStaleError,
-)
 from nexus.core.process_orchestrator import (
     AgentRuntime,
     ProcessOrchestrator,
     _canonical_agent_ref,
     _is_terminal,
+)
+from nexus.core.workflow_runtime.completion_errors import (
+    CompletionSchemaError,
+    CompletionStaleError,
 )
 
 

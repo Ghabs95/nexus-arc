@@ -8,7 +8,6 @@ Covers:
 - WorkflowStateEnginePlugin._get_engine() picks up event_bus from config
 """
 
-import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,16 +16,11 @@ import pytest
 from nexus.adapters.storage.base import StorageBackend
 from nexus.core.events import (
     EventBus,
-    NexusEvent,
-    StepCompleted,
-    StepFailed,
-    StepSkipped,
     StepStarted,
     WorkflowCompleted,
     WorkflowFailed,
 )
-from nexus.core.models import Agent, AuditEvent, StepStatus, Workflow, WorkflowState, WorkflowStep
-from nexus.core.workflow import WorkflowEngine
+from nexus.core.models import Agent, AuditEvent, Workflow, WorkflowStep
 
 
 # ---------------------------------------------------------------------------
