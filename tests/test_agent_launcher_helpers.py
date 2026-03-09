@@ -1,6 +1,35 @@
 from types import SimpleNamespace
 
 
+def test_run_coro_sync_closes_coroutine_on_asyncio_run_failure(monkeypatch):
+    from nexus.core.runtime import agent_launcher
+
+    class _CoroLike:
+        def __init__(self):
+            self.closed = False
+
+        def __await__(self):
+            yield
+            return None
+
+        def close(self):
+            self.closed = True
+
+    leaked = _CoroLike()
+
+    monkeypatch.setattr(agent_launcher.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+
+    def _raise_runtime(_candidate):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(agent_launcher.asyncio, "run", _raise_runtime)
+
+    value = agent_launcher._run_coro_sync(lambda: leaked)
+
+    assert value is None
+    assert leaked.closed is True
+
+
 def test_get_sop_tier_from_issue_uses_sync_bridge(monkeypatch):
     from nexus.core.runtime import agent_launcher
 
@@ -17,6 +46,33 @@ def test_get_sop_tier_from_issue_uses_sync_bridge(monkeypatch):
 
     tier = agent_launcher.get_sop_tier_from_issue("110", project="nexus")
     assert tier == "full"
+
+
+def test_get_sop_tier_from_issue_does_not_call_asyncio_run_directly(monkeypatch):
+    from nexus.core.runtime import agent_launcher
+
+    class _Platform:
+        def get_issue(self, _issue_number):
+            return SimpleNamespace(labels=["workflow:shortened"])
+
+    bridge_calls = {"count": 0}
+
+    def _fake_sync_bridge(coro_factory):
+        bridge_calls["count"] += 1
+        return coro_factory()
+
+    monkeypatch.setattr(agent_launcher, "_run_coro_sync", _fake_sync_bridge)
+    monkeypatch.setattr(agent_launcher, "get_repo", lambda _project: "Ghabs95/nexus-arc")
+    monkeypatch.setattr(
+        "nexus.core.orchestration.nexus_core_helpers.get_git_platform",
+        lambda *_args, **_kwargs: _Platform(),
+    )
+    monkeypatch.setattr(agent_launcher, "_resolve_requester_token_for_issue", lambda *_a, **_k: None)
+
+    tier = agent_launcher.get_sop_tier_from_issue("113", project="nexus")
+
+    assert tier == "shortened"
+    assert bridge_calls["count"] == 1
 
 
 def test_resolve_requester_token_for_issue_falls_back_to_issue_url(monkeypatch):

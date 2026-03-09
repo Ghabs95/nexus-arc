@@ -12,6 +12,10 @@ from nexus.core.models import (
     WorkflowState,
     WorkflowStep,
 )
+from nexus.core.workflow_runtime.completion_errors import (
+    CompletionSchemaError,
+    CompletionStaleError,
+)
 from nexus.core.process_orchestrator import (
     AgentRuntime,
     ProcessOrchestrator,
@@ -232,9 +236,17 @@ class TestScanAndProcessCompletions:
     def _fake_summary(self, agent_type="developer", next_agent="reviewer", is_done=False):
         summary = MagicMock()
         summary.agent_type = agent_type
+        summary.step_id = agent_type
+        summary.step_num = 1
         summary.next_agent = next_agent
         summary.is_workflow_done = is_done
-        summary.to_dict.return_value = {"agent_type": agent_type}
+        summary.to_dict.return_value = {
+            "agent_type": agent_type,
+            "step_id": agent_type,
+            "step_num": 1,
+            "next_agent": next_agent,
+            "status": "complete",
+        }
         return summary
 
     def _fake_detection(
@@ -309,6 +321,23 @@ class TestScanAndProcessCompletions:
         assert runtime.launched == []
         assert len(runtime.finalized) == 1
         assert runtime.finalized[0]["issue"] == "42"
+
+    def test_engine_path_completed_adds_dedup_key(self):
+        """Terminal engine completions should be marked processed for replay dedup."""
+        runtime = StubRuntime()
+        wf = _make_workflow(WorkflowState.COMPLETED)
+
+        async def complete(issue, agent, outputs, event_id=""):
+            return wf
+
+        orc = _orchestrator(runtime, complete)
+        det = self._fake_detection(dedup_key="k-terminal")
+        dedup_seen = set()
+
+        with patch("nexus.core.process_orchestrator.scan_for_completions", return_value=[det]):
+            orc.scan_and_process_completions("/base", dedup_seen)
+
+        assert "k-terminal" in dedup_seen
 
     def test_engine_terminal_self_loop_label_finalizes(self):
         """Decorated final-step labels should not relaunch the same completed agent."""
@@ -436,7 +465,9 @@ class TestScanAndProcessCompletions:
         runtime = StubRuntime()
 
         async def complete(issue, agent, outputs, event_id=""):
-            raise ValueError("Completion agent mismatch for issue #42")
+            raise CompletionStaleError(
+                "Completion stale/mismatched for issue #42: completed_agent=developer, active_agent=reviewer"
+            )
 
         orc = _orchestrator(runtime, complete)
         det = self._fake_detection(agent_type="developer", next_agent="debug")
@@ -449,16 +480,38 @@ class TestScanAndProcessCompletions:
         assert runtime.launched == []
         assert det.dedup_key in dedup_seen
 
+    def test_engine_invalid_schema_error_alerts_and_skips_autochain(self):
+        """Invalid completion schema should be rejected explicitly (not stale)."""
+        runtime = StubRuntime()
+
+        async def complete(issue, agent, outputs, event_id=""):
+            raise CompletionSchemaError(
+                "Completion invalid schema for issue #42: step_id='', step_num=0"
+            )
+
+        orc = _orchestrator(runtime, complete)
+        det = self._fake_detection(agent_type="developer", next_agent="debug", dedup_key="k-schema")
+        dedup_seen = set()
+
+        with patch("nexus.core.process_orchestrator.scan_for_completions", return_value=[det]):
+            orc.scan_and_process_completions("/base", dedup_seen)
+
+        assert len(runtime.posted_comments) == 0
+        assert runtime.launched == []
+        assert "k-schema" in dedup_seen
+        assert any("Invalid completion schema rejected for issue #42" in alert for alert in runtime.alerts)
+
     def test_closed_before_comment_blocks_post_and_chain(self):
-        """If issue closes after completion step, skip comment and auto-chain."""
+        """Closed issues still advance workflow state, but skip comment and auto-chain."""
         runtime = StubRuntime()
         wf = _make_workflow(WorkflowState.RUNNING)
         wf.steps[0].agent.name = "reviewer"
+        complete_calls = []
 
-        checks = iter([True, False])
-        runtime._is_issue_open_fn = lambda issue, repo: next(checks, False)
+        runtime._is_issue_open_fn = lambda issue, repo: False
 
         async def complete(issue, agent, outputs, event_id=""):
+            complete_calls.append((issue, agent, outputs, event_id))
             return wf
 
         orc = _orchestrator(runtime, complete)
@@ -468,6 +521,7 @@ class TestScanAndProcessCompletions:
         with patch("nexus.core.process_orchestrator.scan_for_completions", return_value=[det]):
             orc.scan_and_process_completions("/base", dedup_seen)
 
+        assert len(complete_calls) == 1
         assert runtime.posted_comments == []
         assert runtime.launched == []
         assert "k-closed-race" in dedup_seen

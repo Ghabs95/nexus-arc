@@ -203,7 +203,13 @@ async def test_reconcile_issue_from_signals_uses_local_completion_writer_when_en
         repo="owner/repo",
         get_issue_plugin=lambda repo: _IssuePlugin(),
         extract_structured_completion_signals=lambda comments: [
-            {"completed_agent": "triage", "next_agent": "developer", "comment_id": "c1"}
+            {
+                "completed_agent": "triage",
+                "next_agent": "developer",
+                "step_id": "triage",
+                "step_num": "1",
+                "comment_id": "c1",
+            }
         ],
         workflow_state_plugin_kwargs={},
         write_local_completion_from_signal=lambda project_key, issue_num, signal: (
@@ -271,7 +277,13 @@ async def test_reconcile_issue_from_signals_uses_storage_completion_when_local_d
         repo="owner/repo",
         get_issue_plugin=lambda repo: _IssuePlugin(),
         extract_structured_completion_signals=lambda comments: [
-            {"completed_agent": "developer", "next_agent": "qa", "comment_id": "c2"}
+            {
+                "completed_agent": "developer",
+                "next_agent": "qa",
+                "step_id": "develop",
+                "step_num": "2",
+                "comment_id": "c2",
+            }
         ],
         workflow_state_plugin_kwargs={},
         write_local_completion_from_signal=lambda *args: ().throw(
@@ -301,6 +313,8 @@ async def test_reconcile_issue_from_signals_falls_back_to_db_completion_when_no_
         ):  # noqa: ANN001
             assert issue_number == "113"
             assert completed_agent_type == "reviewer"
+            assert outputs.get("step_id") == "review"
+            assert outputs.get("step_num") == 3
             assert outputs.get("next_agent") == "deployer"
             return {"ok": True}
 
@@ -316,6 +330,8 @@ async def test_reconcile_issue_from_signals_falls_back_to_db_completion_when_no_
             return [
                 {
                     "agent_type": "reviewer",
+                    "step_id": "review",
+                    "step_num": 3,
                     "next_agent": "deployer",
                     "status": "complete",
                 }

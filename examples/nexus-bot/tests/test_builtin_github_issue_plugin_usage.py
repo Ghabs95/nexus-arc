@@ -1,11 +1,10 @@
 from unittest.mock import MagicMock
 
-from nexus.plugins.builtin.github_issue_plugin import GitHubIssueCLIPlugin
+from nexus.plugins.builtin.github_issue_plugin import GitHubIssuePlugin
 
 
 def test_example_usage_get_issue_requests_comments_in_api_mode(monkeypatch):
-    monkeypatch.setenv("NEXUS_GIT_PLATFORM_TRANSPORT", "api")
-    plugin = GitHubIssueCLIPlugin({"repo": "owner/repo", "max_attempts": 2, "timeout": 30})
+    plugin = GitHubIssuePlugin({"repo": "owner/repo"})
 
     platform = MagicMock()
     platform._sync_request.side_effect = [
@@ -26,7 +25,7 @@ def test_example_usage_get_issue_requests_comments_in_api_mode(monkeypatch):
             }
         ],
     ]
-    monkeypatch.setattr(plugin, "_platform", lambda: platform)
+    monkeypatch.setattr(plugin, "_platform", lambda issue_number=None: platform)
 
     issue = plugin.get_issue("113", ["title", "comments"])
 

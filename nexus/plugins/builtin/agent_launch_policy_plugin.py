@@ -42,6 +42,8 @@ class AgentLaunchPolicyPlugin:
         nexus_dir: str = ".nexus",
         project_name: str = "",
         repo_path: str = "",
+        step_id: str = "",
+        step_num: int = 0,
     ) -> str:
         """Build launch prompt used by orchestrator agent invocation."""
         workflow_type = WorkflowDefinition.normalize_workflow_type(tier_name)
@@ -73,6 +75,8 @@ class AgentLaunchPolicyPlugin:
             workflow_type=workflow_type,
             nexus_dir=nexus_dir,
             project_name=project_name,
+            step_id=step_id,
+            step_num=step_num,
         )
         agent_identity = self._resolve_launch_agent_identity(project_name=project_name)
         if alignment_output_requirements:
@@ -290,6 +294,8 @@ class AgentLaunchPolicyPlugin:
         workflow_type: str,
         nexus_dir: str,
         project_name: str = "",
+        step_id: str = "",
+        step_num: int = 0,
     ) -> str:
         """Return instructions for issue completion comment and summary file."""
         issue_match = re.search(r"/issues/(\d+)", issue_url or "")
@@ -304,6 +310,8 @@ class AgentLaunchPolicyPlugin:
         return generate_completion_instructions(
             issue_number=issue_num,
             agent_type=agent_type,
+            step_id=step_id,
+            step_num=step_num,
             workflow_steps_text=workflow_steps,
             nexus_dir=nexus_dir,
             project_name=project_name,

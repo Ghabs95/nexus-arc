@@ -88,6 +88,18 @@ def _normalize_findings(value: Any) -> list[str]:
     return findings
 
 
+def _normalize_step_id(value: Any) -> str:
+    return _budget_token_field(value, max_chars=120)
+
+
+def _normalize_step_num(value: Any) -> int:
+    try:
+        step_num = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return step_num if step_num > 0 else 0
+
+
 def _normalize_effort_breakdown(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
@@ -115,6 +127,8 @@ def budget_completion_payload(data: dict[str, Any]) -> dict[str, Any]:
     payload = dict(data or {})
     payload["status"] = _budget_token_field(payload.get("status", "complete"), max_chars=32)
     payload["agent_type"] = _budget_token_field(payload.get("agent_type", "unknown"), max_chars=80)
+    payload["step_id"] = _normalize_step_id(payload.get("step_id", ""))
+    payload["step_num"] = _normalize_step_num(payload.get("step_num", 0))
     payload["summary"] = _budget_text_field(
         payload.get("summary", ""),
         max_chars=_COMPLETION_SUMMARY_MAX_CHARS,
@@ -133,6 +147,8 @@ def budget_completion_payload(data: dict[str, Any]) -> dict[str, Any]:
         if key in {
             "status",
             "agent_type",
+            "step_id",
+            "step_num",
             "summary",
             "key_findings",
             "next_agent",
@@ -160,6 +176,8 @@ class CompletionSummary:
     Attributes:
         status: Agent outcome, typically "complete" or "error".
         agent_type: The agent_type that produced this summary.
+        step_id: Canonical workflow step identifier for this completion.
+        step_num: Workflow step number for this completion.
         summary: One-line human-readable summary.
         key_findings: List of notable findings / outputs.
         next_agent: The agent_type that should run next, or "" if workflow is done.
@@ -170,6 +188,8 @@ class CompletionSummary:
 
     status: str = "complete"
     agent_type: str = "unknown"
+    step_id: str = ""
+    step_num: int = 0
     summary: str = ""
     key_findings: list[str] = field(default_factory=list)
     next_agent: str = ""
@@ -200,6 +220,8 @@ class CompletionSummary:
         return CompletionSummary(
             status=str(payload.get("status", "complete")),
             agent_type=str(payload.get("agent_type", "unknown")),
+            step_id=str(payload.get("step_id", "")),
+            step_num=_normalize_step_num(payload.get("step_num", 0)),
             summary=str(payload.get("summary", "")),
             key_findings=_normalize_findings(payload.get("key_findings", [])),
             next_agent=str(payload.get("next_agent", "")),
@@ -217,6 +239,8 @@ class CompletionSummary:
             {
                 "status": self.status,
                 "agent_type": self.agent_type,
+                "step_id": self.step_id,
+                "step_num": self.step_num,
                 "summary": self.summary,
                 "key_findings": self.key_findings,
                 "next_agent": self.next_agent,
@@ -251,6 +275,10 @@ def build_completion_comment(completion: CompletionSummary) -> str:
     """
     sections: list[str] = []
     sections.append("### ✅ Agent Completed")
+    if completion.step_id:
+        sections.append(f"**Step ID:** `{completion.step_id}`")
+    if completion.step_num > 0:
+        sections.append(f"**Step Num:** {completion.step_num}")
 
     summary_text = _budget_text_field(
         completion.summary,
@@ -297,6 +325,8 @@ def build_completion_comment(completion: CompletionSummary) -> str:
 def generate_completion_instructions(
     issue_number: str,
     agent_type: str,
+    step_id: str,
+    step_num: int,
     workflow_steps_text: str = "",
     nexus_dir: str = ".nexus",
     project_name: str = "",
@@ -341,6 +371,8 @@ def generate_completion_instructions(
             f"  -d '{{\n"
             f'    "issue_number": "{issue_number}",\n'
             f'    "agent_type": "{agent_type}",\n'
+            f'    "step_id": "{step_id}",\n'
+            f'    "step_num": {step_num},\n'
             f'    "status": "complete",\n'
             f'    "summary": "<one-line summary of what you did>",\n'
             f'    "key_findings": ["<finding 1>", "<finding 2>"],\n'
@@ -364,7 +396,7 @@ def generate_completion_instructions(
             f"(the top-level directory you were launched in). "
             f"Do NOT create a new `{nexus_dir}/` folder inside sub-repos or subdirectories.\n\n"
             + completions_script
-            + f'python3 -c \'import json,os; p=os.path.join(os.environ["COMPLETIONS_DIR"], "completion_summary_{issue_number}.json"); d={{"status":"complete","agent_type":"{agent_type}","summary":"<one-line summary of what you did>","key_findings":["<finding 1>","<finding 2>"],"next_agent":"<agent_type from workflow steps — NOT the step id or display name>"}}; open(p, "w", encoding="utf-8").write(json.dumps(d, indent=2))\'\n'
+            + f'python3 -c \'import json,os; p=os.path.join(os.environ["COMPLETIONS_DIR"], "completion_summary_{issue_number}.json"); d={{"status":"complete","agent_type":"{agent_type}","step_id":"{step_id}","step_num":{step_num},"summary":"<one-line summary of what you did>","key_findings":["<finding 1>","<finding 2>"],"next_agent":"<agent_type from workflow steps — NOT the step id or display name>"}}; open(p, "w", encoding="utf-8").write(json.dumps(d, indent=2))\'\n'
             f"```\n\n"
             f"Replace the `<placeholder>` values with real data from your analysis."
         )
@@ -373,11 +405,14 @@ def generate_completion_instructions(
         "**WHEN YOU FINISH — TWO MANDATORY DELIVERABLES:**\n\n"
         "Follow the workflow mapping above and produce both deliverables exactly once.\n"
         "Do not invoke other agents. Keep your completion concise and concrete.\n\n"
+        "Use the runtime `step_id` and `step_num` values exactly as provided.\n\n"
     )
     runtime_context = (
         f"Runtime context:\n"
         f"- issue_number: {issue_number}\n"
         f"- agent_type: {agent_type}\n"
+        f"- step_id: {step_id}\n"
+        f"- step_num: {step_num}\n"
         f"- completion_backend: {completion_backend}\n\n"
     )
 
@@ -394,6 +429,8 @@ def generate_completion_instructions(
         f"**Severity:** <Critical|High|Medium|Low>\n"
         f"**Target Sub-Repo:** `<repo-name>`\n"
         f"**Workflow:** <workflow type>\n\n"
+        f"**Step ID:** `{step_id}`\n"
+        f"**Step Num:** {step_num}\n\n"
         f"### Findings\n\n"
         f"<Describe what you analyzed/discovered. Use bullet points for key findings:>\n"
         f"- Finding 1\n"
@@ -408,6 +445,7 @@ def generate_completion_instructions(
         f"**IMPORTANT:** The comment must contain real findings from YOUR analysis, "
         f"not placeholder text.\n"
         f"Adapt the template to your role ({agent_type}). Include concrete details.\n"
+        f"Do not change `Step ID` or `Step Num`; they must match runtime context exactly.\n"
         f"The header must end with your current runtime agent_type token: `{agent_type}`.\n"
         f"For the 'Ready for @...' line, use the **Display Names** mapping from "
         f"the workflow steps above (e.g., `Ready for **@Developer**`). "

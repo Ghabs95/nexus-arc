@@ -1211,56 +1211,6 @@ def health_check():
     return jsonify({"status": "healthy", "service": "nexus-webhook", "version": "1.0.0"}), 200
 
 
-@app.route("/completion", methods=["POST"])
-def completion():
-    """Push-based completion endpoint.
-
-    Agents POST their completion JSON here instead of writing a file,
-    enabling instant handoff without polling latency.
-
-    Expected payload:
-        {
-            "issue_number": "42",
-            "agent_type": "developer",
-            "next_agent": "reviewer",
-            "summary": "..."
-        }
-    """
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-    except Exception:
-        data = {}
-
-    issue_number = str(data.get("issue_number", "")).strip()
-    next_agent = str(data.get("next_agent", "")).strip()
-    agent_type = str(data.get("agent_type", "unknown")).strip()
-    data.get("summary", "")
-
-    if not issue_number or not next_agent:
-        return jsonify({"status": "error", "message": "issue_number and next_agent required"}), 400
-
-    logger.info(
-        f"📬 Push completion received: issue #{issue_number}, "
-        f"agent={agent_type}, next={next_agent}"
-    )
-
-    try:
-        pid, _ = launch_next_agent(issue_number, next_agent, trigger_source="push_completion")
-        return (
-            jsonify(
-                {
-                    "status": "queued" if pid else "skipped",
-                    "issue_number": issue_number,
-                    "next_agent": next_agent,
-                }
-            ),
-            200,
-        )
-    except Exception as exc:
-        logger.error(f"Failed to queue next agent from push completion: {exc}")
-        return jsonify({"status": "error", "message": str(exc)}), 500
-
-
 @app.route("/api/v1/completion", methods=["POST"])
 def api_v1_completion():
     """Persist-and-acknowledge completion endpoint (postgres backend).
@@ -1279,13 +1229,18 @@ def api_v1_completion():
 
     issue_number = str(data.get("issue_number", "")).strip()
     agent_type = str(data.get("agent_type", "")).strip()
+    step_id = str(data.get("step_id", "")).strip()
+    try:
+        step_num = int(data.get("step_num", 0) or 0)
+    except (TypeError, ValueError):
+        step_num = 0
 
-    if not issue_number or not agent_type:
+    if not issue_number or not agent_type or not step_id or step_num <= 0:
         return (
             jsonify(
                 {
                     "status": "error",
-                    "message": "issue_number and agent_type are required",
+                    "message": "issue_number, agent_type, step_id, and step_num are required",
                 }
             ),
             400,

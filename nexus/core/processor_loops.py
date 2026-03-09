@@ -35,9 +35,9 @@ def run_processor_loop(
 
         current_time = time_module.time()
         if current_time - last_check >= check_interval:
-            check_stuck_agents()
-            check_agent_comments()
             check_completed_agents()
+            check_agent_comments()
+            check_stuck_agents()
             merge_queue_auto_merge_once()
             if callable(cleanup_stale_worktrees_once):
                 cleanup_stale_worktrees_once()

@@ -40,25 +40,25 @@ from nexus.plugins.builtin.github_issue_cli_plugin import (
     GitHubIssueCLIPlugin,
 )
 from nexus.plugins.builtin.github_issue_cli_plugin import (
-    register_plugins as register_github_issue_plugins,
+    register_plugins as register_github_issue_cli_plugins,
 )
 from nexus.plugins.builtin.github_issue_plugin import (
     GitHubIssuePlugin,
 )
 from nexus.plugins.builtin.github_issue_plugin import (
-    register_plugins as register_github_issue_plugins,
+    register_plugins as register_github_issue_api_plugins,
 )
 from nexus.plugins.builtin.gitlab_issue_cli_plugin import (
     GitLabIssueCLIPlugin,
 )
 from nexus.plugins.builtin.gitlab_issue_cli_plugin import (
-    register_plugins as register_gitlab_issue_plugins,
+    register_plugins as register_gitlab_issue_cli_plugins,
 )
 from nexus.plugins.builtin.gitlab_issue_plugin import (
     GitLabIssuePlugin,
 )
 from nexus.plugins.builtin.gitlab_issue_plugin import (
-    register_plugins as register_gitlab_issue_plugins,
+    register_plugins as register_gitlab_issue_api_plugins,
 )
 from nexus.plugins.builtin.json_state_plugin import (
     JsonStateStorePlugin,
@@ -95,9 +95,6 @@ from nexus.plugins.builtin.workflow_monitor_policy_plugin import (
 )
 from nexus.plugins.builtin.workflow_monitor_policy_plugin import (
     WorkflowMonitorPolicyPlugin as GithubWorkflowPolicyPlugin,
-)
-from nexus.plugins.builtin.workflow_monitor_policy_plugin import (
-    register_plugins as register_workflow_monitor_policy_plugins,
 )
 from nexus.plugins.builtin.workflow_monitor_policy_plugin import (
     register_plugins as register_workflow_monitor_policy_plugins,
@@ -140,10 +137,10 @@ __all__ = [
     "DiscordInteractivePlugin",
     "register_ai_runtime_plugins",
     "register_agent_launch_policy_plugins",
-    "register_github_issue_plugins",
-    "register_github_issue_plugins",
-    "register_gitlab_issue_plugins",
-    "register_gitlab_issue_plugins",
+    "register_github_issue_api_plugins",
+    "register_github_issue_cli_plugins",
+    "register_gitlab_issue_api_plugins",
+    "register_gitlab_issue_cli_plugins",
     "register_json_state_plugins",
     "register_telegram_notification_plugins",
     "register_telegram_interactive_plugins",
@@ -153,7 +150,6 @@ __all__ = [
     "register_runtime_ops_plugins",
     "register_workflow_policy_plugins",
     "register_workflow_state_engine_plugins",
-    "register_workflow_monitor_policy_plugins",
     "register_git_webhook_policy_plugins",
     "register_workflow_monitor_policy_plugins",
 ]

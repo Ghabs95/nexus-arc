@@ -40,6 +40,10 @@ from nexus.core.completion import (
     build_completion_comment,
     scan_for_completions,
 )
+from nexus.core.workflow_runtime.completion_errors import (
+    CompletionSchemaError,
+    CompletionStaleError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -405,15 +409,6 @@ class ProcessOrchestrator:
                 completed_agent = summary.agent_type
                 logger.info(f"📋 Agent completed for issue #{issue_num} ({completed_agent})")
 
-                issue_open = self._runtime.is_issue_open(issue_num, repo)
-                if issue_open is False:
-                    logger.info(
-                        "Skipping auto-completion processing for closed issue #%s",
-                        issue_num,
-                    )
-                    dedup_seen.add(comment_key)
-                    continue
-
                 # Ask the workflow engine what happens next.
                 engine_workflow = asyncio.run(
                     self._complete_step_fn(
@@ -440,6 +435,7 @@ class ProcessOrchestrator:
                             project_name or "",
                             reason=str(engine_workflow.state.value),
                         )
+                        dedup_seen.add(comment_key)
                         continue
 
                     next_agent = engine_workflow.active_agent_type
@@ -469,6 +465,7 @@ class ProcessOrchestrator:
                             project_name or "",
                             reason="engine-terminal-self-loop",
                         )
+                        dedup_seen.add(comment_key)
                         continue
 
                     logger.info(f"🔀 Engine routed #{issue_num}: {completed_agent} → {next_agent}")
@@ -483,6 +480,7 @@ class ProcessOrchestrator:
                             project_name or "",
                             reason="manual",
                         )
+                        dedup_seen.add(comment_key)
                         continue
 
                     next_agent = summary.next_agent.strip()
@@ -494,6 +492,7 @@ class ProcessOrchestrator:
                             project_name or "",
                             reason="terminal-agent-ref",
                         )
+                        dedup_seen.add(comment_key)
                         continue
 
                 comment_summary = summary
@@ -501,11 +500,16 @@ class ProcessOrchestrator:
                     comment_summary = type(summary)(
                         status=summary.status,
                         agent_type=summary.agent_type,
+                        step_id=summary.step_id,
+                        step_num=summary.step_num,
                         summary=summary.summary,
                         key_findings=summary.key_findings,
                         next_agent=next_agent,
                         verdict=summary.verdict,
                         effort_breakdown=summary.effort_breakdown,
+                        alignment_score=summary.alignment_score,
+                        alignment_summary=summary.alignment_summary,
+                        alignment_artifacts=summary.alignment_artifacts,
                         raw=summary.raw,
                     )
 
@@ -579,7 +583,7 @@ class ProcessOrchestrator:
                     self._runtime.send_alert(fail_msg)
 
             except Exception as exc:
-                if isinstance(exc, ValueError) and "Completion agent mismatch" in str(exc):
+                if isinstance(exc, CompletionStaleError):
                     if comment_key:
                         dedup_seen.add(comment_key)
                     logger.info(
@@ -587,6 +591,21 @@ class ProcessOrchestrator:
                         detection.issue_number,
                         detection.summary.agent_type,
                         exc,
+                    )
+                    continue
+                if isinstance(exc, CompletionSchemaError):
+                    if comment_key:
+                        dedup_seen.add(comment_key)
+                    logger.warning(
+                        "Rejected invalid completion schema for issue #%s (%s): %s",
+                        detection.issue_number,
+                        detection.summary.agent_type,
+                        exc,
+                    )
+                    self._runtime.send_alert(
+                        "⚠️ Invalid completion schema rejected for issue "
+                        f"#{detection.issue_number} ({detection.summary.agent_type}). "
+                        "Ensure the completion payload includes valid step_id and step_num."
                     )
                     continue
                 logger.warning(
@@ -1118,4 +1137,3 @@ def _canonical_agent_ref(agent_ref: str | None) -> str:
         raw = alias_match.group(1).strip()
 
     return raw.lower()
-

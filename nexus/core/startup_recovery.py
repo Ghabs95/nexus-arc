@@ -33,6 +33,8 @@ def build_startup_workflow_payload_loader(
                 agent = getattr(step, "agent", None)
                 steps_payload.append(
                     {
+                        "step_num": int(getattr(step, "step_num", 0) or 0),
+                        "name": str(getattr(step, "name", "") or ""),
                         "status": str(
                             getattr(
                                 getattr(step, "status", None),
@@ -114,7 +116,9 @@ def reconcile_completion_signals_on_startup(
             continue
 
         expected_running_agent = ""
-        for step in payload.get("steps", []):
+        expected_running_step_id = ""
+        expected_running_step_num = 0
+        for idx, step in enumerate(payload.get("steps", []), start=1):
             if not isinstance(step, dict):
                 continue
             if str(step.get("status", "")).strip().lower() != "running":
@@ -125,10 +129,17 @@ def reconcile_completion_signals_on_startup(
             expected_running_agent = normalize_agent_reference(
                 str(agent.get("name") or agent.get("display_name") or "")
             ).lower()
+            expected_running_step_id = normalize_agent_reference(str(step.get("name") or "")).lower()
+            try:
+                expected_running_step_num = int(step.get("step_num", 0) or 0)
+            except (TypeError, ValueError):
+                expected_running_step_num = 0
+            if expected_running_step_num <= 0:
+                expected_running_step_num = idx
             if expected_running_agent:
                 break
 
-        if not expected_running_agent:
+        if not expected_running_agent or not expected_running_step_id or expected_running_step_num <= 0:
             continue
 
         metadata = payload.get("metadata", {}) if isinstance(payload.get("metadata"), dict) else {}
@@ -144,20 +155,33 @@ def reconcile_completion_signals_on_startup(
         drifts = []
         local_agent = normalize_agent_reference((local_signal or {}).get("agent_type", "")).lower()
         local_next = (local_signal or {}).get("next_agent", "")
+        local_step_id = normalize_agent_reference((local_signal or {}).get("step_id", "")).lower()
+        try:
+            local_step_num = int((local_signal or {}).get("step_num", 0) or 0)
+        except (TypeError, ValueError):
+            local_step_num = 0
         comment_next = (comment_signal or {}).get("next_agent", "")
         comment_completed = (comment_signal or {}).get("completed_agent", "")
+        comment_step_id = normalize_agent_reference((comment_signal or {}).get("step_id", "")).lower()
+        try:
+            comment_step_num = int((comment_signal or {}).get("step_num", 0) or 0)
+        except (TypeError, ValueError):
+            comment_step_num = 0
 
         if (
             comment_signal
             and comment_completed
             and comment_completed == expected_running_agent
+            and comment_step_id == expected_running_step_id
+            and comment_step_num == expected_running_step_num
             and comment_next
-            and not is_terminal_agent_reference(comment_next)
         ):
             try:
                 outputs = {
                     "status": "complete",
                     "agent_type": comment_completed,
+                    "step_id": comment_step_id,
+                    "step_num": comment_step_num,
                     "next_agent": comment_next,
                     "summary": (
                         f"Auto-reconciled on startup from comment "
@@ -186,6 +210,8 @@ def reconcile_completion_signals_on_startup(
                                 {
                                     "status": "complete",
                                     "agent_type": comment_completed,
+                                    "step_id": comment_step_id,
+                                    "step_num": comment_step_num,
                                     "summary": outputs["summary"],
                                     "key_findings": [
                                         "Startup auto-reconciled from structured comment"
@@ -219,13 +245,16 @@ def reconcile_completion_signals_on_startup(
             not comment_signal
             and local_agent
             and local_agent == expected_running_agent
+            and local_step_id == expected_running_step_id
+            and local_step_num == expected_running_step_num
             and local_next
-            and not is_terminal_agent_reference(local_next)
         ):
             try:
                 outputs = {
                     "status": "complete",
                     "agent_type": local_agent,
+                    "step_id": local_step_id,
+                    "step_num": local_step_num,
                     "next_agent": local_next,
                     "summary": "Auto-reconciled on startup from local completion signal",
                     "source": "startup-local-auto-reconcile",

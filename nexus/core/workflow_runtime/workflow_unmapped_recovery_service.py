@@ -84,6 +84,13 @@ def recover_unmapped_issues_from_completions(
             continue
 
         workflow_id = get_workflow_id(issue_num)
+        if not workflow_id:
+            logger.info(
+                "Skipping completion-signal recovery for issue #%s: strict completion "
+                "requires an active workflow mapping (step_id/step_num).",
+                issue_num,
+            )
+            continue
         expected_running_agent = runtime.get_expected_running_agent(issue_num)
         workflow_state = runtime.get_workflow_state(issue_num)
         if workflow_state in {"PAUSED", "STOPPED", "COMPLETED", "FAILED", "CANCELLED"}:

@@ -81,3 +81,29 @@ def test_run_processor_loop_postgres_path():
 
     assert calls["pg"] == 2
     assert calls["fs"] == 0
+
+
+def test_run_processor_loop_runs_completion_before_stuck_detection():
+    order = []
+    fake_time = _FakeTime()
+
+    try:
+        run_processor_loop(
+            logger=None,
+            base_dir="/tmp/base",
+            sleep_interval=61,
+            check_interval=60,
+            get_inbox_storage_backend=lambda: "filesystem",
+            drain_postgres_inbox_queue=lambda: None,
+            process_filesystem_inbox_once=lambda _base: None,
+            check_stuck_agents=lambda: order.append("stuck"),
+            check_agent_comments=lambda: order.append("comments"),
+            check_completed_agents=lambda: order.append("completed"),
+            merge_queue_auto_merge_once=lambda: order.append("merge"),
+            cleanup_stale_worktrees_once=lambda: order.append("cleanup"),
+            time_module=fake_time,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "stop-loop"
+
+    assert order[:5] == ["completed", "comments", "stuck", "merge", "cleanup"]

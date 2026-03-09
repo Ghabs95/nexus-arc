@@ -50,12 +50,16 @@ python ../translator/to_markdown.py triage-agent.yaml > TRIAGE-AGENT.md
 When an agent completes its work, it should write a `completion_summary.json` file in the task logs directory. This file
 provides structured information about the work completed and recommendations for the next step.
 
-**File location:** `.nexus/tasks/completions/completion_summary_{issue_number}.json`
+**File location:** `.nexus/tasks/{project}/completions/completion_summary_{issue_number}.json`
 
 **Schema:**
 
 ```json
 {
+  "issue_number": "42",
+  "agent_type": "developer",
+  "step_id": "implement_auth",
+  "step_num": 2,
   "status": "complete",
   "summary": "Brief description of work completed",
   "key_findings": [
@@ -76,6 +80,10 @@ provides structured information about the work completed and recommendations for
 **Field Descriptions:**
 
 - `status`: Agent completion status (complete, in-progress, blocked)
+- `issue_number`: Git issue number being processed
+- `agent_type`: Current workflow agent type
+- `step_id`: Current workflow step id (must match runtime context)
+- `step_num`: Current workflow step number (must match runtime context)
 - `summary`: One-line summary of what was accomplished
 - `key_findings`: List of important discoveries or results (optional)
 - `effort_breakdown`: Time/effort spent on major tasks (optional)
@@ -90,6 +98,10 @@ import os
 
 # At the end of agent work
 completion_data = {
+    "issue_number": str(issue_id),
+    "agent_type": "developer",
+    "step_id": "implement_auth",
+    "step_num": 2,
     "status": "complete",
     "summary": "Conditional step execution feature fully implemented and tested",
     "key_findings": [
@@ -106,7 +118,8 @@ completion_data = {
 }
 
 # Write to completions directory
-completion_dir = os.path.expandvars("$HOME/.nexus/tasks/completions")
+project_name = "nexus"
+completion_dir = os.path.expandvars(f"$HOME/.nexus/tasks/{project_name}/completions")
 os.makedirs(completion_dir, exist_ok=True)
 with open(os.path.join(completion_dir, f"completion_summary_{issue_id}.json"), "w") as f:
     json.dump(completion_data, f, indent=2)

@@ -8,6 +8,7 @@ or webhooks (webhook server).
 
 import asyncio
 import glob
+import inspect
 import logging
 import os
 import re
@@ -64,6 +65,16 @@ _launch_policy_plugin = None
 
 
 def _run_coro_sync(coro_factory):
+    def _close_awaitable_if_needed(candidate: object | None) -> None:
+        if candidate is None or not inspect.isawaitable(candidate):
+            return
+        close = getattr(candidate, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                return
+
     try:
         asyncio.get_running_loop()
         in_running_loop = True
@@ -71,17 +82,28 @@ def _run_coro_sync(coro_factory):
         in_running_loop = False
 
     if not in_running_loop:
+        candidate = None
         try:
-            return asyncio.run(coro_factory())
+            candidate = coro_factory()
+            if not inspect.isawaitable(candidate):
+                return candidate
+            return asyncio.run(candidate)
         except Exception:
+            _close_awaitable_if_needed(candidate)
             return None
 
     holder: dict[str, object | Exception | None] = {"value": None, "error": None}
 
     def _runner() -> None:
+        candidate = None
         try:
-            holder["value"] = asyncio.run(coro_factory())
+            candidate = coro_factory()
+            if not inspect.isawaitable(candidate):
+                holder["value"] = candidate
+                return
+            holder["value"] = asyncio.run(candidate)
         except Exception as exc:
+            _close_awaitable_if_needed(candidate)
             holder["error"] = exc
 
     import threading
@@ -965,8 +987,8 @@ def get_sop_tier_from_issue(issue_number, project="nexus", repo_override: str | 
             repo,
             project,
         )
-        issue = asyncio.run(
-            get_git_platform(
+        issue = _run_coro_sync(
+            lambda: get_git_platform(
                 repo,
                 project_name=project,
                 token_override=token_override,
@@ -995,6 +1017,38 @@ def get_workflow_name(tier_name):
     if tier_name in {"fast-track", "shortened"}:
         return "bug_fix"
     return "new_feature"
+
+
+def _resolve_issue_step_context(issue_url: str) -> tuple[str, int]:
+    """Resolve active workflow step context for a Git issue URL."""
+    issue_match = re.search(r"/issues/(\d+)(?:$|[/?#])", str(issue_url or ""))
+    if not issue_match:
+        return "", 0
+
+    issue_number = str(issue_match.group(1))
+    try:
+        from nexus.core.orchestration.nexus_core_helpers import get_workflow_status
+
+        status = _run_coro_sync(lambda: get_workflow_status(issue_number))
+    except Exception:
+        status = None
+
+    if not isinstance(status, dict):
+        return "", 0
+
+    step_id = str(
+        status.get("current_step_id")
+        or status.get("current_step_name")
+        or ""
+    ).strip()
+    step_num_raw = status.get("current_step_num", status.get("current_step"))
+    try:
+        step_num = int(step_num_raw)
+    except (TypeError, ValueError):
+        step_num = 0
+    if step_num <= 0:
+        step_num = 0
+    return step_id, step_num
 
 
 def invoke_ai_agent(
@@ -1036,6 +1090,16 @@ def invoke_ai_agent(
     tool_name: str | None = None
     workflow_name = get_workflow_name(tier_name)
     workflow_path = _resolve_workflow_path(project_name)
+    step_id, step_num = _resolve_issue_step_context(issue_url)
+    if not step_id or step_num <= 0:
+        logger.warning(
+            "Active workflow step context unresolved for issue=%s agent=%s "
+            "(step_id=%s step_num=%s); completion validation may fail.",
+            issue_url,
+            agent_type,
+            step_id or "<none>",
+            step_num,
+        )
     policy = _get_launch_policy_plugin()
     if policy and hasattr(policy, "build_agent_prompt"):
         prompt = policy.build_agent_prompt(
@@ -1049,6 +1113,8 @@ def invoke_ai_agent(
             nexus_dir=get_nexus_dir_name(),
             project_name=project_name,
             repo_path=workspace_dir,
+            step_id=step_id,
+            step_num=step_num,
         )
     else:
         prompt = (

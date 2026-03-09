@@ -16,6 +16,10 @@ The mode depends on `NEXUS_STORAGE_BACKEND`:
 
 ```json
 {
+  "issue_number": "42",
+  "agent_type": "developer",
+  "step_id": "implement_auth",
+  "step_num": 2,
   "status": "complete",
   "summary": "Brief one-line summary of work completed",
   "key_findings": [
@@ -34,6 +38,10 @@ The mode depends on `NEXUS_STORAGE_BACKEND`:
 
 | Field              | Type     | Required | Description                                 |
 |--------------------|----------|----------|---------------------------------------------|
+| `issue_number`     | string   | ✅        | Git issue number                            |
+| `agent_type`       | string   | ✅        | Reporting workflow agent type               |
+| `step_id`          | string   | ✅        | Current workflow step id                    |
+| `step_num`         | number   | ✅        | Current workflow step number                |
 | `status`           | string   | ✅        | `complete`, `in-progress`, or `blocked`     |
 | `summary`          | string   | ✅        | One-line summary of accomplishment          |
 | `key_findings`     | string[] | ❌        | Discoveries, test results, notable findings |
@@ -49,6 +57,8 @@ curl -s -X POST http://localhost:8081/api/v1/completion \
   -d '{
     "issue_number": "42",
     "agent_type": "developer",
+    "step_id": "implement_auth",
+    "step_num": 2,
     "status": "complete",
     "summary": "Implemented authentication module",
     "key_findings": ["All 14 tests pass", "No breaking changes"],
@@ -66,6 +76,10 @@ mkdir -p "$COMPLETIONS_DIR"
 
 cat > "$COMPLETIONS_DIR/completion_summary_42.json" <<EOF
 {
+  "issue_number": "42",
+  "agent_type": "developer",
+  "step_id": "implement_auth",
+  "step_num": 2,
   "status": "complete",
   "summary": "Implemented authentication module",
   "key_findings": ["All 14 tests pass"],
@@ -103,6 +117,9 @@ The orchestrator auto-posts a comment when a completion is detected:
 
 ```markdown
 ### ✅ Agent Completed
+
+**Step ID:** `implement_auth`
+**Step Num:** 2
 
 **Summary:** Implemented authentication module
 

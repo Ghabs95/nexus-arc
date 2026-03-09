@@ -106,6 +106,38 @@ async def _plugin_with_workflow(workflow: Workflow, issue_number: str) -> tuple:
     return plugin, storage
 
 
+async def _complete(
+    plugin: WorkflowStateEnginePlugin,
+    issue_number: str,
+    completed_agent_type: str,
+    outputs: dict[str, Any] | None = None,
+    *,
+    event_id: str = "",
+):
+    workflow_id = plugin._resolve_workflow_id(issue_number)
+    workflow = await plugin._get_engine().get_workflow(str(workflow_id))
+    if workflow is None:
+        return await plugin.complete_step_for_issue(
+            issue_number=issue_number,
+            completed_agent_type=completed_agent_type,
+            outputs=outputs or {},
+            event_id=event_id,
+        )
+    running_step = next((step for step in workflow.steps if step.status == StepStatus.RUNNING), None)
+    if running_step is None and workflow.steps:
+        running_step = workflow.steps[0]
+    payload = dict(outputs or {})
+    if running_step is not None:
+        payload.setdefault("step_id", running_step.name)
+        payload.setdefault("step_num", running_step.step_num)
+    return await plugin.complete_step_for_issue(
+        issue_number=issue_number,
+        completed_agent_type=completed_agent_type,
+        outputs=payload,
+        event_id=event_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Workflow.active_agent_type
 # ---------------------------------------------------------------------------
@@ -161,7 +193,8 @@ async def test_complete_step_for_issue_advances_to_next():
     wf = _make_workflow("wf-42", [develop, review])
     plugin, _ = await _plugin_with_workflow(wf, "42")
 
-    updated = await plugin.complete_step_for_issue(
+    updated = await _complete(
+        plugin,
         issue_number="42",
         completed_agent_type="developer",
         outputs={"pr": "https://github.com/org/repo/pull/1"},
@@ -179,7 +212,8 @@ async def test_complete_step_for_issue_completes_workflow_on_last_step():
     wf = _make_workflow("wf-99", [summarizer])
     plugin, _ = await _plugin_with_workflow(wf, "99")
 
-    updated = await plugin.complete_step_for_issue(
+    updated = await _complete(
+        plugin,
         issue_number="99",
         completed_agent_type="summarizer",
         outputs={"summary": "done"},
@@ -203,6 +237,22 @@ async def test_complete_step_for_issue_returns_none_when_no_mapping():
 
 
 @pytest.mark.asyncio
+async def test_complete_step_for_issue_rejects_missing_step_identity():
+    """Completion payload must include step_id + step_num."""
+    develop = _step(1, "develop", "developer")
+    review = _step(2, "review", "reviewer")
+    wf = _make_workflow("wf-strict-step", [develop, review])
+    plugin, _ = await _plugin_with_workflow(wf, "strict-step")
+
+    with pytest.raises(ValueError, match="Completion invalid schema"):
+        await plugin.complete_step_for_issue(
+            issue_number="strict-step",
+            completed_agent_type="developer",
+            outputs={"done": True},
+        )
+
+
+@pytest.mark.asyncio
 async def test_complete_step_for_issue_noop_when_agent_type_mismatch():
     """When agent_type doesn't match RUNNING step, plugin raises mismatch error."""
     develop = _step(1, "develop", "developer")
@@ -211,8 +261,9 @@ async def test_complete_step_for_issue_noop_when_agent_type_mismatch():
     plugin, _ = await _plugin_with_workflow(wf, "fallback")
 
     # Pass wrong agent_type that doesn't match RUNNING "developer"
-    with pytest.raises(ValueError, match="Completion agent mismatch"):
-        await plugin.complete_step_for_issue(
+    with pytest.raises(ValueError, match="Completion stale/mismatched"):
+        await _complete(
+            plugin,
             issue_number="fallback",
             completed_agent_type="unknown-agent",
             outputs={"done": True},
@@ -234,7 +285,8 @@ async def test_complete_step_for_issue_autostarts_pending_workflow():
     )
     plugin, _ = await _plugin_with_workflow(wf, "pending")
 
-    updated = await plugin.complete_step_for_issue(
+    updated = await _complete(
+        plugin,
         issue_number="pending",
         completed_agent_type="triage",
         outputs={"priority": "p2"},
@@ -270,12 +322,15 @@ async def test_complete_step_for_issue_routes_through_router_to_close():
     plugin, _ = await _plugin_with_workflow(wf, "router")
 
     # develop completes
-    await plugin.complete_step_for_issue("router", "developer", {"pr": "1"})
+    await _complete(plugin, "router", "developer", {"pr": "1"})
     assert wf.active_agent_type == "reviewer"
 
     # review completes — approved
-    updated = await plugin.complete_step_for_issue(
-        "router", "reviewer", {"approval_status": "approved", "review_comments": []}
+    updated = await _complete(
+        plugin,
+        "router",
+        "reviewer",
+        {"approval_status": "approved", "review_comments": []},
     )
 
     assert updated is not None
@@ -304,12 +359,10 @@ async def test_complete_step_for_issue_routes_loop_back_to_develop():
     plugin, _ = await _plugin_with_workflow(wf, "loop")
 
     # develop completes
-    await plugin.complete_step_for_issue("loop", "developer", {"pr": "1"})
+    await _complete(plugin, "loop", "developer", {"pr": "1"})
 
     # review completes — changes requested → loops back
-    updated = await plugin.complete_step_for_issue(
-        "loop", "reviewer", {"approval_status": "changes_requested"}
-    )
+    updated = await _complete(plugin, "loop", "reviewer", {"approval_status": "changes_requested"})
 
     assert updated is not None
     assert updated.active_agent_type == "developer"
@@ -339,8 +392,9 @@ async def test_complete_step_for_issue_derives_review_status_for_changes_request
     )
     plugin, _ = await _plugin_with_workflow(wf, "review-derived-dev")
 
-    await plugin.complete_step_for_issue("review-derived-dev", "developer", {"pr": "1"})
-    updated = await plugin.complete_step_for_issue(
+    await _complete(plugin, "review-derived-dev", "developer", {"pr": "1"})
+    updated = await _complete(
+        plugin,
         "review-derived-dev",
         "reviewer",
         {"next_agent": "developer", "summary": "tests failed"},
@@ -373,8 +427,9 @@ async def test_complete_step_for_issue_derives_review_status_for_approved():
     )
     plugin, _ = await _plugin_with_workflow(wf, "review-derived-compliance")
 
-    await plugin.complete_step_for_issue("review-derived-compliance", "developer", {"pr": "1"})
-    updated = await plugin.complete_step_for_issue(
+    await _complete(plugin, "review-derived-compliance", "developer", {"pr": "1"})
+    updated = await _complete(
+        plugin,
         "review-derived-compliance",
         "reviewer",
         {"next_agent": "compliance", "summary": "approved"},
@@ -408,8 +463,9 @@ async def test_complete_step_for_issue_derives_router_field_for_custom_agent_typ
     )
     plugin, _ = await _plugin_with_workflow(wf, "generic-routing")
 
-    await plugin.complete_step_for_issue("generic-routing", "builder", {"artifact": "build-1"})
-    updated = await plugin.complete_step_for_issue(
+    await _complete(plugin, "generic-routing", "builder", {"artifact": "build-1"})
+    updated = await _complete(
+        plugin,
         "generic-routing",
         "qa_guard",
         {"next_agent": "builder", "summary": "tests failed"},
@@ -443,8 +499,9 @@ async def test_complete_step_for_issue_derives_numeric_router_field_from_next_ag
     )
     plugin, _ = await _plugin_with_workflow(wf, "numeric-routing")
 
-    await plugin.complete_step_for_issue("numeric-routing", "runner", {"artifact": "run-1"})
-    updated = await plugin.complete_step_for_issue(
+    await _complete(plugin, "numeric-routing", "runner", {"artifact": "run-1"})
+    updated = await _complete(
+        plugin,
         "numeric-routing",
         "validator",
         {"next_agent": "retry_once", "summary": "retry requested"},
@@ -478,8 +535,9 @@ async def test_complete_step_for_issue_derives_boolean_router_field_from_next_ag
     )
     plugin, _ = await _plugin_with_workflow(wf, "boolean-routing")
 
-    await plugin.complete_step_for_issue("boolean-routing", "builder", {"artifact": "build-1"})
-    updated = await plugin.complete_step_for_issue(
+    await _complete(plugin, "boolean-routing", "builder", {"artifact": "build-1"})
+    updated = await _complete(
+        plugin,
         "boolean-routing",
         "policy_guard",
         {"next_agent": "rework", "summary": "blocked"},
@@ -498,9 +556,9 @@ async def test_reset_to_agent_for_issue_rewinds_completed_workflow():
     wf = _make_workflow("wf-reset", [develop, review, close_loop])
     plugin, _ = await _plugin_with_workflow(wf, "reset")
 
-    await plugin.complete_step_for_issue("reset", "developer", {"next_agent": "reviewer"})
-    await plugin.complete_step_for_issue("reset", "reviewer", {"next_agent": "writer"})
-    completed = await plugin.complete_step_for_issue("reset", "writer", {"next_agent": "none"})
+    await _complete(plugin, "reset", "developer", {"next_agent": "reviewer"})
+    await _complete(plugin, "reset", "reviewer", {"next_agent": "writer"})
+    completed = await _complete(plugin, "reset", "writer", {"next_agent": "none"})
     assert completed is not None
     assert completed.state == WorkflowState.COMPLETED
 
@@ -614,7 +672,7 @@ async def test_complete_step_for_issue_idempotency_duplicate_suppressed(tmp_path
     plugin.config["idempotency_ledger_path"] = ledger_path
 
     # First call advances the workflow (step1 → COMPLETED, step2 → RUNNING).
-    updated = await plugin.complete_step_for_issue("idem", "triage", {}, event_id="ev-001")
+    updated = await _complete(plugin, "idem", "triage", {}, event_id="ev-001")
     assert updated is not None
     assert updated.active_agent_type == "developer"
 
@@ -623,7 +681,7 @@ async def test_complete_step_for_issue_idempotency_duplicate_suppressed(tmp_path
     step2.status = StepStatus.PENDING
 
     # Second call with the same composite key must be suppressed by the ledger.
-    updated2 = await plugin.complete_step_for_issue("idem", "triage", {}, event_id="ev-001")
+    updated2 = await _complete(plugin, "idem", "triage", {}, event_id="ev-001")
     # step1 must still be RUNNING (the ledger blocked the advancement).
     assert step1.status == StepStatus.RUNNING
     assert updated2 is not None
@@ -639,8 +697,8 @@ async def test_complete_step_for_issue_different_event_ids_advance_independently
     ledger_path = str(tmp_path / "ledger2.json")
     plugin.config["idempotency_ledger_path"] = ledger_path
 
-    await plugin.complete_step_for_issue("idem2", "triage", {}, event_id="ev-aaa")
-    updated = await plugin.complete_step_for_issue("idem2", "developer", {}, event_id="ev-bbb")
+    await _complete(plugin, "idem2", "triage", {}, event_id="ev-aaa")
+    updated = await _complete(plugin, "idem2", "developer", {}, event_id="ev-bbb")
     assert updated is not None
     from nexus.core.models import WorkflowState as WS
 
@@ -657,8 +715,8 @@ async def test_complete_step_for_issue_no_event_id_always_advances(tmp_path):
     ledger_path = str(tmp_path / "ledger3.json")
     plugin.config["idempotency_ledger_path"] = ledger_path
 
-    await plugin.complete_step_for_issue("idem3", "triage", {})
-    updated = await plugin.complete_step_for_issue("idem3", "developer", {})
+    await _complete(plugin, "idem3", "triage", {})
+    updated = await _complete(plugin, "idem3", "developer", {})
     assert updated is not None
     from nexus.core.models import WorkflowState as WS
 

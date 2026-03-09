@@ -49,6 +49,8 @@ async def _save_completion_to_storage(issue_num: str, signal: dict[str, str]) ->
         payload = {
             "status": "complete",
             "agent_type": signal.get("completed_agent", ""),
+            "step_id": signal.get("step_id", ""),
+            "step_num": int(signal.get("step_num", "0") or 0),
             "next_agent": signal.get("next_agent", ""),
             "summary": f"Reconciled from Git comment {signal.get('comment_id', 'n/a')}",
             "source": "telegram-reconcile",
@@ -140,6 +142,11 @@ async def reconcile_issue_from_signals(
         latest_completion = await _latest_completion_from_storage(str(issue_num))
         completed_agent = str((latest_completion or {}).get("agent_type") or "").strip().lower()
         next_agent = str((latest_completion or {}).get("next_agent") or "").strip().lower()
+        step_id = str((latest_completion or {}).get("step_id") or "").strip().lower()
+        try:
+            step_num = int((latest_completion or {}).get("step_num") or 0)
+        except (TypeError, ValueError):
+            step_num = 0
         if completed_agent and next_agent and next_agent not in {
             "none",
             "n/a",
@@ -149,18 +156,23 @@ async def reconcile_issue_from_signals(
             "finish",
             "complete",
             "",
-        }:
+        } and step_id and step_num > 0:
             signals = [
                 {
                     "completed_agent": completed_agent,
                     "next_agent": next_agent,
+                    "step_id": step_id,
+                    "step_num": str(step_num),
                     "comment_id": "db-fallback",
                 }
             ]
             logger.warning(
-                "Reconcile issue #%s: no structured comments found; using DB completion fallback %s -> %s",
+                "Reconcile issue #%s: no structured comments found; using DB completion fallback "
+                "%s[%s:%s] -> %s",
                 issue_num,
                 completed_agent,
+                step_id,
+                step_num,
                 next_agent,
             )
         else:
@@ -181,9 +193,15 @@ async def reconcile_issue_from_signals(
 
     applied: list[dict[str, str]] = []
     for signal in signals:
+        try:
+            signal_step_num = int(signal.get("step_num", "0") or 0)
+        except (TypeError, ValueError):
+            signal_step_num = 0
         outputs = {
             "status": "complete",
             "agent_type": signal["completed_agent"],
+            "step_id": signal.get("step_id", ""),
+            "step_num": signal_step_num,
             "next_agent": signal["next_agent"],
             "summary": f"Reconciled from Git comment {signal.get('comment_id', 'n/a')}",
             "source": "telegram-reconcile",

@@ -12,6 +12,10 @@ from nexus.adapters.storage.base import StorageBackend
 from nexus.core.idempotency import IdempotencyKey, IdempotencyLedger
 from nexus.core.models import StepStatus, WorkflowState
 from nexus.core.workflow import WorkflowDefinition, WorkflowEngine
+from nexus.core.workflow_runtime.completion_errors import (
+    CompletionSchemaError,
+    CompletionStaleError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +473,8 @@ class WorkflowStateEnginePlugin:
                 "name": workflow.name,
                 "state": workflow.state.value,
                 "current_step": current_step_display,
+                "current_step_num": int(getattr(current_step_obj, "step_num", 0) or 0),
+                "current_step_id": str(getattr(current_step_obj, "name", "") or ""),
                 "total_steps": total_steps,
                 "current_step_name": getattr(current_step_obj, "name", "unknown"),
                 "current_agent": (
@@ -550,8 +556,8 @@ class WorkflowStateEnginePlugin:
     ) -> Any | None:
         """Mark the current running step for *issue_number* as complete.
 
-        Locates the RUNNING step whose ``agent.name`` matches
-        *completed_agent_type*, then calls
+        Locates the RUNNING step, validates strict step identity
+        (``step_id`` + ``step_num`` + ``completed_agent_type``), then calls
         ``WorkflowEngine.complete_step()`` to advance the workflow.
         Router steps are evaluated automatically, handling loops and
         conditional branches.
@@ -563,10 +569,11 @@ class WorkflowStateEnginePlugin:
 
         Args:
             issue_number: GitHub issue number (or any issue id).
-            completed_agent_type: The ``agent_type`` of the step that just
-                finished (matches the agent's own completion summary field).
+            completed_agent_type: The ``agent_type`` that reports completion.
             outputs: Structured outputs from the completion summary to record
                 against the step and expose to subsequent route conditions.
+                Must include ``step_id`` and ``step_num`` matching the active
+                RUNNING workflow step.
             event_id: Caller-supplied deduplication token — typically a GitHub
                 comment ID or a hash of the completion file path/content.
                 An empty string disables the ledger check.
@@ -608,26 +615,106 @@ class WorkflowStateEnginePlugin:
                 )
                 return workflow
 
-        # Find the RUNNING step whose agent_type matches the completed agent
+        payload = dict(outputs or {})
+        reported_step_id = self._normalize_ref(payload.get("step_id", ""))
+        try:
+            reported_step_num = int(payload.get("step_num", 0) or 0)
+        except (TypeError, ValueError):
+            reported_step_num = 0
+        completed_agent_norm = self._normalize_ref(completed_agent_type)
+
+        if not reported_step_id or reported_step_num <= 0:
+            logger.warning(
+                "complete_step_for_issue: invalid completion schema for issue #%s "
+                "(completed_agent=%s, step_id=%s, step_num=%s, event_id=%s)",
+                issue_number,
+                completed_agent_type,
+                payload.get("step_id", ""),
+                payload.get("step_num", ""),
+                event_id or "<none>",
+            )
+            raise CompletionSchemaError(
+                f"Completion invalid schema for issue #{issue_number}: "
+                f"step_id={payload.get('step_id', '')!r}, step_num={payload.get('step_num', '')!r}"
+            )
+
+        # Find the RUNNING step (single active step expected).
         running_step = None
         for step in workflow.steps:
-            if step.status == StepStatus.RUNNING and step.agent.name == completed_agent_type:
+            if step.status == StepStatus.RUNNING:
                 running_step = step
                 break
 
         if not running_step:
             active_agent = workflow.active_agent_type
             logger.warning(
-                "complete_step_for_issue: stale or mismatched completion for issue #%s: "
+                "complete_step_for_issue: stale completion for issue #%s: "
                 "completed_agent=%s, active_agent=%s, event_id=%s",
                 issue_number,
                 completed_agent_type,
                 active_agent,
                 event_id or "<none>",
             )
-            raise ValueError(
-                f"Completion agent mismatch for issue #{issue_number}: "
+            raise CompletionStaleError(
+                f"Completion stale/mismatched for issue #{issue_number}: "
                 f"completed_agent={completed_agent_type}, active_agent={active_agent}"
+            )
+
+        expected_step_id = self._normalize_ref(getattr(running_step, "name", ""))
+        expected_step_num = int(getattr(running_step, "step_num", 0) or 0)
+        expected_agent = self._normalize_ref(getattr(getattr(running_step, "agent", None), "name", ""))
+
+        if not expected_step_id or expected_step_num <= 0:
+            logger.warning(
+                "complete_step_for_issue: workflow step metadata invalid for issue #%s "
+                "(active_step_id=%s, active_step_num=%s, event_id=%s)",
+                issue_number,
+                expected_step_id,
+                expected_step_num,
+                event_id or "<none>",
+            )
+            raise CompletionSchemaError(
+                f"Completion invalid schema for issue #{issue_number}: "
+                f"workflow active step metadata invalid (step_id={expected_step_id!r}, "
+                f"step_num={expected_step_num!r})"
+            )
+
+        if not expected_agent:
+            logger.warning(
+                "complete_step_for_issue: workflow step agent metadata invalid for issue #%s "
+                "(active_step_id=%s, active_step_num=%s, event_id=%s)",
+                issue_number,
+                expected_step_id,
+                expected_step_num,
+                event_id or "<none>",
+            )
+            raise CompletionSchemaError(
+                f"Completion invalid schema for issue #{issue_number}: "
+                "workflow active step agent is missing"
+            )
+
+        step_id_matches = self._refs_match(reported_step_id, expected_step_id)
+        step_num_matches = reported_step_num == expected_step_num
+        agent_matches = self._refs_match(completed_agent_norm, expected_agent)
+        if not (step_id_matches and step_num_matches and agent_matches):
+            logger.warning(
+                "complete_step_for_issue: stale completion for issue #%s: "
+                "completed_agent=%s, active_agent=%s, reported_step_id=%s, reported_step_num=%s, "
+                "active_step_id=%s, active_step_num=%s, event_id=%s",
+                issue_number,
+                completed_agent_type,
+                workflow.active_agent_type,
+                payload.get("step_id", ""),
+                payload.get("step_num", ""),
+                running_step.name,
+                running_step.step_num,
+                event_id or "<none>",
+            )
+            raise CompletionStaleError(
+                f"Completion stale/mismatched for issue #{issue_number}: "
+                f"completed_agent={completed_agent_type}, active_agent={workflow.active_agent_type}, "
+                f"reported_step=({payload.get('step_id', '')},{payload.get('step_num', '')}), "
+                f"active_step=({running_step.name},{running_step.step_num})"
             )
 
         # Idempotency guard — reject duplicate step-completion signals.
@@ -635,7 +722,7 @@ class WorkflowStateEnginePlugin:
             idem_key = IdempotencyKey(
                 issue_id=str(issue_number),
                 step_num=running_step.step_num,
-                agent_type=completed_agent_type,
+                agent_type=expected_agent or completed_agent_type,
                 event_id=event_id,
             )
             ledger = self._get_ledger()
@@ -645,12 +732,14 @@ class WorkflowStateEnginePlugin:
                     "(step=%s, agent=%s, event_id=%s)",
                     issue_number,
                     running_step.step_num,
-                    completed_agent_type,
+                    expected_agent or completed_agent_type,
                     event_id,
                 )
                 return workflow
 
         normalized_outputs = self._normalize_completion_outputs(workflow, running_step, outputs)
+        normalized_outputs["step_id"] = running_step.name
+        normalized_outputs["step_num"] = running_step.step_num
 
         result = await engine.complete_step(
             workflow_id=workflow_id,

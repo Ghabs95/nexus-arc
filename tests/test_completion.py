@@ -25,6 +25,8 @@ class TestCompletionSummary:
         s = CompletionSummary.from_dict(data)
         assert s.status == "complete"
         assert s.agent_type == "triage"
+        assert s.step_id == ""
+        assert s.step_num == 0
         assert s.summary == ""
         assert s.key_findings == []
         assert s.next_agent == ""
@@ -33,6 +35,8 @@ class TestCompletionSummary:
         data = {
             "status": "complete",
             "agent_type": "debug",
+            "step_id": "develop",
+            "step_num": 2,
             "summary": "Fixed the bug",
             "key_findings": ["root cause found", "test added"],
             "next_agent": "summarizer",
@@ -40,6 +44,8 @@ class TestCompletionSummary:
             "effort_breakdown": {"analysis": "30min", "fix": "1h"},
         }
         s = CompletionSummary.from_dict(data)
+        assert s.step_id == "develop"
+        assert s.step_num == 2
         assert s.summary == "Fixed the bug"
         assert len(s.key_findings) == 2
         assert s.next_agent == "summarizer"
@@ -59,6 +65,8 @@ class TestCompletionSummary:
         original = CompletionSummary(
             status="complete",
             agent_type="design",
+            step_id="design",
+            step_num=3,
             summary="Created design doc",
             key_findings=["finding1"],
             next_agent="code_reviewer",
@@ -99,6 +107,8 @@ class TestCompletionSummary:
         original = CompletionSummary(
             status="complete",
             agent_type="designer",
+            step_id="designer",
+            step_num=3,
             alignment_score=0.76,
             alignment_summary="Strong alignment to ADR docs.",
             alignment_artifacts=["docs/ADR-001.md", "README.md"],
@@ -128,6 +138,12 @@ class TestBuildCompletionComment:
         assert "bug in auth" in comment
         assert "missing test" in comment
 
+    def test_includes_step_identity(self):
+        s = CompletionSummary(step_id="develop", step_num=2)
+        comment = build_completion_comment(s)
+        assert "**Step ID:** `develop`" in comment
+        assert "**Step Num:** 2" in comment
+
     def test_includes_next_agent(self):
         s = CompletionSummary(next_agent="summarizer")
         comment = build_completion_comment(s)
@@ -156,49 +172,60 @@ class TestBuildCompletionComment:
 
 class TestGenerateCompletionInstructions:
     def test_contains_issue_number(self):
-        text = generate_completion_instructions("42", "debug")
+        text = generate_completion_instructions("42", "debug", "develop", 2)
         assert "completion_summary_42.json" in text
 
     def test_contains_agent_type(self):
-        text = generate_completion_instructions("1", "triage")
+        text = generate_completion_instructions("1", "triage", "triage", 1)
         assert "agent_type" in text
         assert "triage" in text
 
     def test_contains_workflow_steps(self):
         steps = "**Workflow Steps:**\n- 1. Triage — triage"
-        text = generate_completion_instructions("1", "triage", workflow_steps_text=steps)
+        text = generate_completion_instructions("1", "triage", "triage", 1, workflow_steps_text=steps)
         assert "Workflow Steps" in text
 
     def test_custom_nexus_dir(self):
         text = generate_completion_instructions(
-            "1", "triage", project_name="myproject", nexus_dir=".custom"
+            "1", "triage", "triage", 1, project_name="myproject", nexus_dir=".custom"
         )
         assert ".custom/tasks/myproject/completions" in text
 
     def test_uses_python_command_instead_of_heredoc(self):
-        text = generate_completion_instructions("1", "triage")
+        text = generate_completion_instructions("1", "triage", "triage", 1)
         assert "python3 -c" in text
         assert "NEXUS_EOF" not in text
 
     def test_forbids_ready_for_none_in_comments(self):
-        text = generate_completion_instructions("1", "writer")
+        text = generate_completion_instructions("1", "writer", "close_loop", 4)
         assert "Never write `@none`" in text
         assert "omit this line when next_agent is terminal/`none`" in text
 
     def test_removes_legacy_summarizer_example(self):
-        text = generate_completion_instructions("1", "writer")
+        text = generate_completion_instructions("1", "writer", "close_loop", 4)
         assert "Summarize & Close" not in text
         assert "`summarizer`" not in text
 
     def test_defaults_project_name_to_nexus_path(self):
-        text = generate_completion_instructions("1", "triage", project_name="", nexus_dir=".nexus")
+        text = generate_completion_instructions(
+            "1", "triage", "triage", 1, project_name="", nexus_dir=".nexus"
+        )
         assert ".nexus/tasks/nexus/completions" in text
         assert ".nexus/tasks//completions" not in text
 
     def test_postgres_uses_endpoint_placeholder_when_missing_webhook_url(self):
-        text = generate_completion_instructions("1", "triage", completion_backend="postgres", webhook_url="")
+        text = generate_completion_instructions(
+            "1",
+            "triage",
+            "triage",
+            1,
+            completion_backend="postgres",
+            webhook_url="",
+        )
         assert "<WEBHOOK_BASE_URL>/api/v1/completion" in text
         assert "Use this command template" in text
+        assert '"step_id": "triage"' in text
+        assert '"step_num": 1' in text
 
 
 # ---------------------------------------------------------------------------

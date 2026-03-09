@@ -572,7 +572,8 @@ async def complete_step_for_issue(
         issue_number: Git issue number.
         completed_agent_type: The ``agent_type`` that just finished.
         outputs: Structured outputs from the completion summary (use
-            ``CompletionSummary.to_dict()`` or pass a raw dict).
+            ``CompletionSummary.to_dict()`` or pass a raw dict). Must include
+            ``step_id`` and ``step_num`` for strict step identity validation.
         event_id: Optional deduplication token (comment id / completion hash).
 
     Returns:
