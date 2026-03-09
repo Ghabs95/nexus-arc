@@ -78,7 +78,7 @@ from nexus.core.orchestration.plugin_runtime import (
     get_webhook_policy_plugin,
     get_workflow_state_plugin,
 )
-from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
+from nexus.core.orchestration.nexus_core_helpers import get_git_platform, get_workflow_definition_path
 from nexus.core.runtime.agent_launcher import launch_next_agent
 from nexus.core.user_manager import get_user_manager
 from nexus.core.webhook.issue_service import handle_issue_opened_event as _handle_issue_opened_event
@@ -520,6 +520,28 @@ def _cleanup_worktree_for_issue(repo_name: str, issue_number: str) -> bool:
     )
 
 
+def _close_issue_for_pr_merge(repo_name: str, issue_number: str) -> bool:
+    project_key = _repo_to_project_key(repo_name)
+    try:
+        platform = get_git_platform(repo_name, project_name=project_key)
+        return bool(
+            asyncio.run(
+                platform.close_issue(
+                    str(issue_number),
+                    comment=f"Closed automatically after PR/MR merge in `{repo_name}`.",
+                )
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed webhook PR-merge issue close for issue #%s in %s: %s",
+            issue_number,
+            repo_name,
+            exc,
+        )
+        return False
+
+
 def _notify_lifecycle(message: str, *, dedup_key: str | None = None) -> bool:
     """Send lifecycle notification via abstract notifier, fallback to Telegram alert."""
     if send_notification(message):
@@ -657,6 +679,7 @@ def handle_pull_request(payload, event):
         effective_review_mode=_effective_review_mode,
         launch_next_agent=launch_next_agent,
         cleanup_worktree_for_issue=_cleanup_worktree_for_issue,
+        close_issue_for_issue=_close_issue_for_pr_merge,
     )
 
 

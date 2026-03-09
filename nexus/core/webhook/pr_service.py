@@ -27,6 +27,7 @@ def handle_pull_request_event(
     effective_review_mode,
     launch_next_agent,
     cleanup_worktree_for_issue=None,
+    close_issue_for_issue=None,
 ) -> dict[str, Any]:
     """Handle parsed pull_request event."""
     action = event.get("action")
@@ -62,9 +63,24 @@ def handle_pull_request_event(
         return {"status": "pr_opened_notified", "pr": pr_number, "action": action}
 
     if action == "closed" and merged:
+        referenced_issue_refs = _extract_issue_numbers_from_text(pr_title)
+        closed_issue_refs: list[str] = []
+        if callable(close_issue_for_issue):
+            for issue_ref in referenced_issue_refs:
+                try:
+                    if close_issue_for_issue(repo_name, issue_ref):
+                        closed_issue_refs.append(issue_ref)
+                except Exception as exc:
+                    logger.warning(
+                        "Failed webhook PR-merge issue close for issue #%s in %s: %s",
+                        issue_ref,
+                        repo_name,
+                        exc,
+                    )
+
         cleaned_issue_refs: list[str] = []
         if callable(cleanup_worktree_for_issue):
-            for issue_ref in _extract_issue_numbers_from_text(pr_title):
+            for issue_ref in referenced_issue_refs:
                 try:
                     if cleanup_worktree_for_issue(repo_name, issue_ref):
                         cleaned_issue_refs.append(issue_ref)
@@ -87,6 +103,7 @@ def handle_pull_request_event(
                 "action": action,
                 "review_mode": review_mode,
                 "cleaned_issue_refs": cleaned_issue_refs,
+                "closed_issue_refs": closed_issue_refs,
             }
 
         logger.info(
@@ -100,6 +117,7 @@ def handle_pull_request_event(
             "action": action,
             "review_mode": review_mode,
             "cleaned_issue_refs": cleaned_issue_refs,
+            "closed_issue_refs": closed_issue_refs,
         }
 
     return {"status": "logged", "pr": pr_number, "action": action}

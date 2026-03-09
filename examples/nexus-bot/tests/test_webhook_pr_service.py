@@ -40,6 +40,7 @@ def test_handle_pull_request_event_opened_notifies_and_autoqueues():
 def test_handle_pull_request_event_merged_manual_skips_notification():
     notifications = []
     cleanups = []
+    closes = []
     result = handle_pull_request_event(
         event={
             "action": "closed",
@@ -55,15 +56,19 @@ def test_handle_pull_request_event_merged_manual_skips_notification():
         effective_review_mode=lambda _repo: "manual",
         launch_next_agent=lambda *args, **kwargs: (None, None),
         cleanup_worktree_for_issue=lambda repo, issue: cleanups.append((repo, issue)) or True,
+        close_issue_for_issue=lambda repo, issue: closes.append((repo, issue)) or True,
     )
     assert result["status"] == "pr_merged_skipped_manual_review"
     assert notifications == []
     assert result["cleaned_issue_refs"] == ["42", "77"]
+    assert result["closed_issue_refs"] == ["42", "77"]
+    assert closes == [("acme/repo", "42"), ("acme/repo", "77")]
     assert cleanups == [("acme/repo", "42"), ("acme/repo", "77")]
 
 
 def test_handle_pull_request_event_merged_auto_notifies():
     notifications = []
+    closes = []
     result = handle_pull_request_event(
         event={
             "action": "closed",
@@ -79,7 +84,10 @@ def test_handle_pull_request_event_merged_auto_notifies():
         effective_review_mode=lambda _repo: "auto",
         launch_next_agent=lambda *args, **kwargs: (None, None),
         cleanup_worktree_for_issue=lambda _repo, _issue: True,
+        close_issue_for_issue=lambda repo, issue: closes.append((repo, issue)) or True,
     )
     assert result["status"] == "pr_merged_notified"
     assert notifications == ["merged:auto"]
     assert result["cleaned_issue_refs"] == ["42"]
+    assert result["closed_issue_refs"] == ["42"]
+    assert closes == [("acme/repo", "42")]

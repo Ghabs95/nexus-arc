@@ -201,6 +201,37 @@ class WorkflowPolicyPlugin:
             )
             return False
 
+    def _sync_existing_pr_changes(
+        self,
+        *,
+        repo: str,
+        repo_dir: str,
+        issue_number: str,
+        issue_repo: str | None = None,
+        base_branch: str | None = None,
+    ) -> bool:
+        syncer = self._callback("sync_existing_pr_changes")
+        if not syncer:
+            return False
+        try:
+            return bool(
+                syncer(
+                    repo=repo,
+                    repo_dir=repo_dir,
+                    issue_number=str(issue_number),
+                    issue_repo=issue_repo,
+                    base_branch=base_branch,
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "Error syncing existing PR branch for issue #%s in repo %s: %s",
+                issue_number,
+                repo,
+                exc,
+            )
+            return False
+
     def finalize_workflow(
         self,
         *,
@@ -244,6 +275,17 @@ class WorkflowPolicyPlugin:
                 )
                 if existing_pr_url:
                     result["pr_urls"].append(existing_pr_url)
+                    if git_dirs_by_repo.get(target_repo):
+                        self._sync_existing_pr_changes(
+                            repo=target_repo,
+                            repo_dir=git_dirs_by_repo[target_repo],
+                            issue_number=issue_number,
+                            issue_repo=repo,
+                            base_branch=self._resolve_repo_branch(
+                                project_name=project_name,
+                                repo=target_repo,
+                            ),
+                        )
                     continue
 
                 git_dir = git_dirs_by_repo.get(target_repo)
@@ -273,21 +315,10 @@ class WorkflowPolicyPlugin:
                         exc,
                     )
 
-        try:
-            result["issue_closed"] = self._close_issue(
-                repo=repo,
-                issue_number=issue_number,
-                last_agent=last_agent,
-                pr_urls=result.get("pr_urls", []),
-            )
-        except Exception as exc:
-            logger.warning("Error closing issue #%s: %s", issue_number, exc)
-
-        if result.get("issue_closed"):
-            for git_dir in set(git_dirs_by_repo.values()):
-                if not git_dir:
-                    continue
-                self._cleanup_worktree(repo_dir=git_dir, issue_number=issue_number)
+        for git_dir in set(git_dirs_by_repo.values()):
+            if not git_dir:
+                continue
+            self._cleanup_worktree(repo_dir=git_dir, issue_number=issue_number)
 
         try:
             self._notify(

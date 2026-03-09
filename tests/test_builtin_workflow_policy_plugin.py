@@ -43,9 +43,6 @@ def test_workflow_policy_finalize_workflow():
         captured["pr_kwargs"] = _kwargs
         return "https://github.com/org/repo/pull/10"
 
-    def _close_issue(**_kwargs):
-        return True
-
     def _cleanup_worktree(**_kwargs):
         captured["cleanup_kwargs"] = _kwargs
         return True
@@ -58,7 +55,6 @@ def test_workflow_policy_finalize_workflow():
             "resolve_git_dir": _resolve_git_dir,
             "create_pr_from_changes": _create_pr_from_changes,
             "cleanup_worktree": _cleanup_worktree,
-            "close_issue": _close_issue,
             "send_notification": _send_notification,
         }
     )
@@ -71,7 +67,7 @@ def test_workflow_policy_finalize_workflow():
     )
 
     assert result["pr_urls"] == ["https://github.com/org/repo/pull/10"]
-    assert result["issue_closed"] is True
+    assert result["issue_closed"] is False
     assert result["notification_sent"] is True
     assert "Workflow Complete" in captured["notify"]
     assert captured["pr_kwargs"]["issue_repo"] == "org/repo"
@@ -79,7 +75,11 @@ def test_workflow_policy_finalize_workflow():
 
 
 def test_workflow_policy_finalize_workflow_reuses_existing_pr():
-    captured: dict[str, Any] = {"created": False, "closed_kwargs": None, "cleanup_called": False}
+    captured: dict[str, Any] = {
+        "created": False,
+        "cleanup_called": False,
+        "synced_kwargs": None,
+    }
 
     def _resolve_git_dir(_project_name):
         return "/tmp/repo"
@@ -91,8 +91,8 @@ def test_workflow_policy_finalize_workflow_reuses_existing_pr():
         captured["created"] = True
         return "https://github.com/org/repo/pull/99"
 
-    def _close_issue(**_kwargs):
-        captured["closed_kwargs"] = _kwargs
+    def _sync_existing_pr_changes(**_kwargs):
+        captured["synced_kwargs"] = _kwargs
         return True
 
     def _cleanup_worktree(**_kwargs):
@@ -104,8 +104,8 @@ def test_workflow_policy_finalize_workflow_reuses_existing_pr():
             "resolve_git_dir": _resolve_git_dir,
             "find_existing_pr": _find_existing_pr,
             "create_pr_from_changes": _create_pr_from_changes,
+            "sync_existing_pr_changes": _sync_existing_pr_changes,
             "cleanup_worktree": _cleanup_worktree,
-            "close_issue": _close_issue,
         }
     )
 
@@ -118,8 +118,14 @@ def test_workflow_policy_finalize_workflow_reuses_existing_pr():
 
     assert result["pr_urls"] == ["https://github.com/org/repo/pull/50"]
     assert captured["created"] is False
+    assert captured["synced_kwargs"] == {
+        "repo": "org/repo",
+        "repo_dir": "/tmp/repo",
+        "issue_number": "49",
+        "issue_repo": "org/repo",
+        "base_branch": None,
+    }
     assert captured["cleanup_called"] is True
-    assert "https://github.com/org/repo/pull/50" in captured["closed_kwargs"]["comment"]
 
 
 def test_workflow_policy_finalize_uses_resolved_base_branch():
@@ -140,7 +146,6 @@ def test_workflow_policy_finalize_uses_resolved_base_branch():
             "resolve_git_dir": _resolve_git_dir,
             "resolve_repo_branch": _resolve_repo_branch,
             "create_pr_from_changes": _create_pr_from_changes,
-            "close_issue": lambda **_kwargs: False,
         }
     )
 
@@ -152,3 +157,30 @@ def test_workflow_policy_finalize_uses_resolved_base_branch():
     )
 
     assert captured["pr_kwargs"]["base_branch"] == "develop"
+
+
+def test_workflow_policy_finalize_cleans_worktree():
+    captured: dict[str, Any] = {"cleanup_called": False}
+
+    def _resolve_git_dir(_project_name):
+        return "/tmp/repo"
+
+    def _cleanup_worktree(**_kwargs):
+        captured["cleanup_called"] = True
+        return True
+
+    plugin = WorkflowPolicyPlugin(
+        {
+            "resolve_git_dir": _resolve_git_dir,
+            "cleanup_worktree": _cleanup_worktree,
+        }
+    )
+
+    plugin.finalize_workflow(
+        issue_number="42",
+        repo="org/repo",
+        last_agent="developer",
+        project_name="nexus",
+    )
+
+    assert captured["cleanup_called"] is True

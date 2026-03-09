@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,87 @@ def cleanup_worktree(
     )
 
 
+def sync_existing_pr_changes(
+    *,
+    repo_dir: str,
+    issue_number: str,
+    commit_message: str | None = None,
+    issue_repo: str | None = None,
+    repo: str | None = None,
+    base_branch: str | None = None,
+) -> bool:
+    del issue_repo, repo, base_branch  # callback signature compatibility
+    issue_worktree_dir = os.path.join(
+        str(repo_dir),
+        ".nexus",
+        "worktrees",
+        f"issue-{str(issue_number).strip()}",
+    )
+    target_repo_dir = issue_worktree_dir if os.path.isdir(issue_worktree_dir) else repo_dir
+
+    def _git(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git"] + args,
+            cwd=target_repo_dir,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+
+    status = _git(["status", "--porcelain"])
+    if status.returncode != 0:
+        logger.warning(
+            "Cannot inspect git status for issue #%s in %s: %s",
+            issue_number,
+            target_repo_dir,
+            status.stderr,
+        )
+        return False
+    if not (status.stdout or "").strip():
+        return True
+
+    add = _git(["add", "-A"])
+    if add.returncode != 0:
+        logger.warning(
+            "Cannot stage changes for issue #%s in %s: %s",
+            issue_number,
+            target_repo_dir,
+            add.stderr,
+        )
+        return False
+
+    message = (
+        str(commit_message).strip()
+        if str(commit_message or "").strip()
+        else f"chore: sync final workflow changes for issue #{issue_number}"
+    )
+    commit = _git(["commit", "-m", message])
+    if commit.returncode != 0:
+        # Nothing-to-commit can happen when only ignored files changed.
+        status_after_add = _git(["status", "--porcelain"])
+        if status_after_add.returncode == 0 and not (status_after_add.stdout or "").strip():
+            return True
+        logger.warning(
+            "Cannot commit changes for issue #%s in %s: %s",
+            issue_number,
+            target_repo_dir,
+            commit.stderr,
+        )
+        return False
+
+    push = _git(["push", "-u", "origin", "HEAD"], timeout=60)
+    if push.returncode != 0:
+        logger.warning(
+            "Cannot push final changes for issue #%s in %s: %s",
+            issue_number,
+            target_repo_dir,
+            push.stderr,
+        )
+        return False
+    return True
+
+
 def finalize_workflow(
     *,
     issue_num: str,
@@ -185,6 +267,7 @@ def finalize_workflow(
     resolve_repo_branch_fn,
     find_existing_pr_fn,
     cleanup_worktree_fn,
+    sync_existing_pr_changes_fn,
     close_issue_fn,
     send_notification,
     enqueue_merge_queue_prs,
@@ -220,6 +303,7 @@ def finalize_workflow(
         resolve_repo_branch=resolve_repo_branch_fn,
         find_existing_pr=find_existing_pr_fn,
         cleanup_worktree=cleanup_worktree_fn,
+        sync_existing_pr_changes=sync_existing_pr_changes_fn,
         close_issue=close_issue_fn,
         send_notification=send_notification,
         cache_key="workflow-policy:finalize",

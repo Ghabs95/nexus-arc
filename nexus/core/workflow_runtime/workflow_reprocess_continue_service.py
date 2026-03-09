@@ -301,7 +301,11 @@ async def _handle_continue_status_outcome(
             )
             await ctx.edit_message_text(
                 message_id=msg_id,
-                text=f"✅ Workflow complete for issue #{issue_num}\nLast agent: `{continue_ctx['resumed_from']}`\nIssue finalized (closed + PR if applicable).",
+                text=(
+                    f"✅ Workflow complete for issue #{issue_num}\n"
+                    f"Last agent: `{continue_ctx['resumed_from']}`\n"
+                    "Issue finalized (PR handled; issue closes after merged PR/MR webhook)."
+                ),
             )
         except Exception as exc:
             deps.logger.error(f"Finalization failed for issue #{issue_num}: {exc}", exc_info=True)

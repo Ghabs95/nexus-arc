@@ -17,6 +17,7 @@ from nexus.core.issue_finalize import (
     create_pr_from_changes as _create_pr_from_changes,
     finalize_workflow as _finalize_workflow_core,
     find_existing_pr as _find_existing_pr,
+    sync_existing_pr_changes as _sync_existing_pr_changes,
     verify_workflow_terminal_before_finalize as _verify_workflow_terminal_before_finalize,
 )
 from nexus.core.merge_queue import enqueue_merge_queue_prs
@@ -175,6 +176,13 @@ def finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: 
             is_issue_agent_running_fn=lambda value: is_issue_process_running(
                 value, cache_key="runtime-ops:inbox"
             ),
+        ),
+        sync_existing_pr_changes_fn=lambda **kwargs: _sync_existing_pr_changes(
+            repo_dir=kwargs["repo_dir"],
+            issue_number=str(kwargs["issue_number"]),
+            issue_repo=kwargs.get("issue_repo"),
+            repo=kwargs.get("repo"),
+            base_branch=kwargs.get("base_branch"),
         ),
         close_issue_fn=lambda **kwargs: _close_issue(
             project_name=project_name,
