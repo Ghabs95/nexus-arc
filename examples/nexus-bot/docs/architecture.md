@@ -121,12 +121,12 @@ Agent Starts → Posts to GitHub
 
 The system runs as Linux systemd services:
 
-| Service         | Description                                 |
-|-----------------|---------------------------------------------|
+| Service          | Description                                 |
+|------------------|---------------------------------------------|
 | `nexus-telegram` | Telegram bot (long-polling or webhook mode) |
-| `nexus-discord` | Discord bot (gateway/slash commands)         |
-| `nexus-webhook` | GitHub webhook receiver + inbox processor   |
-| `nexus-health`  | Health check / metrics endpoint             |
+| `nexus-discord`  | Discord bot (gateway/slash commands)        |
+| `nexus-webhook`  | GitHub webhook receiver + inbox processor   |
+| `nexus-health`   | Health check / metrics endpoint             |
 
 All services auto-restart on failure via `Restart=always`.
 

@@ -198,7 +198,8 @@ example.
 - Use different project structures
 
 > **📝 Note:** The examples below show different integration approaches. The **recommended pattern** is to define
-> workflows in YAML files and use `project_config.yaml` to reference them (see examples/workflows/). However, you can also
+> workflows in YAML files and use `project_config.yaml` to reference them (see examples/workflows/). However, you can
+> also
 > programmatically build workflows in Python if your use case requires dynamic workflow generation.
 
 ---

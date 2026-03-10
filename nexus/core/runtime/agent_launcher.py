@@ -16,6 +16,7 @@ import re
 import subprocess
 import threading
 import time
+
 import yaml
 
 from nexus.adapters.git.utils import build_issue_url

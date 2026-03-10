@@ -44,13 +44,13 @@ pip install -e .
 
 After installation, six commands become available:
 
-| Command           | Service                                 |
-|-------------------|-----------------------------------------|
-| `nexus-telegram-bot` | Telegram interactive bot runtime     |
-| `nexus-discord-bot`  | Discord interactive bot runtime      |
-| `nexus-processor` | Inbox processor (agent execution loop)  |
-| `nexus-webhook`   | GitHub/GitLab webhook receiver          |
-| `nexus-health`    | Health-check HTTP endpoint              |
+| Command              | Service                                |
+|----------------------|----------------------------------------|
+| `nexus-telegram-bot` | Telegram interactive bot runtime       |
+| `nexus-discord-bot`  | Discord interactive bot runtime        |
+| `nexus-processor`    | Inbox processor (agent execution loop) |
+| `nexus-webhook`      | GitHub/GitLab webhook receiver         |
+| `nexus-health`       | Health-check HTTP endpoint             |
 
 ---
 

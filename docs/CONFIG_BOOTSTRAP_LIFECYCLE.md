@@ -15,12 +15,12 @@ For executable entrypoints (bot/webhook/processor/health):
 `initialize_runtime(...)` coordinates:
 
 - `bootstrap_environment(secret_file=".env")`
-  - Loads `.env` once per process
-  - Safe to call repeatedly (idempotent)
+    - Loads `.env` once per process
+    - Safe to call repeatedly (idempotent)
 - `configure_runtime_logging()`
-  - Optional (controlled by `configure_logging=...`)
+    - Optional (controlled by `configure_logging=...`)
 - `initialize_runtime_directories()`
-  - Ensures runtime state/log/storage dirs exist
+    - Ensures runtime state/log/storage dirs exist
 
 ## Placement Rules
 

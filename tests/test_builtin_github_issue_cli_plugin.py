@@ -23,7 +23,7 @@ def test_builtin_plugin_retries_without_labels(monkeypatch):
             raise subprocess.CalledProcessError(1, cmd, stderr="label failed")
         return _Result("https://github.com/owner/repo/issues/42\n")
 
-    monkeypatch.setattr("nexus.plugins.builtin.github_issue_plugin.subprocess.run", _fake_run)
+    monkeypatch.setattr("nexus.plugins.builtin.github_issue_cli_plugin.subprocess.run", _fake_run)
 
     url = plugin.create_issue(
         title="Test",
@@ -44,7 +44,7 @@ def test_builtin_plugin_add_comment(monkeypatch):
         captured["cmd"] = cmd
         return _Result("ok")
 
-    monkeypatch.setattr("nexus.plugins.builtin.github_issue_plugin.subprocess.run", _fake_run)
+    monkeypatch.setattr("nexus.plugins.builtin.github_issue_cli_plugin.subprocess.run", _fake_run)
 
     success = plugin.add_comment("42", "hello")
 
@@ -74,7 +74,7 @@ def test_builtin_plugin_issue_ops(monkeypatch):
             return _Result('[{"number":1,"title":"A","state":"open"}]')
         return _Result("ok")
 
-    monkeypatch.setattr("nexus.plugins.builtin.github_issue_plugin.subprocess.run", _fake_run)
+    monkeypatch.setattr("nexus.plugins.builtin.github_issue_cli_plugin.subprocess.run", _fake_run)
 
     assert plugin.ensure_label("agent:requested", "E6E6FA", "Requested") is True
     assert plugin.add_label("42", "agent:requested") is True
@@ -114,7 +114,7 @@ def test_builtin_plugin_ensure_label_returns_true_when_label_exists(monkeypatch)
     def _fake_run(cmd, check, timeout, capture_output, text):
         return _ExistsResult()
 
-    monkeypatch.setattr("nexus.plugins.builtin.github_issue_plugin.subprocess.run", _fake_run)
+    monkeypatch.setattr("nexus.plugins.builtin.github_issue_cli_plugin.subprocess.run", _fake_run)
 
     assert plugin.ensure_label("agent:requested", "E6E6FA", "Requested") is True
 

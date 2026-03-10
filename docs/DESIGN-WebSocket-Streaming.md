@@ -23,15 +23,15 @@ WorkflowEngine  →  EventBus  →  SocketIO Bridge  →  Flask-SocketIO  →  B
 
 ### Components
 
-| Component | File | Responsibility |
-|-----------|------|----------------|
-| `WorkflowEngine` | `nexus/core/workflow.py` | Emits typed `NexusEvent` objects (step.*, workflow.*) |
-| `EventBus` | `nexus/core/events.py` | Routes events to subscribed async handlers |
-| SocketIO bridge | `nexus/core/orchestration/nexus_core_helpers.py` | Subscribes to EventBus, maps events → SocketIO payloads |
-| `HostStateManager` | `nexus/core/state_manager.py` | Thread-safe SocketIO emit helpers |
-| `MermaidRenderService` | `nexus/core/mermaid_render_service.py` | Generates Mermaid diagram syntax from live step states |
-| Flask-SocketIO server | `examples/nexus-bot/src/webhook_server.py` | Hosts `/visualizer` namespace, registers emitter |
-| Visualizer frontend | `examples/nexus-bot/src/static/visualizer.html` | Cytoscape.js graph + Mermaid tab, listens for events |
+| Component              | File                                             | Responsibility                                          |
+|------------------------|--------------------------------------------------|---------------------------------------------------------|
+| `WorkflowEngine`       | `nexus/core/workflow.py`                         | Emits typed `NexusEvent` objects (step.*, workflow.*)   |
+| `EventBus`             | `nexus/core/events.py`                           | Routes events to subscribed async handlers              |
+| SocketIO bridge        | `nexus/core/orchestration/nexus_core_helpers.py` | Subscribes to EventBus, maps events → SocketIO payloads |
+| `HostStateManager`     | `nexus/core/state_manager.py`                    | Thread-safe SocketIO emit helpers                       |
+| `MermaidRenderService` | `nexus/core/mermaid_render_service.py`           | Generates Mermaid diagram syntax from live step states  |
+| Flask-SocketIO server  | `examples/nexus-bot/src/webhook_server.py`       | Hosts `/visualizer` namespace, registers emitter        |
+| Visualizer frontend    | `examples/nexus-bot/src/static/visualizer.html`  | Cytoscape.js graph + Mermaid tab, listens for events    |
 
 ---
 
@@ -86,12 +86,12 @@ Emitted for every step transition: `step.started`, `step.completed`, `step.faile
 
 **Status mapping:**
 
-| EventBus event | `status` value |
-|----------------|----------------|
-| `step.started` | `running` |
-| `step.completed` | `done` |
-| `step.failed` | `failed` |
-| `step.skipped` | `skipped` |
+| EventBus event   | `status` value |
+|------------------|----------------|
+| `step.started`   | `running`      |
+| `step.completed` | `done`         |
+| `step.failed`    | `failed`       |
+| `step.skipped`   | `skipped`      |
 
 ### `workflow_completed`
 
@@ -141,6 +141,7 @@ Both fall back to the `/visualizer/snapshot` REST endpoint for initial page load
 ## No New Dependencies
 
 All components use existing dependencies:
+
 - `flask-socketio >= 5.3` (already in `pyproject.toml`)
 - `eventlet >= 0.35` (already in `pyproject.toml`)
 - No additional Python packages required.

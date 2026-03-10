@@ -1,7 +1,8 @@
 # Nexus ARC (Agentic Runtime Core) Architecture
 
 > **About this document:** This shows the evolution from the original Nexus Telegram bot (coupled architecture) to the
-> generic Nexus ARC (Agentic Runtime Core) framework (pluggable architecture). The migration sections are specific to that
+> generic Nexus ARC (Agentic Runtime Core) framework (pluggable architecture). The migration sections are specific to
+> that
 > project but demonstrate how to adopt the framework.
 
 ## Original Nexus (Coupled Architecture)
