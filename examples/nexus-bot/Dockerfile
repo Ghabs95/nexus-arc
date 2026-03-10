@@ -42,7 +42,7 @@ COPY nexus /nexus-arc/nexus
 COPY README.md /nexus-arc/README.md
 RUN pip install --no-cache-dir "/nexus-arc[nexus-bot]"
 
-# Install the telegram-bot package (console scripts: nexus-bot, etc.)
+# Install the chat runtime package (console scripts: nexus-telegram-bot, nexus-discord-bot, etc.)
 COPY examples/nexus-bot/pyproject.toml /app/pyproject.toml
 COPY examples/nexus-bot/src /app/src
 RUN pip install --no-cache-dir /app
@@ -52,4 +52,4 @@ COPY examples/nexus-bot/.env.example /app/.env.example
 
 RUN mkdir -p /app/data /app/logs
 
-CMD ["nexus-bot"]
+CMD ["nexus-telegram-bot"]

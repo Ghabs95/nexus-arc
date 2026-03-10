@@ -4,6 +4,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from nexus.adapters.git.utils import build_issue_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +24,27 @@ class WorkflowPolicyPlugin:
         value = str(agent or "").strip().lstrip("@").strip()
         return f"@{value}" if value else "unknown"
 
+    def _resolve_project_config(
+        self, *, project_name: str | None = None, repo: str | None = None
+    ) -> dict[str, Any] | None:
+        resolver = self._callback("resolve_project_config")
+        if not resolver:
+            return None
+        try:
+            value = resolver(project_name=project_name, repo=repo)
+        except TypeError:
+            try:
+                value = resolver(project_name)
+            except TypeError:
+                value = resolver(repo)
+        return value if isinstance(value, dict) else None
+
+    def _build_issue_link(
+        self, *, repo: str, issue_number: str, project_name: str | None = None
+    ) -> str:
+        cfg = self._resolve_project_config(project_name=project_name, repo=repo)
+        return build_issue_url(str(repo), str(issue_number), cfg)
+
     def build_transition_message(
         self,
         *,
@@ -29,6 +52,7 @@ class WorkflowPolicyPlugin:
         completed_agent: str,
         next_agent: str,
         repo: str,
+        project_name: str | None = None,
     ) -> str:
         completed = self._format_agent(completed_agent)
         launching = self._format_agent(next_agent)
@@ -37,7 +61,7 @@ class WorkflowPolicyPlugin:
             f"Issue: #{issue_number}\n"
             f"Completed: `{completed}`\n"
             f"Launching: `{launching}`\n\n"
-            f"🔗 https://github.com/{repo}/issues/{issue_number}"
+            f"🔗 {self._build_issue_link(repo=repo, issue_number=issue_number, project_name=project_name)}"
         )
 
     def build_autochain_failed_message(
@@ -47,6 +71,7 @@ class WorkflowPolicyPlugin:
         completed_agent: str,
         next_agent: str,
         repo: str,
+        project_name: str | None = None,
     ) -> str:
         completed = self._format_agent(completed_agent)
         failed = self._format_agent(next_agent)
@@ -55,7 +80,7 @@ class WorkflowPolicyPlugin:
             f"Issue: #{issue_number}\n"
             f"Completed: `{completed}`\n"
             f"Failed to launch: `{failed}`\n\n"
-            f"🔗 https://github.com/{repo}/issues/{issue_number}"
+            f"🔗 {self._build_issue_link(repo=repo, issue_number=issue_number, project_name=project_name)}"
         )
 
     def build_workflow_complete_message(
@@ -64,6 +89,7 @@ class WorkflowPolicyPlugin:
         issue_number: str,
         last_agent: str,
         repo: str,
+        project_name: str | None = None,
         pr_urls: list[str] | None = None,
     ) -> str:
         parts = [
@@ -75,7 +101,9 @@ class WorkflowPolicyPlugin:
         if urls:
             parts.append("PRs:\n")
             parts.extend(f"- {url}\n" for url in urls)
-        parts.append(f"\n🔗 https://github.com/{repo}/issues/{issue_number}")
+        parts.append(
+            f"\n🔗 {self._build_issue_link(repo=repo, issue_number=issue_number, project_name=project_name)}"
+        )
         return "".join(parts)
 
     def _resolve_git_dir(self, project_name: str) -> str | None:
@@ -168,6 +196,7 @@ class WorkflowPolicyPlugin:
         repo: str,
         issue_number: str,
         last_agent: str,
+        project_name: str | None = None,
         pr_urls: list[str] | None = None,
     ) -> None:
         notifier = self._callback("send_notification")
@@ -178,12 +207,21 @@ class WorkflowPolicyPlugin:
             self._callback("build_workflow_complete_message")
             or self.build_workflow_complete_message
         )
-        message = builder(
-            issue_number=str(issue_number),
-            last_agent=last_agent,
-            repo=repo,
-            pr_urls=pr_urls or [],
-        )
+        try:
+            message = builder(
+                issue_number=str(issue_number),
+                last_agent=last_agent,
+                repo=repo,
+                project_name=project_name,
+                pr_urls=pr_urls or [],
+            )
+        except TypeError:
+            message = builder(
+                issue_number=str(issue_number),
+                last_agent=last_agent,
+                repo=repo,
+                pr_urls=pr_urls or [],
+            )
         notifier(message)
 
     def _cleanup_worktree(self, *, repo_dir: str, issue_number: str) -> bool:
@@ -325,6 +363,7 @@ class WorkflowPolicyPlugin:
                 repo=repo,
                 issue_number=issue_number,
                 last_agent=last_agent,
+                project_name=project_name,
                 pr_urls=result.get("pr_urls", []),
             )
             result["notification_sent"] = self._callback("send_notification") is not None

@@ -175,6 +175,8 @@ def detect_feature_ideation_intent(
     run_analysis: Callable[..., dict[str, Any]] | None = None,
     logger: Any | None = None,
     confidence_threshold: float = 0.65,
+    requester_context: dict[str, Any] | None = None,
+    project_name: str | None = None,
 ) -> tuple[bool, float, str]:
     """Detect feature-ideation intent with model-first classification."""
     phrase_match = is_feature_ideation_request(text)
@@ -190,7 +192,12 @@ def detect_feature_ideation_intent(
         )
 
     try:
-        result = run_analysis(text=text, task="detect_feature_ideation")
+        analysis_kwargs: dict[str, Any] = {"text": text, "task": "detect_feature_ideation"}
+        if isinstance(requester_context, dict) and requester_context:
+            analysis_kwargs["requester_context"] = requester_context
+        if isinstance(project_name, str) and project_name.strip():
+            analysis_kwargs["project_name"] = project_name.strip()
+        result = run_analysis(**analysis_kwargs)
     except Exception as exc:
         if logger:
             logger.warning("Feature ideation detector model fallback failed: %s", exc)
@@ -840,11 +847,20 @@ async def handle_feature_ideation_request(
     if ctx is None or status_msg_id is None or text is None or deps is None:
         return False
 
+    requester_context = None
+    if callable(getattr(deps, "requester_context_builder", None)) and str(getattr(ctx, "user_id", "")).isdigit():
+        try:
+            requester_context = deps.requester_context_builder(int(str(ctx.user_id)))
+        except Exception:
+            requester_context = None
+
     if detected_feature_ideation is None:
         feature_ideation, fi_confidence, fi_reason = detect_feature_ideation_intent(
             text,
             run_analysis=deps.orchestrator.run_text_to_speech_analysis,
             logger=deps.logger,
+            requester_context=requester_context,
+            project_name=preferred_project_key,
         )
     else:
         feature_ideation = bool(detected_feature_ideation)
@@ -869,13 +885,6 @@ async def handle_feature_ideation_request(
     project_locked = bool(project_key)
     if not project_key:
         project_key = None
-    requester_context = None
-    if callable(getattr(deps, "requester_context_builder", None)) and str(getattr(ctx, "user_id", "")).isdigit():
-        try:
-            requester_context = deps.requester_context_builder(int(str(ctx.user_id)))
-        except Exception:
-            requester_context = None
-
     ctx.user_state[FEATURE_STATE_KEY] = {
         "project": project_key,
         "project_locked": project_locked,

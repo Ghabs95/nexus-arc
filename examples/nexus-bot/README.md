@@ -1,6 +1,6 @@
-# Telegram Bot Example (Migrated from `nexus`)
+# Chat Bot Example (Migrated from `nexus`)
 
-This folder is now the canonical home for the Telegram bot runtime that previously lived in `ghabs/nexus/src`.
+This folder is now the canonical home for the Telegram/Discord bot runtimes that previously lived in `ghabs/nexus/src`.
 
 Bootstrap/runtime lifecycle reference:
 
@@ -67,11 +67,12 @@ python3 -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 ./scripts/check-prod-env.sh .env
 ```
 
-Run the bot:
+Run the bot runtimes:
 
 ```bash
 source .env
-python src/telegram_bot.py
+nexus-telegram-bot
+nexus-discord-bot
 ```
 
 ## systemd templates
@@ -102,9 +103,10 @@ This example includes a dedicated application compose stack:
 - `docker-compose.yml`
 - `Dockerfile`
 
-It runs four services:
+It runs five services:
 
-- `bot`
+- `telegram`
+- `discord`
 - `processor`
 - `webhook`
 - `health`
@@ -142,7 +144,7 @@ docker compose down
 Logs:
 
 ```bash
-docker compose logs -f bot processor webhook health
+docker compose logs -f telegram discord processor webhook health
 ```
 
 ### Config-driven deploy mode

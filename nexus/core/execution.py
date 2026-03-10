@@ -8,27 +8,43 @@ import logging
 import os
 import re
 
+from nexus.core.agents import find_agent_yaml, normalize_agent_key
+
 logger = logging.getLogger(__name__)
 
 
 def find_agent_definition(agent_name: str, search_dirs: list[str]) -> str | None:
-    """Find the YAML definition for an agent."""
-    # Strip @ prefix if present
-    normalized_name = agent_name.lstrip("@").lower()
+    """Find the YAML definition for an agent.
 
-    # Common filename variants to search for
-    candidates = [
+    Resolution order:
+    1. Preferred: match Agent YAML by ``spec.agent_type``.
+    2. Fallback: legacy filename-based matching for backwards compatibility.
+    """
+    requested = agent_name.lstrip("@")
+
+    # Preferred behavior: resolve by the declared YAML agent_type.
+    resolved = find_agent_yaml(requested, search_dirs)
+    if resolved:
+        return resolved
+
+    # Backward-compatible fallback: filename variants.
+    normalized_name = normalize_agent_key(requested)
+    legacy_candidates = {
+        requested.lower(),
         normalized_name,
+        normalized_name.replace("-", "_"),
+        f"{requested.lower()}_agent",
+        f"{requested.lower()}-agent",
         f"{normalized_name}_agent",
         f"{normalized_name}-agent",
-    ]
-    extensions = [".yaml", ".yml"]
+    }
+    extensions = (".yaml", ".yml")
 
     for directory in search_dirs:
         if not os.path.exists(directory):
             continue
 
-        for candidate in candidates:
+        for candidate in legacy_candidates:
             for ext in extensions:
                 path = os.path.join(directory, f"{candidate}{ext}")
                 if os.path.exists(path):

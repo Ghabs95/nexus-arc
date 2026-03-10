@@ -512,6 +512,21 @@ class WorkflowStateEnginePlugin:
                 "created_at": workflow.created_at.isoformat() if workflow.created_at else None,
                 "updated_at": workflow.updated_at.isoformat() if workflow.updated_at else None,
                 "metadata": workflow.metadata,
+                "steps": [
+                    {
+                        "name": str(getattr(step, "name", "") or ""),
+                        "status": str(getattr(getattr(step, "status", None), "value", "") or ""),
+                        "agent": {
+                            "name": str(
+                                getattr(getattr(step, "agent", None), "name", "") or ""
+                            ),
+                            "display_name": str(
+                                getattr(getattr(step, "agent", None), "display_name", "") or ""
+                            ),
+                        },
+                    }
+                    for step in steps
+                ],
             }
         except Exception as exc:
             logger.error("Failed to read workflow status for issue #%s: %s", issue_number, exc)

@@ -101,6 +101,32 @@ def test_detect_feature_ideation_intent_phrase_fallback_when_model_errors():
     assert reason == "phrase_fallback_model_error"
 
 
+def test_detect_feature_ideation_intent_forwards_requester_and_project_context():
+    captured = {}
+
+    def _run_analysis(**kwargs):
+        captured.update(kwargs)
+        return {
+            "feature_ideation": True,
+            "confidence": 0.9,
+            "reason": "feature request",
+        }
+
+    matched, confidence, reason = handlers.detect_feature_ideation_intent(
+        "Which features should we add?",
+        run_analysis=_run_analysis,
+        requester_context={"nexus_id": "nexus-42"},
+        project_name="nexus",
+    )
+
+    assert matched is True
+    assert confidence == 0.9
+    assert reason == "feature request"
+    assert captured["task"] == "detect_feature_ideation"
+    assert captured["requester_context"] == {"nexus_id": "nexus-42"}
+    assert captured["project_name"] == "nexus"
+
+
 class _CaptureOrchestrator:
     def __init__(self):
         self.persona = ""

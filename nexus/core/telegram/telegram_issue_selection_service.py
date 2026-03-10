@@ -170,9 +170,13 @@ async def handle_pending_issue_input(
     is_feature_ideation_request,
     dispatch_command,
 ) -> bool:
-    pending_command = context.user_data.get("pending_command")
-    pending_project = context.user_data.get("pending_project")
-    pending_issue = context.user_data.get("pending_issue")
+    user_data = getattr(context, "user_data", None)
+    if not hasattr(user_data, "get"):
+        return False
+
+    pending_command = user_data.get("pending_command")
+    pending_project = user_data.get("pending_project")
+    pending_issue = user_data.get("pending_issue")
     if not pending_command or not pending_project:
         return False
 
@@ -186,7 +190,7 @@ async def handle_pending_issue_input(
                 "Please enter a valid issue number (e.g., 1)."
             )
             return True
-        context.user_data["pending_issue"] = issue_num
+        user_data["pending_issue"] = issue_num
         if pending_command == "respond":
             await update.effective_message.reply_text(
                 "Now send the response message for this issue."
@@ -196,8 +200,8 @@ async def handle_pending_issue_input(
         issue_num = pending_issue
 
     rest: list[str] = [text] if pending_command == "respond" else []
-    context.user_data.pop("pending_command", None)
-    context.user_data.pop("pending_project", None)
-    context.user_data.pop("pending_issue", None)
+    user_data.pop("pending_command", None)
+    user_data.pop("pending_project", None)
+    user_data.pop("pending_issue", None)
     await dispatch_command(update, context, pending_command, pending_project, issue_num, rest)
     return True

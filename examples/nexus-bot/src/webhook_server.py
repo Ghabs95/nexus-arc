@@ -381,6 +381,7 @@ def _collect_visualizer_snapshot() -> list[dict]:
     """Return a best-effort snapshot of mapped workflows for visualizer bootstrap."""
     try:
         from nexus.core.integrations.workflow_state_factory import get_workflow_state
+        from nexus.core.mermaid_render_service import build_mermaid_diagram
         from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 
         workflow_state = get_workflow_state()
@@ -414,6 +415,14 @@ def _collect_visualizer_snapshot() -> list[dict]:
                         "issue": str(issue_num),
                         "workflow_id": str(workflow_id),
                         "status": status or {},
+                        "diagram": (
+                            build_mermaid_diagram(
+                                list((status or {}).get("steps") or []),
+                                str(issue_num),
+                            )
+                            if isinstance(status, dict) and status.get("steps")
+                            else ""
+                        ),
                     }
                 )
             return records

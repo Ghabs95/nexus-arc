@@ -220,6 +220,7 @@ def get_workflow_state_plugin(
     storage_dir: str,
     storage_type: str | None = None,
     storage_config: dict[str, Any] | None = None,
+    event_bus: Any = None,
     issue_to_workflow_id: Callable[[str], str | None] | None = None,
     issue_to_workflow_map_setter: Callable[[str, str], None] | None = None,
     workflow_definition_path_resolver: Callable[[str], str | None] | None = None,
@@ -238,6 +239,7 @@ def get_workflow_state_plugin(
     optional_overrides = {
         "storage_type": storage_type,
         "storage_config": storage_config,
+        "event_bus": event_bus,
         "issue_to_workflow_id": issue_to_workflow_id,
         "issue_to_workflow_map_setter": issue_to_workflow_map_setter,
         "workflow_definition_path_resolver": workflow_definition_path_resolver,
@@ -317,6 +319,7 @@ def get_workflow_policy_plugin(
     cleanup_worktree: Callable[..., bool] | None = None,
     close_issue: Callable[..., bool] | None = None,
     send_notification: Callable[[str], None] | None = None,
+    resolve_project_config: Callable[..., dict[str, Any] | None] | None = None,
     build_workflow_complete_message: Callable[..., str] | None = None,
     cache_key: str | None = "workflow:policy",
 ):
@@ -340,6 +343,8 @@ def get_workflow_policy_plugin(
         overrides["close_issue"] = close_issue
     if send_notification is not None:
         overrides["send_notification"] = send_notification
+    if resolve_project_config is not None:
+        overrides["resolve_project_config"] = resolve_project_config
     if build_workflow_complete_message is not None:
         overrides["build_workflow_complete_message"] = build_workflow_complete_message
 

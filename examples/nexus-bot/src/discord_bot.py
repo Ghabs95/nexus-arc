@@ -457,10 +457,14 @@ async def _run_bridge_handler_args(
     handler,
     deps_factory,
 ) -> None:
+    # Ack early to avoid Discord's "application did not respond" timeout.
+    if not interaction.response.is_done():
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
     if not check_permission_for_action(interaction.user.id, action="execute"):
-        await interaction.response.send_message(
+        await _send_interaction_ephemeral(
+            interaction,
             _permission_denied_message(interaction.user.id, action="execute"),
-            ephemeral=True,
         )
         return
 
@@ -469,15 +473,12 @@ async def _run_bridge_handler_args(
         if candidate_project in _svc_iter_project_keys(project_config=PROJECT_CONFIG):
             nexus_id = user_manager.resolve_nexus_id("discord", str(interaction.user.id))
             if not nexus_id:
-                await interaction.response.send_message("🔐 Run `/login` first.", ephemeral=True)
+                await _send_interaction_ephemeral(interaction, "🔐 Run `/login` first.")
                 return
             allowed, error = _svc_check_project_access(str(nexus_id), str(candidate_project))
             if not allowed:
-                await interaction.response.send_message(error, ephemeral=True)
+                await _send_interaction_ephemeral(interaction, error)
                 return
-
-    if not interaction.response.is_done():
-        await interaction.response.defer(thinking=True)
 
     ctx = DiscordInteractiveCtx(
         interaction,
@@ -491,10 +492,7 @@ async def _run_bridge_handler_args(
             "Discord command /%s failed for user %s", command_name, interaction.user.id
         )
         message = f"⚠️ /{command_name} failed: {exc}"
-        if interaction.response.is_done():
-            await interaction.followup.send(message, ephemeral=True)
-        else:
-            await interaction.response.send_message(message, ephemeral=True)
+        await _send_interaction_ephemeral(interaction, message)
 
 
 def _chunk_text(text: str, limit: int = 1800) -> list[str]:
@@ -1445,13 +1443,7 @@ def check_permission(user_id: int) -> bool:
     if not NEXUS_AUTH_ENABLED:
         return True
     nexus_id = user_manager.resolve_nexus_id("discord", str(user_id))
-    if not nexus_id:
-        return False
-    try:
-        setup = _svc_get_setup_status(str(nexus_id))
-    except Exception:
-        return False
-    return bool(setup.get("ready"))
+    return bool(nexus_id)
 
 
 def check_permission_for_action(user_id: int, *, action: str = "execute") -> bool:
@@ -1481,27 +1473,16 @@ def _permission_denied_message(user_id: int, *, action: str = "execute") -> str:
     nexus_id = user_manager.resolve_nexus_id("discord", str(user_id))
     if not nexus_id:
         return "🔐 Complete setup with `/login` before using task/workflow commands."
-    try:
-        setup = _svc_get_setup_status(str(nexus_id))
-    except Exception:
-        return "🔐 Auth storage is unavailable. Ask an admin to check auth configuration."
-    missing: list[str] = []
-    if not setup.get("git_provider_linked"):
-        missing.append("Git provider login (GitHub or GitLab)")
-    if not setup.get("ai_provider_ready"):
-        missing.append(
-            "AI provider credentials (Codex/OpenAI, Gemini, Claude, or GitHub for Copilot)"
-        )
-    if not setup.get("org_verified"):
-        missing.append("allowed org/group membership")
-    if int(setup.get("project_access_count") or 0) <= 0:
-        missing.append("project team/group access")
-    if missing:
-        return (
-            "🔐 Setup incomplete: " + ", ".join(missing) + ". "
-            "Run `/login` then `/setup-status`."
-        )
-    return "🔒 Unauthorized."
+    return "🔐 Complete setup with `/login` and verify with `/setup-status`."
+
+
+async def _send_interaction_ephemeral(interaction: discord.Interaction, content: str) -> None:
+    """Best-effort ephemeral response for both fresh and deferred interactions."""
+    message = str(content or "")
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.response.send_message(message, ephemeral=True)
 
 
 def _get_or_create_discord_user(discord_user: Any):
@@ -3442,6 +3423,18 @@ async def on_message(message: discord.Message):
     await status_msg.edit(content=result["message"])
 
 
+@bot.tree.error
+async def on_app_command_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    """Global fallback so slash-command failures still return a Discord response."""
+    logger.exception("Unhandled app command error for user %s: %s", interaction.user.id, error)
+    try:
+        await _send_interaction_ephemeral(interaction, f"⚠️ Command failed: {error}")
+    except Exception:
+        logger.exception("Failed sending app-command error response")
+
+
 @bot.event
 async def on_ready():
     logger.info(f"Discord bot connected as {bot.user}")
@@ -3488,9 +3481,13 @@ async def setup_hook():
     logger.info("Synced %s slash commands globally", len(global_synced))
 
 
-if __name__ == "__main__":
+def main() -> None:
     if not DISCORD_TOKEN:
         logger.error("DISCORD_TOKEN environment variable not set.")
         sys.exit(1)
 
     bot.run(DISCORD_TOKEN)
+
+
+if __name__ == "__main__":
+    main()

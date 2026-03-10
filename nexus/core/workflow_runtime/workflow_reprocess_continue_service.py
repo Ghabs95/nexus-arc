@@ -49,13 +49,29 @@ def _has_agents_workspace_config(cfg: dict[str, Any] | None) -> bool:
     return bool(isinstance(cfg, dict) and cfg.get("agents_dir") and cfg.get("workspace"))
 
 
-def _load_issue_details(issue_num: Any, repo: str, deps: Any) -> dict[str, Any] | None:
-    data = deps.get_issue_details(issue_num, repo=repo)
+def _load_issue_details(
+    issue_num: Any,
+    repo: str,
+    deps: Any,
+    *,
+    requester_nexus_id: str | None = None,
+) -> dict[str, Any] | None:
+    kwargs = {"repo": repo}
+    if requester_nexus_id:
+        kwargs["requester_nexus_id"] = requester_nexus_id
+    try:
+        data = deps.get_issue_details(issue_num, **kwargs)
+    except TypeError:
+        data = deps.get_issue_details(issue_num, repo=repo)
     return data if isinstance(data, dict) else None
 
 
 def _resolve_task_file_and_prefetched_issue(
-    project_key: str, issue_num: Any, deps: Any
+    project_key: str,
+    issue_num: Any,
+    deps: Any,
+    *,
+    requester_nexus_id: str | None = None,
 ) -> tuple[str | None, dict[str, Any] | None]:
     task_file = (
         None
@@ -66,7 +82,12 @@ def _resolve_task_file_and_prefetched_issue(
         return task_file, None
 
     repo = deps.project_repo(project_key)
-    details = _load_issue_details(issue_num, repo, deps)
+    details = _load_issue_details(
+        issue_num,
+        repo,
+        deps,
+        requester_nexus_id=requester_nexus_id,
+    )
     if not details:
         return None, None
     if is_postgres_backend(NEXUS_STORAGE_BACKEND):
@@ -80,8 +101,14 @@ async def _resolve_reprocess_source(
     *,
     project_key: str,
     issue_num: Any,
+    requester_nexus_id: str | None = None,
 ) -> tuple[str | None, dict[str, Any] | None, str, dict[str, Any] | None]:
-    task_file, details = _resolve_task_file_and_prefetched_issue(project_key, issue_num, deps)
+    task_file, details = _resolve_task_file_and_prefetched_issue(
+        project_key,
+        issue_num,
+        deps,
+        requester_nexus_id=requester_nexus_id,
+    )
 
     if (not is_postgres_backend(NEXUS_STORAGE_BACKEND)) and task_file and os.path.exists(task_file):
         project_name, config = deps.resolve_project_config_from_task(task_file)
@@ -97,7 +124,12 @@ async def _resolve_reprocess_source(
         return project_name, config, content, details
 
     return await _resolve_reprocess_issue_fallback_source(
-        ctx, deps, project_key=project_key, issue_num=issue_num, details=details
+        ctx,
+        deps,
+        project_key=project_key,
+        issue_num=issue_num,
+        details=details,
+        requester_nexus_id=requester_nexus_id,
     )
 
 
@@ -108,6 +140,7 @@ async def _resolve_reprocess_issue_fallback_source(
     project_key: str,
     issue_num: Any,
     details: dict[str, Any] | None,
+    requester_nexus_id: str | None = None,
 ) -> tuple[str | None, dict[str, Any] | None, str, dict[str, Any] | None]:
     fallback_config = _get_project_fallback_config(project_key, deps)
     if not fallback_config:
@@ -122,7 +155,12 @@ async def _resolve_reprocess_issue_fallback_source(
         return None, None, "", None
     if not details:
         repo = deps.project_repo(project_key)
-        details = _load_issue_details(issue_num, repo, deps)
+        details = _load_issue_details(
+            issue_num,
+            repo,
+            deps,
+            requester_nexus_id=requester_nexus_id,
+        )
     if not details:
         await ctx.reply_text(f"❌ Could not load issue #{issue_num}.")
         return None, None, "", None
@@ -138,8 +176,14 @@ async def _ensure_open_issue_details(
     issue_num: Any,
     repo: str,
     existing: dict[str, Any] | None,
+    requester_nexus_id: str | None = None,
 ) -> dict[str, Any] | None:
-    details = existing or _load_issue_details(issue_num, repo, deps)
+    details = existing or _load_issue_details(
+        issue_num,
+        repo,
+        deps,
+        requester_nexus_id=requester_nexus_id,
+    )
     if not details:
         await ctx.reply_text(f"❌ Could not load issue #{issue_num}.")
         return None
@@ -210,19 +254,36 @@ async def handle_reprocess(
     if _is_unauthorized(ctx, deps):
         log_unauthorized_access(getattr(deps, "logger", None), int(ctx.user_id))
         return
+
+    requester_nexus_id = None
+    if callable(getattr(deps, "requester_context_builder", None)) and str(ctx.user_id).isdigit():
+        try:
+            requester_context = deps.requester_context_builder(int(str(ctx.user_id)))
+            requester_nexus_id = str(requester_context.get("nexus_id") or "").strip() or None
+        except Exception:
+            requester_nexus_id = None
     project_key, issue_num, _ = await _ensure_project_issue_for_command(ctx, deps, "reprocess")
     if not project_key:
         return
 
     project_name, config, content, details = await _resolve_reprocess_source(
-        ctx, deps, project_key=project_key, issue_num=issue_num
+        ctx,
+        deps,
+        project_key=project_key,
+        issue_num=issue_num,
+        requester_nexus_id=requester_nexus_id,
     )
     if not project_name or not config:
         return
 
     repo = resolve_repo(config, deps.default_repo)
     details = await _ensure_open_issue_details(
-        ctx, deps, issue_num=issue_num, repo=repo, existing=details
+        ctx,
+        deps,
+        issue_num=issue_num,
+        repo=repo,
+        existing=details,
+        requester_nexus_id=requester_nexus_id,
     )
     if not details:
         return
@@ -253,7 +314,12 @@ def _read_text_file(path: str) -> str:
 
 
 def _prepare_continue_context(
-    issue_num: Any, project_key: str, rest: Any, deps: Any
+    issue_num: Any,
+    project_key: str,
+    rest: Any,
+    deps: Any,
+    *,
+    requester_nexus_id: str | None = None,
 ) -> dict[str, Any]:
     return deps.prepare_continue_context(
         issue_num=issue_num,
@@ -271,6 +337,7 @@ def _prepare_continue_context(
         get_expected_running_agent_from_workflow=deps.get_expected_running_agent_from_workflow,
         get_sop_tier_from_issue=deps.get_sop_tier_from_issue,
         get_sop_tier=deps.get_sop_tier,
+        requester_nexus_id=requester_nexus_id,
     )
 
 
@@ -465,11 +532,24 @@ async def handle_continue(ctx: Any, deps: Any, *, finalize_workflow: Callable[..
     if _is_unauthorized(ctx, deps):
         log_unauthorized_access(getattr(deps, "logger", None), int(ctx.user_id))
         return
+    requester_nexus_id = None
+    if callable(getattr(deps, "requester_context_builder", None)) and str(ctx.user_id).isdigit():
+        try:
+            requester_context = deps.requester_context_builder(int(str(ctx.user_id)))
+            requester_nexus_id = str(requester_context.get("nexus_id") or "").strip() or None
+        except Exception:
+            requester_nexus_id = None
     project_key, issue_num, rest = await _ensure_project_issue_for_command(ctx, deps, "continue")
     if not project_key:
         return
 
-    continue_ctx = _prepare_continue_context(issue_num, project_key, rest, deps)
+    continue_ctx = _prepare_continue_context(
+        issue_num,
+        project_key,
+        rest,
+        deps,
+        requester_nexus_id=requester_nexus_id,
+    )
     should_try_reconcile = str(
         continue_ctx.get("status") or ""
     ) == "ready" and not continue_ctx.get("forced_agent_override")
@@ -512,7 +592,13 @@ async def handle_continue(ctx: Any, deps: Any, *, finalize_workflow: Callable[..
                         f"🔄 Reconciled issue #{issue_num} from remote signals (seeded latest handoff); "
                         "resuming from recovered workflow state..."
                     )
-                continue_ctx = _prepare_continue_context(issue_num, project_key, rest, deps)
+                continue_ctx = _prepare_continue_context(
+                    issue_num,
+                    project_key,
+                    rest,
+                    deps,
+                    requester_nexus_id=requester_nexus_id,
+                )
         except Exception as exc:
             deps.logger.warning(
                 "Continue issue #%s: reconcile-before-continue failed: %s",

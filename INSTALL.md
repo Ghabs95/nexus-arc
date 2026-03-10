@@ -28,8 +28,8 @@ pip install nexus-arc[redis]
 # Add Slack integration
 pip install nexus-arc[slack]
 
-# Add Telegram and Discord Bot capabilities (includes webhooks and interactive UI)
-pip install "nexus-arc[nexus-bot]"
+# Add Telegram and Discord Bots capabilities (includes webhooks and interactive UI)
+pip install "nexus-arc[nexus-telegram-bot,nexus-discord-bot]"
 
 # Add AI/LLM providers (e.g. OpenAI)
 pip install "nexus-arc[ai]"
@@ -38,7 +38,7 @@ pip install "nexus-arc[ai]"
 pip install "nexus-arc[whisper]"
 
 # Install multiple extras at once
-pip install "nexus-arc[postgres,redis,nexus-bot,ai]"
+pip install "nexus-arc[postgres,redis,nexus-telegram-bot,nexus-discord-bot,ai]"
 ```
 
 ## Using Nexus ARC in your project

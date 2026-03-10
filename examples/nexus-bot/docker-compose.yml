@@ -1,51 +1,76 @@
 name: nexus
 
 services:
-  bot:
-    image: ghcr.io/ghabs95/nexus-bot:latest
-    command: [ "nexus-bot" ]
+  telegram:
+    image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
+    command: [ "nexus-telegram-bot" ]
     working_dir: /app
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      PROJECT_CONFIG_PATH: /nexus-config/project_config.yaml
+      PROJECT_CONFIG_PATH: /app/config/project_config.yaml
       BASE_DIR: /opt
-      NEXUS_WEBHOOK_INTERNAL_URL: ${NEXUS_WEBHOOK_INTERNAL_URL:-http://webhook:8081}
+      NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
+      NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ${NEXUS_RUNTIME_DIR:-/var/lib/nexus}:${NEXUS_RUNTIME_DIR:-/var/lib/nexus}
+      - ${LOGS_DIR:-/var/lib/nexus/logs}:${LOGS_DIR:-/var/lib/nexus/logs}
+      - /opt/nexus/config:/nexus-config:ro
+
+  discord:
+    image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
+    command: [ "nexus-discord-bot" ]
+    working_dir: /app
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      PROJECT_CONFIG_PATH: /app/config/project_config.yaml
+      BASE_DIR: /opt
+      NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
+      NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ${NEXUS_RUNTIME_DIR:-/var/lib/nexus}:${NEXUS_RUNTIME_DIR:-/var/lib/nexus}
       - ${LOGS_DIR:-/var/lib/nexus/logs}:${LOGS_DIR:-/var/lib/nexus/logs}
       - /opt/nexus/config:/nexus-config:ro
 
   processor:
-    image: ghcr.io/ghabs95/nexus-bot:latest
+    image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
     depends_on:
-      - bot
+      - telegram
+      - discord
     command: [ "nexus-processor" ]
     working_dir: /app
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      PROJECT_CONFIG_PATH: /nexus-config/project_config.yaml
+      PROJECT_CONFIG_PATH: /app/config/project_config.yaml
       BASE_DIR: /opt
-      NEXUS_WEBHOOK_INTERNAL_URL: ${NEXUS_WEBHOOK_INTERNAL_URL:-http://webhook:8081}
+      NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
+      NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ${NEXUS_RUNTIME_DIR:-/var/lib/nexus}:${NEXUS_RUNTIME_DIR:-/var/lib/nexus}
       - ${LOGS_DIR:-/var/lib/nexus/logs}:${LOGS_DIR:-/var/lib/nexus/logs}
       - /opt/nexus/config:/nexus-config:ro
 
   webhook:
-    image: ghcr.io/ghabs95/nexus-bot:latest
+    image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
     command: [ "nexus-webhook" ]
     working_dir: /app
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      PROJECT_CONFIG_PATH: /nexus-config/project_config.yaml
+      PROJECT_CONFIG_PATH: /app/config/project_config.yaml
       BASE_DIR: /opt
       WEBHOOK_PORT: "8081"
+      NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8081:8081"
     volumes:
@@ -54,9 +79,10 @@ services:
       - /opt/nexus/config:/nexus-config:ro
 
   health:
-    image: ghcr.io/ghabs95/nexus-bot:latest
+    image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
     depends_on:
-      - bot
+      - telegram
+      - discord
       - processor
     command: [ "nexus-health" ]
     working_dir: /app
@@ -64,10 +90,13 @@ services:
     env_file:
       - ./.env
     environment:
-      PROJECT_CONFIG_PATH: /nexus-config/project_config.yaml
+      PROJECT_CONFIG_PATH: /app/config/project_config.yaml
       BASE_DIR: /opt
       HEALTH_CHECK_PORT: "8080"
       HEALTH_CHECK_HOST: "0.0.0.0"
+      NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
+      NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8080:8080"
     volumes:

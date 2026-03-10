@@ -165,4 +165,60 @@ def refine_issue_content_with_ai(
             return candidate
     except Exception as exc:
         logger.warning("Issue content refinement failed: %s", exc)
-    return source
+    return _cleanup_issue_content_fallback(source)
+
+
+def _cleanup_issue_content_fallback(source: str) -> str:
+    """Normalize inbox markdown into a cleaner issue body when AI refinement fails."""
+    text = str(source or "").replace("\r\n", "\n")
+    if not text.strip():
+        return ""
+
+    # Strip source/requester/raw-input trailers injected by inbox capture templates.
+    text = re.split(
+        r"\n-{3,}\n\*\*Source:\*\*.*",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE | re.DOTALL,
+    )[0]
+    text = re.split(
+        r"\n\*\*Raw Input:\*\*.*",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE | re.DOTALL,
+    )[0]
+
+    metadata_prefixes = (
+        "**Project:**",
+        "**Type:**",
+        "**Task Name:**",
+        "**Status:**",
+        "**Source:**",
+        "**Requester Nexus ID:**",
+        "**Requester Platform:**",
+        "**Requester Platform User ID:**",
+    )
+
+    cleaned_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = str(line or "").strip()
+        if stripped == "---":
+            continue
+        if stripped.startswith("# "):
+            continue
+        if any(stripped.startswith(prefix) for prefix in metadata_prefixes):
+            continue
+        cleaned_lines.append(str(line).rstrip())
+
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(cleaned_lines)).strip()
+    if not cleaned:
+        return str(source or "").strip()
+
+    title_match = re.search(r"(?im)^title:\s*(.+)$", cleaned)
+    if title_match:
+        title = str(title_match.group(1) or "").strip()
+        cleaned = re.sub(r"(?im)^title:\s*.+\n?", "", cleaned, count=1).strip()
+        if title and not re.search(r"(?im)^task:\s*", cleaned):
+            cleaned = f"Task: {title}\n\n{cleaned}" if cleaned else f"Task: {title}"
+
+    return cleaned

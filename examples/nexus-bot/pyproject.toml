@@ -5,13 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexus-telegram-bot"
 version = "0.2.0"
-description = "Nexus Telegram Bot – production deployment of nexus-arc with Telegram adapters"
+description = "Nexus chat runtimes - production deployment of nexus-arc with Telegram and Discord adapters"
 requires-python = ">=3.11"
 dependencies = [
     "nexus-arc[nexus-bot]",
 ]
 
 [project.scripts]
+nexus-telegram-bot = "src.telegram_bot:main"
+nexus-discord-bot = "src.discord_bot:main"
+# Backward-compatible alias (kept for existing deployments).
 nexus-bot = "src.telegram_bot:main"
 nexus-processor = "src.inbox_processor:main"
 nexus-webhook = "src.webhook_server:main"

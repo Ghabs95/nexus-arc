@@ -1,6 +1,6 @@
-# Nexus Telegram Bot — Installation Guide
+# Nexus Chat Bot — Installation Guide
 
-This guide covers two deployment scenarios for the Nexus Telegram Bot:
+This guide covers two deployment scenarios for the Nexus Telegram/Discord bot runtimes:
 
 | Scenario       | External Deps      | Best For                                           |
 |----------------|--------------------|----------------------------------------------------|
@@ -37,16 +37,17 @@ source venv/bin/activate
 # Install nexus-arc with all bot dependencies
 pip install -e ".[nexus-bot]"
 
-# Install the nexus-bot console scripts
+# Install the Nexus bot console scripts
 cd examples/nexus-bot
 pip install -e .
 ```
 
-After installation, four commands become available:
+After installation, six commands become available:
 
 | Command           | Service                                 |
 |-------------------|-----------------------------------------|
-| `nexus-bot`       | Main interactive bot (Telegram/Discord) |
+| `nexus-telegram-bot` | Telegram interactive bot runtime     |
+| `nexus-discord-bot`  | Discord interactive bot runtime      |
 | `nexus-processor` | Inbox processor (agent execution loop)  |
 | `nexus-webhook`   | GitHub/GitLab webhook receiver          |
 | `nexus-health`    | Health-check HTTP endpoint              |
@@ -138,8 +139,9 @@ PROJECT_CONFIG_PATH=./config/project_config.yaml
 ### Run
 
 ```bash
-# Start the bot (foreground)
-nexus-bot
+# Start bot runtimes (foreground)
+nexus-telegram-bot
+nexus-discord-bot
 
 # In separate terminals:
 nexus-processor
@@ -209,7 +211,7 @@ cd examples/nexus-bot
 docker compose up -d
 ```
 
-This starts all four services (`nexus-bot`, `nexus-processor`, `nexus-webhook`, `nexus-health`) as containers.
+This starts five services (`telegram`, `discord`, `processor`, `webhook`, `health`) as containers.
 
 ### Run with systemd (Production)
 
@@ -218,8 +220,8 @@ This starts all four services (`nexus-bot`, `nexus-processor`, `nexus-webhook`, 
 cd examples/nexus-bot
 sudo cp nexus-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable nexus-bot nexus-processor nexus-webhook nexus-health
-sudo systemctl start nexus-bot nexus-processor nexus-webhook nexus-health
+sudo systemctl enable nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health
+sudo systemctl start nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health
 ```
 
 ---

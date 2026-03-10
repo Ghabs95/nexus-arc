@@ -108,7 +108,8 @@ async def handle_help(*, update, logger, allowed_user_ids) -> None:
     if allowed_user_ids and update.effective_user.id not in allowed_user_ids:
         logger.warning("Unauthorized access attempt by ID: %s", update.effective_user.id)
         return
-    await update.message.reply_text(build_help_text(), parse_mode="Markdown")
+    help_text = build_help_text()
+    await update.message.reply_text(help_text.replace("**", ""), parse_mode=None)
 
 
 async def handle_menu(

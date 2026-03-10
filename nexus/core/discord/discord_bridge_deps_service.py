@@ -567,6 +567,11 @@ def workflow_bridge_deps(*, allowed_user_ids, prompt_project_selection, ensure_p
         workflow_pause_handler=workflow_pause_handler,
         workflow_resume_handler=workflow_resume_handler,
         workflow_stop_handler=workflow_stop_handler,
+        requester_context_builder=lambda user_id: {
+            "platform": "discord",
+            "platform_user_id": str(user_id),
+            "nexus_id": str(_get_user_manager().resolve_nexus_id("discord", str(user_id)) or ""),
+        },
     )
 
 

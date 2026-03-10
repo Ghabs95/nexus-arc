@@ -267,7 +267,6 @@ def finalize_workflow(
     resolve_repo_branch_fn,
     find_existing_pr_fn,
     cleanup_worktree_fn,
-    sync_existing_pr_changes_fn,
     close_issue_fn,
     send_notification,
     enqueue_merge_queue_prs,
@@ -276,6 +275,7 @@ def finalize_workflow(
     base_dir: str,
     get_tasks_active_dir,
     get_tasks_closed_dir,
+    sync_existing_pr_changes_fn=None,
 ) -> None:
     try:
         workflow_plugin = get_workflow_state_plugin(
@@ -303,9 +303,18 @@ def finalize_workflow(
         resolve_repo_branch=resolve_repo_branch_fn,
         find_existing_pr=find_existing_pr_fn,
         cleanup_worktree=cleanup_worktree_fn,
-        sync_existing_pr_changes=sync_existing_pr_changes_fn,
+        sync_existing_pr_changes=(
+            sync_existing_pr_changes_fn if callable(sync_existing_pr_changes_fn) else None
+        ),
         close_issue=close_issue_fn,
         send_notification=send_notification,
+        resolve_project_config=(
+            lambda *, project_name=None, repo=None: (
+                project_config.get(str(project_name or "").strip())
+                if str(project_name or "").strip() in project_config
+                else None
+            )
+        ),
         cache_key="workflow-policy:finalize",
     )
 

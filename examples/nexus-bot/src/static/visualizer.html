@@ -191,6 +191,8 @@
     // ---- Graph ----
     let cy = null;
     const fallbackRows = new Map();
+    let lastMermaidDiagram = '';
+    let mermaidRenderSeq = 0;
     const cyContainer = document.getElementById('cy');
     const eventColors = {
         agent_registered: '#3fb950',
@@ -317,6 +319,8 @@
 
     function applyWorkflowSnapshot(items) {
         if (!Array.isArray(items)) return;
+        let snapshotDiagram = '';
+        let snapshotDiagramUpdatedAt = '';
         for (const item of items) {
             const issue = String(item.issue || '').trim();
             const workflowId = String(item.workflow_id || '').trim();
@@ -343,12 +347,41 @@
                 ensureNode(agentId, currentAgent, 'agent');
                 ensureEdge(wfId, agentId, String(status.current_step_name || 'current'));
             }
+
+            const candidateDiagram = String(item.diagram || '').trim();
+            const candidateUpdatedAt = String(status.updated_at || '').trim();
+            if (candidateDiagram) {
+                if (!snapshotDiagram || candidateUpdatedAt > snapshotDiagramUpdatedAt) {
+                    snapshotDiagram = candidateDiagram;
+                    snapshotDiagramUpdatedAt = candidateUpdatedAt;
+                }
+            }
         }
 
         if (cy) {
             cy.fit(undefined, 40);
         } else {
             renderFallbackList();
+        }
+
+        if (!lastMermaidDiagram && snapshotDiagram) {
+            renderMermaidDiagram(snapshotDiagram);
+        }
+    }
+
+    async function renderMermaidDiagram(diagram) {
+        const normalized = String(diagram || '').trim();
+        if (!normalized) return;
+        lastMermaidDiagram = normalized;
+        const seq = ++mermaidRenderSeq;
+        try {
+            if (!window.nexusMermaid) return;
+            const {svg} = await window.nexusMermaid.render(`mermaid-svg-${seq}`, normalized);
+            // Avoid racing older async renders over newer ones.
+            if (seq !== mermaidRenderSeq) return;
+            document.getElementById('mermaid-view').innerHTML = svg;
+        } catch (err) {
+            console.error('Mermaid render error:', err);
         }
     }
 
@@ -361,7 +394,6 @@
         } catch (_) {
             // Silent fallback: visualizer can still run via live socket events.
         }
-        document.getElementById('mermaid-view').innerHTML = '';
     }
 
     function showTab(tab) {
@@ -471,12 +503,7 @@
 
         socket.on('mermaid_diagram', async (data) => {
             logEvent('mermaid_diagram', {issue: data.issue, diagram: '...'});
-            try {
-                const {svg} = await window.nexusMermaid.render('mermaid-svg', data.diagram);
-                document.getElementById('mermaid-view').innerHTML = svg;
-            } catch (err) {
-                console.error('Mermaid render error:', err);
-            }
+            renderMermaidDiagram(data.diagram);
         });
     } else {
         document.getElementById('status-text').textContent = 'Live socket unavailable - using snapshot mode';

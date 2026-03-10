@@ -58,7 +58,7 @@ anthropic = [
 hotreload = [
     "watchdog>=3.0",
 ]
-nexus-bot = [
+nexus-telegram-bot = [
     "nexus-arc[telegram,postgres,redis,openai,anthropic]",
     "python-dotenv>=1.2",
     "flask>=3.1",
@@ -69,7 +69,30 @@ nexus-bot = [
     "requests>=2.32",
     "cryptography>=42.0",
     "openai-whisper>=20250625",
-    "discord.py>=2.6",
+]
+nexus-discord-bot = [
+    "nexus-arc[discord,postgres,redis,openai,anthropic]",
+    "python-dotenv>=1.2",
+    "flask>=3.1",
+    "flask-socketio>=5.3",
+    "eventlet>=0.35",
+    "websocket-client>=1.8",
+    "apscheduler>=3.11",
+    "requests>=2.32",
+    "cryptography>=42.0",
+    "PyNaCl>=1.5",
+]
+nexus-bot = [
+    "nexus-arc[telegram,discord,postgres,redis,openai,anthropic]",
+    "python-dotenv>=1.2",
+    "flask>=3.1",
+    "flask-socketio>=5.3",
+    "eventlet>=0.35",
+    "websocket-client>=1.8",
+    "apscheduler>=3.11",
+    "requests>=2.32",
+    "cryptography>=42.0",
+    "openai-whisper>=20250625",
     "PyNaCl>=1.5",
 ]
 all = [

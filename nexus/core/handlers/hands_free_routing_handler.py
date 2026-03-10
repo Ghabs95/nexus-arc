@@ -427,6 +427,8 @@ async def route_hands_free_text(ctx: InteractiveContext, deps: HandsFreeRoutingD
             text,
             run_analysis=feature_detector,
             logger=deps.logger,
+            requester_context=requester_context,
+            project_name=str(metadata.get("project_key") or "").strip() or None,
         )
     deps.logger.info(
         "Feature ideation detection: matched=%s confidence=%.2f reason=%s",

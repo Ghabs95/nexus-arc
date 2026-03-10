@@ -461,7 +461,7 @@ ai_tool_preferences:
     print(" 1. Review the generated .env file")
     print(" 2. Review config/project_config.yaml")
     print(" 3. Make sure to pip install the package if you haven't: pip install -e .")
-    print(" 4. Start the bot with: nexus-bot\n")
+    print(" 4. Start bot runtimes with: nexus-telegram-bot and nexus-discord-bot\n")
 
 
 if __name__ == "__main__":

@@ -49,8 +49,12 @@ Every agent action becomes part of your development history:
 # Install the core framework
 pip install nexus-arc
 
-# Install with Telegram, Discord bots, and database support
+# Install with Telegram + Discord runtimes and database support
 pip install "nexus-arc[nexus-bot]"
+
+# Or install a single runtime:
+# pip install "nexus-arc[nexus-telegram-bot]"
+# pip install "nexus-arc[nexus-discord-bot]"
 ```
 
 For setting up the fully-featured interactive bot, see the [nexus-bot example](examples/nexus-bot/README.md) or run the installer:

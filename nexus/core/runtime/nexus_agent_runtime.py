@@ -479,7 +479,7 @@ class NexusAgentRuntime(AgentRuntime):
                 "hard_tripped": False,
             }
 
-            if attempts > RETRY_FUSE_MAX_ATTEMPTS:
+            if attempts >= RETRY_FUSE_MAX_ATTEMPTS:
                 fuse["tripped"] = True
                 fuse["tripped_at"] = now
 

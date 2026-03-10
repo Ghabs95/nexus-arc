@@ -305,6 +305,46 @@ def test_feature_ideation_fallback_detector_opens_count_prompt(monkeypatch):
     assert called["preferred_agent_type"] == "designer"
 
 
+def test_feature_ideation_fallback_detector_receives_requester_and_project(monkeypatch):
+    update = _StubUpdate("Could we add a few new workflow ideas?")
+    context = _StubContext()
+    captured = {}
+
+    monkeypatch.setattr(
+        routing,
+        "parse_intent_result",
+        lambda *_args, **_kwargs: {
+            "intent": "conversation",
+            "feature_ideation": False,
+            "feature_ideation_confidence": 0.0,
+            "feature_ideation_reason": "not_provided",
+        },
+    )
+
+    def _detect(text, **kwargs):
+        captured["text"] = text
+        captured.update(kwargs)
+        return False, 0.0, "model_non_match"
+
+    monkeypatch.setattr(routing, "detect_feature_ideation_intent", _detect)
+    monkeypatch.setattr(routing, "run_conversation_turn", lambda **_kwargs: "No ideation detected.")
+
+    ictx = StubInteractiveContext(update, context.user_data)
+    deps = _deps()
+    deps.requester_context_builder = lambda _uid: {"nexus_id": "nexus-42"}
+    deps.orchestrator = type(
+        "_StubOrchestrator",
+        (),
+        {"run_text_to_speech_analysis": staticmethod(lambda **_kwargs: {})},
+    )()
+
+    asyncio.run(routing.route_hands_free_text(ictx, deps))
+
+    assert captured["text"] == "Could we add a few new workflow ideas?"
+    assert captured["requester_context"] == {"nexus_id": "nexus-42"}
+    assert captured["project_name"] == "nexus"
+
+
 def test_active_chat_session_blocks_hands_free_task_creation(monkeypatch):
     update = _StubUpdate("create task to add SSO support")
     context = _StubContext()

@@ -727,6 +727,7 @@ def _workflow_handler_deps() -> WorkflowHandlerDeps:
         workflow_pause_handler=workflow_pause_handler,
         workflow_resume_handler=workflow_resume_handler,
         workflow_stop_handler=workflow_stop_handler,
+        requester_context_builder=_requester_context_for_telegram_user_id,
     )
 
 
@@ -2272,9 +2273,15 @@ async def telegram_error_handler(update: object, context: ContextTypes.DEFAULT_T
 
     # Bug Reporting Button
     buttons = []
-    # If we have an issue context in user_data, add a report button
-    pending_issue = context.user_data.get("pending_issue")
-    pending_project = context.user_data.get("pending_project")
+    # PTB can call error handlers without an effective user context; in that
+    # case context.user_data is None and must be treated as empty state.
+    user_data = getattr(context, "user_data", None)
+    if not hasattr(user_data, "get"):
+        user_data = {}
+
+    # If we have an issue context in user_data, add a report button.
+    pending_issue = user_data.get("pending_issue")
+    pending_project = user_data.get("pending_project")
     if pending_issue and pending_project:
         buttons = [
             [Button("🐞 Report Bug", callback_data=f"report_bug_{pending_issue}|{pending_project}")]

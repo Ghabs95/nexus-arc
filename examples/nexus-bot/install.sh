@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Nexus ARC Interactive Installation Script (Bash Version)
-# Note: Python is still highly recommended because 'nexus-bot' requires it anyway.
+# Note: Python is still highly recommended because the bot runtimes require it anyway.
 
 set -e
 
@@ -476,4 +476,4 @@ echo -e "\nNext steps:"
 echo " 1. Review the generated .env file"
 echo " 2. Review config/project_config.yaml"
 echo " 3. pip install -e ."
-echo " 4. Run nexus-bot"
+echo " 4. Run nexus-telegram-bot and nexus-discord-bot"

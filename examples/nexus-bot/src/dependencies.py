@@ -158,6 +158,11 @@ def _workflow_handler_deps() -> WorkflowHandlerDeps:
         workflow_pause_handler=workflow_pause_handler,
         workflow_resume_handler=workflow_resume_handler,
         workflow_stop_handler=workflow_stop_handler,
+        requester_context_builder=lambda user_id: {
+            "platform": "telegram",
+            "platform_user_id": str(user_id),
+            "nexus_id": str(user_manager.resolve_nexus_id("telegram", str(user_id)) or ""),
+        },
     )
 
 

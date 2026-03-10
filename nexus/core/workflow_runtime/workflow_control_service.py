@@ -92,6 +92,7 @@ def prepare_continue_context(
     get_expected_running_agent_from_workflow: Callable[[str], str | None],
     get_sop_tier_from_issue: Callable[[str, str | None], str | None],
     get_sop_tier: Callable[[str], tuple[str, Any, Any]],
+    requester_nexus_id: str | None = None,
 ) -> dict[str, Any]:
     """Build context for /continue and return either a terminal state or launch payload."""
 
@@ -130,14 +131,23 @@ def prepare_continue_context(
                 for repo_name in repo_list:
                     _add_repo(str(repo_name or ""))
 
-        _add_repo(default_repo)
+        # Only fall back to global default when no project-specific repos were discovered.
+        if not candidates:
+            _add_repo(default_repo)
         return candidates
 
     def _load_issue(
         preferred_config: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any] | None, str | None]:
         for candidate_repo in _repo_candidates(preferred_config):
-            issue_details = get_issue_details(issue_num, candidate_repo)
+            try:
+                issue_details = get_issue_details(
+                    issue_num,
+                    candidate_repo,
+                    requester_nexus_id=requester_nexus_id,
+                )
+            except TypeError:
+                issue_details = get_issue_details(issue_num, candidate_repo)
             if issue_details:
                 return issue_details, candidate_repo
         return None, None

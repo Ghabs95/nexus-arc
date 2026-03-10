@@ -68,11 +68,11 @@ class TestNexusAgentRuntimeShouldRetry:
         ):
             MockMonitor.should_retry.return_value = True
 
-            # First calls are allowed by fuse and delegated to AgentMonitor
-            for _ in range(RETRY_FUSE_MAX_ATTEMPTS):
+            # First calls before the threshold are allowed and delegated.
+            for _ in range(RETRY_FUSE_MAX_ATTEMPTS - 1):
                 assert runtime.should_retry("42", "debug") is True
 
-            # Next call trips fuse and blocks retry
+            # Threshold call trips fuse and blocks retry.
             assert runtime.should_retry("42", "debug") is False
 
         assert alert_mock.called

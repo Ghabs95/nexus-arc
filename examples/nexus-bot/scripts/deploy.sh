@@ -32,7 +32,7 @@ run_compose() {
       docker compose ps
       ;;
     logs)
-      docker compose logs -f bot processor webhook health
+      docker compose logs -f telegram discord processor webhook health
       ;;
     *)
       echo "Unknown action: $ACTION"
@@ -46,19 +46,19 @@ run_systemd() {
   case "$ACTION" in
     up)
       sudo systemctl daemon-reload
-      sudo systemctl enable --now nexus-bot nexus-processor nexus-webhook nexus-health
+      sudo systemctl enable --now nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health
       ;;
     down)
-      sudo systemctl disable --now nexus-bot nexus-processor nexus-webhook nexus-health || true
+      sudo systemctl disable --now nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health || true
       ;;
     restart)
-      sudo systemctl restart nexus-bot nexus-processor nexus-webhook nexus-health
+      sudo systemctl restart nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health
       ;;
     status)
-      sudo systemctl status nexus-bot nexus-processor nexus-webhook nexus-health --no-pager
+      sudo systemctl status nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health --no-pager
       ;;
     logs)
-      sudo journalctl -u nexus-bot -u nexus-processor -u nexus-webhook -u nexus-health -f
+      sudo journalctl -u nexus-telegram -u nexus-discord -u nexus-processor -u nexus-webhook -u nexus-health -f
       ;;
     *)
       echo "Unknown action: $ACTION"

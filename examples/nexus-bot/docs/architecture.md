@@ -1,6 +1,6 @@
 # System Architecture
 
-High-level architecture for the Nexus Telegram Bot — a workflow automation system that orchestrates AI agents to
+High-level architecture for the Nexus chat bot runtimes — a workflow automation system that orchestrates AI agents to
 complete software development tasks.
 
 ## System Overview
@@ -123,7 +123,8 @@ The system runs as Linux systemd services:
 
 | Service         | Description                                 |
 |-----------------|---------------------------------------------|
-| `nexus-bot`     | Telegram bot (long-polling or webhook mode) |
+| `nexus-telegram` | Telegram bot (long-polling or webhook mode) |
+| `nexus-discord` | Discord bot (gateway/slash commands)         |
 | `nexus-webhook` | GitHub webhook receiver + inbox processor   |
 | `nexus-health`  | Health check / metrics endpoint             |
 
