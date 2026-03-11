@@ -188,15 +188,22 @@ def _project_user_mapping(
 
 
 def _github_request(url: str, token: str, *, timeout: int = 10) -> requests.Response:
-    return requests.get(
+    common_headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    response = requests.get(
         url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers={**common_headers, "Authorization": f"token {token}"},
         timeout=timeout,
     )
+    if response.status_code in {401, 403}:
+        response = requests.get(
+            url,
+            headers={**common_headers, "Authorization": f"Bearer {token}"},
+            timeout=timeout,
+        )
+    return response
 
 
 def _gitlab_base_url() -> str:
@@ -1058,13 +1065,32 @@ def build_execution_env(nexus_id: str) -> tuple[dict[str, str], str | None]:
         )
 
     auth_root = os.path.join(NEXUS_RUNTIME_DIR, "auth")
+    user_home_root = os.path.join(auth_root, "home")
+    user_home = os.path.join(user_home_root, str(nexus_id))
     codex_root = os.path.join(auth_root, "codex")
+    gemini_root = os.path.join(auth_root, "gemini")
+    claude_root = os.path.join(auth_root, "claude")
     codex_home = os.path.join(codex_root, str(nexus_id))
-    for path in (auth_root, codex_root, codex_home):
+    gemini_home = os.path.join(gemini_root, str(nexus_id))
+    claude_home = os.path.join(claude_root, str(nexus_id))
+    for path in (
+        auth_root,
+        user_home_root,
+        user_home,
+        codex_root,
+        gemini_root,
+        claude_root,
+        codex_home,
+        gemini_home,
+        claude_home,
+    ):
         dir_err = _ensure_private_runtime_dir(path)
         if dir_err:
             return {}, dir_err
+    env["HOME"] = user_home
     env["CODEX_HOME"] = codex_home
+    env["GEMINI_HOME"] = gemini_home
+    env["CLAUDE_HOME"] = claude_home
     return env, None
 
 

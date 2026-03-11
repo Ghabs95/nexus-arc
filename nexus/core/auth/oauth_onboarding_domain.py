@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import base64
+import json
+import logging
 import os
 import re
 import secrets
+import shutil
+import shlex
 import subprocess
 import tempfile
 import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests
 
@@ -35,6 +39,8 @@ from nexus.core.auth.credential_store import (
     upsert_github_credentials,
     upsert_gitlab_credentials,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _now_utc() -> datetime:
@@ -89,13 +95,186 @@ def _gitlab_base_url() -> str:
     ).strip().rstrip("/")
 
 
+def _oauth_callback_url(provider: str) -> str:
+    auth_provider = _normalize_provider(provider)
+    if auth_provider == "github":
+        override = str(os.getenv("NEXUS_GITHUB_CALLBACK_URL", "")).strip()
+        if override:
+            return override
+    else:
+        override = str(os.getenv("NEXUS_GITLAB_CALLBACK_URL", "")).strip()
+        if override:
+            return override
+    base_url = _required_env("NEXUS_PUBLIC_BASE_URL").rstrip("/")
+    return f"{base_url}/auth/{auth_provider}/callback"
+
+
 _SESSION_REF_PREFIX = "lsr_"
 _DEVICE_AUTH_JOBS: dict[str, dict[str, Any]] = {}
 _DEVICE_AUTH_LOCK = threading.Lock()
+_SUPPORTED_PROVIDER_ACCOUNT_CONNECTORS = ("codex", "gemini", "claude")
+_PROVIDER_ACCOUNT_CONNECT_LABELS = {
+    "codex": "Codex",
+    "gemini": "Gemini",
+    "claude": "Claude",
+}
+_PROVIDER_ACCOUNT_CONNECT_TOGGLE_FIELDS = {
+    "codex": "use_codex_account",
+    "gemini": "use_gemini_account",
+    "claude": "use_claude_account",
+}
+_PROVIDER_ACCOUNT_CONNECT_HOME_ENV = {
+    "codex": "CODEX_HOME",
+    "gemini": "GEMINI_HOME",
+    "claude": "CLAUDE_HOME",
+}
+_PROVIDER_ACCOUNT_CONNECT_CLI_ENV = {
+    "codex": "CODEX_CLI_PATH",
+    "gemini": "GEMINI_CLI_PATH",
+    "claude": "CLAUDE_CLI_PATH",
+}
+_PROVIDER_ACCOUNT_CONNECT_ARGS_ENV = {
+    "codex": "NEXUS_CODEX_ACCOUNT_CONNECT_ARGS",
+    "gemini": "NEXUS_GEMINI_ACCOUNT_CONNECT_ARGS",
+    "claude": "NEXUS_CLAUDE_ACCOUNT_CONNECT_ARGS",
+}
+_PROVIDER_ACCOUNT_CONNECT_DEFAULT_ARGS = {
+    "codex": "login --device-auth",
+    "gemini": "--debug",
+    "claude": "auth login",
+}
+_PROVIDER_ACCOUNT_CONNECT_FAILURE_STATES = {
+    "failed",
+    "rate_limited",
+    "interactive_required",
+    "connected_but_not_saved",
+    "unsupported_provider",
+    "invalid_session",
+    "idle",
+    "oauth_required",
+}
 
 
 def _device_job_key(*, session_id: str, provider: str) -> str:
     return f"{str(session_id).strip()}::{str(provider).strip().lower()}"
+
+
+def _normalize_provider_account_connector(provider: str | None) -> str:
+    value = str(provider or "").strip().lower()
+    if value not in _SUPPORTED_PROVIDER_ACCOUNT_CONNECTORS:
+        supported = ", ".join(_SUPPORTED_PROVIDER_ACCOUNT_CONNECTORS)
+        raise ValueError(
+            f"Unsupported provider account-connect target: {value or '<empty>'}. "
+            f"Supported: {supported}."
+        )
+    return value
+
+
+def _provider_account_label(provider: str) -> str:
+    return str(_PROVIDER_ACCOUNT_CONNECT_LABELS.get(provider) or provider.title())
+
+
+def _provider_account_toggle_field(provider: str) -> str:
+    return str(_PROVIDER_ACCOUNT_CONNECT_TOGGLE_FIELDS.get(provider) or "")
+
+
+def _provider_user_runtime_home(*, nexus_id: str) -> str:
+    runtime_root = str(os.getenv("NEXUS_RUNTIME_DIR", "/var/lib/nexus")).strip() or "/var/lib/nexus"
+    return os.path.join(runtime_root, "auth", "home", str(nexus_id).strip())
+
+
+def _provider_account_login_command(provider: str) -> list[str]:
+    cli_env_name = str(_PROVIDER_ACCOUNT_CONNECT_CLI_ENV.get(provider) or "").strip()
+    args_env_name = str(_PROVIDER_ACCOUNT_CONNECT_ARGS_ENV.get(provider) or "").strip()
+    default_args = str(_PROVIDER_ACCOUNT_CONNECT_DEFAULT_ARGS.get(provider) or "").strip()
+    cli_path = str(os.getenv(cli_env_name, provider)).strip() or provider
+    args_raw = str(os.getenv(args_env_name, default_args)).strip() or default_args
+    try:
+        args = shlex.split(args_raw) if args_raw else []
+    except ValueError as exc:
+        raise ValueError(f"Invalid {args_env_name}: {exc}") from exc
+    return [cli_path, *args]
+
+
+def _read_json_file(path: str) -> dict[str, Any]:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_json_file(path: str, payload: dict[str, Any]) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        _ensure_private_dir(parent)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp_path, path)
+    _ensure_private_file(path)
+
+
+def _set_nested_value(payload: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    cursor: dict[str, Any] = payload
+    for key in path[:-1]:
+        next_value = cursor.get(key)
+        if not isinstance(next_value, dict):
+            next_value = {}
+            cursor[key] = next_value
+        cursor = next_value
+    cursor[path[-1]] = value
+
+
+def _get_nested_str(payload: dict[str, Any], path: tuple[str, ...]) -> str:
+    cursor: Any = payload
+    for key in path:
+        if not isinstance(cursor, dict):
+            return ""
+        cursor = cursor.get(key)
+    return str(cursor or "").strip()
+
+
+def _prepare_provider_runtime_state(*, provider: str, user_home: str) -> None:
+    provider_name = str(provider or "").strip().lower()
+    if provider_name != "gemini":
+        return
+    selected_auth = str(os.getenv("NEXUS_GEMINI_SELECTED_AUTH_TYPE", "oauth-personal")).strip()
+    if not selected_auth:
+        return
+    raw_folder_trust = str(os.getenv("NEXUS_GEMINI_FOLDER_TRUST_ENABLED", "false")).strip().lower()
+    folder_trust_enabled = raw_folder_trust in {"1", "true", "yes", "on"}
+    settings_path = os.path.join(user_home, ".gemini", "settings.json")
+    settings = _read_json_file(settings_path)
+    current_security_auth = _get_nested_str(settings, ("security", "auth", "selectedType"))
+    current_legacy_auth = str(settings.get("selectedAuthType") or "").strip()
+    security = settings.get("security")
+    security_map = security if isinstance(security, dict) else {}
+    folder_trust_map = security_map.get("folderTrust")
+    current_folder_trust = (
+        bool(folder_trust_map.get("enabled"))
+        if isinstance(folder_trust_map, dict)
+        else None
+    )
+    if (
+        current_security_auth == selected_auth
+        and current_legacy_auth == selected_auth
+        and current_folder_trust is folder_trust_enabled
+    ):
+        return
+    _set_nested_value(settings, ("security", "auth", "selectedType"), selected_auth)
+    _set_nested_value(settings, ("security", "folderTrust", "enabled"), folder_trust_enabled)
+    # Keep legacy key for older Gemini CLI builds that still read selectedAuthType.
+    settings["selectedAuthType"] = selected_auth
+    _write_json_file(settings_path, settings)
+    logger.info(
+        "[provider-connect] prepared gemini settings path=%s selectedType=%s folderTrustEnabled=%s",
+        settings_path,
+        selected_auth,
+        folder_trust_enabled,
+    )
 
 
 def _provider_runtime_home(*, provider: str, nexus_id: str) -> str:
@@ -142,13 +321,72 @@ def _ensure_private_file(path: str) -> None:
             )
 
 
-def _parse_device_auth_url_and_code(raw_text: str) -> tuple[str, str]:
+def _strip_terminal_control_sequences(raw_text: str) -> str:
     text = str(raw_text or "")
-    url_match = re.search(r"https?://[^\s)]+", text, flags=re.IGNORECASE)
-    code_match = re.search(r"\b[A-Z0-9]{4}(?:-[A-Z0-9]{4})+\b", text)
-    url = str(url_match.group(0) if url_match else "").strip()
-    code = str(code_match.group(0) if code_match else "").strip()
-    return url, code
+    # Remove ANSI escape/control sequences emitted by CLIs so extracted text stays parseable.
+    text = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", text)
+    text = re.sub(r"\x1B\]8;;.*?(?:\x1B\\|\x07)", "", text)
+    text = re.sub(r"[\x00-\x08\x0B-\x1F\x7F]", "", text)
+    return text
+
+
+def _parse_device_auth_url_and_code(raw_text: str) -> tuple[str, str]:
+    text = _strip_terminal_control_sequences(raw_text)
+    url_match = re.search(r"https?://[^\s<>\")\]']+", text, flags=re.IGNORECASE)
+    code_match = re.search(r"\b[A-Z0-9]{4}(?:-[A-Z0-9]{3,})+\b", text, flags=re.IGNORECASE)
+    url = str(url_match.group(0) if url_match else "").strip().rstrip(".,;:")
+    code = str(code_match.group(0) if code_match else "").strip().upper()
+    if code:
+        return url, code
+
+    inline_patterns = (
+        r"(?:verification|device|user|authorization)\s+code\s*(?:is|:)?\s*([A-Z0-9]{6,16})\b",
+        r"\bcode\s*(?:is|:)\s*([A-Z0-9]{6,16})\b",
+        r"\benter\s+([A-Z0-9]{6,16})\s*(?:at|in|on)\b",
+    )
+    for pattern in inline_patterns:
+        inline_code = re.search(pattern, text, flags=re.IGNORECASE)
+        if not inline_code:
+            continue
+        raw_candidate = str(inline_code.group(1) or "").strip()
+        if not raw_candidate:
+            continue
+        # Avoid false positives like "authorization" being parsed as a code.
+        has_digit = any(char.isdigit() for char in raw_candidate)
+        has_hyphen = "-" in raw_candidate
+        looks_all_upper = raw_candidate == raw_candidate.upper()
+        if not (has_digit or has_hyphen or looks_all_upper):
+            continue
+        return url, raw_candidate.upper()
+    return url, ""
+
+
+def _parse_local_callback_url(raw_text: str) -> str:
+    text = _strip_terminal_control_sequences(raw_text)
+    callback_match = re.search(
+        r"https?://(?:localhost|127\.0\.0\.1|\[::1\]|::1)(?::\d+)?/oauth2[^\s<>\")\]']+",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not callback_match:
+        return ""
+    return str(callback_match.group(0) or "").strip().rstrip(".,;:")
+
+
+def _requires_manual_auth_code(*, provider: str, log_text: str) -> bool:
+    provider_name = str(provider or "").strip().lower()
+    if provider_name != "gemini":
+        return False
+    normalized = _strip_terminal_control_sequences(log_text).lower()
+    return (
+        "enter the authorization code" in normalized
+        or "authorization code:" in normalized
+    )
+
+
+def _gemini_has_logged_in_identity(log_text: str) -> bool:
+    normalized = _strip_terminal_control_sequences(log_text).lower()
+    return "logged in with google:" in normalized
 
 
 def _log_tail(path: str, *, max_chars: int = 3000) -> str:
@@ -160,6 +398,133 @@ def _log_tail(path: str, *, max_chars: int = 3000) -> str:
     if len(content) <= max_chars:
         return content
     return content[-max_chars:]
+
+
+def _last_log_line(log_text: str, default: str) -> str:
+    lines = [str(line).strip() for line in str(log_text or "").splitlines() if str(line).strip()]
+    return lines[-1] if lines else default
+
+
+def _truncate_for_log(value: str, *, limit: int = 400) -> str:
+    text = str(value or "").strip().replace("\n", " ")
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
+
+
+def _format_log_excerpt(log_text: str, *, max_chars: int = 1200) -> str:
+    text = str(log_text or "").strip()
+    if not text:
+        return ""
+    if len(text) > max_chars:
+        text = text[-max_chars:]
+    return _truncate_for_log(text, limit=max_chars)
+
+
+def _classify_provider_account_login_failure(*, provider: str, log_text: str) -> tuple[str, str]:
+    provider_name = str(provider or "").strip().lower()
+    provider_label = _provider_account_label(provider_name)
+    raw = str(log_text or "").strip()
+    normalized = raw.lower()
+    last_line = _truncate_for_log(_last_log_line(raw, ""), limit=220)
+
+    if (
+        "429 too many requests" in normalized
+        or "status 429" in normalized
+        or ("too many requests" in normalized and "device code" in normalized)
+    ):
+        return (
+            "rate_limited",
+            (
+                f"{provider_label} login is temporarily rate-limited by the provider "
+                "(HTTP 429). Wait 1-2 minutes, then retry."
+                + (f" Last output: {last_line}" if last_line else "")
+            ),
+        )
+
+    if provider_name == "gemini" and (
+        "please set an auth method" in normalized
+        or ".gemini/settings.json" in normalized
+        or "gemini_api_key" in normalized
+        or "google_genai_use_vertexai" in normalized
+        or "google_genai_use_gca" in normalized
+    ):
+        return (
+            "interactive_required",
+            (
+                "Gemini CLI did not start account login for this workspace runtime. "
+                "Retry Connect Gemini Account and complete browser confirmation."
+                + (f" Last output: {last_line}" if last_line else "")
+            ),
+        )
+
+    if provider_name == "gemini" and "no input provided via stdin" in normalized:
+        return (
+            "failed",
+            (
+                "Gemini login did not start in interactive mode. "
+                "Retry Connect Gemini Account."
+                + (f" Last output: {last_line}" if last_line else "")
+            ),
+        )
+
+    if provider_name == "claude" and (
+        "not logged in" in normalized
+        or "please run /login" in normalized
+    ):
+        return (
+            "interactive_required",
+            (
+                "Claude CLI is not authenticated for this workspace runtime yet. "
+                "Retry Connect Claude Account and complete browser confirmation."
+                + (f" Last output: {last_line}" if last_line else "")
+            ),
+        )
+
+    return "failed", _last_log_line(raw, "Device-auth process failed")
+
+
+def _validate_local_callback_url(callback_url: str) -> str:
+    candidate = str(callback_url or "").strip()
+    if not candidate:
+        raise ValueError("callback_url is required")
+    parsed = urlparse(candidate)
+    scheme = str(parsed.scheme or "").strip().lower()
+    host = str(parsed.hostname or "").strip().lower()
+    if scheme not in {"http", "https"}:
+        raise ValueError("callback_url must use http or https")
+    if host not in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("callback_url host must be localhost/127.0.0.1/::1")
+    if parsed.port is None:
+        raise ValueError("callback_url must include localhost port")
+    if not str(parsed.path or "").startswith("/oauth2"):
+        raise ValueError("callback_url path must start with /oauth2")
+    if not str(parsed.query or "").strip():
+        raise ValueError("callback_url must include query parameters")
+    return candidate
+
+
+def _normalize_provider_auth_code(raw_code: str) -> str:
+    code = str(raw_code or "").strip()
+    if not code:
+        raise ValueError("authorization_code is required")
+    if len(code) > 2048:
+        raise ValueError("authorization_code is too long")
+    return code
+
+
+def _gemini_should_use_pty_wrapper() -> bool:
+    raw_value = str(os.getenv("NEXUS_GEMINI_ACCOUNT_CONNECT_USE_PTY", "true")).strip().lower()
+    return raw_value in {"1", "true", "yes", "on"}
+
+
+def _wrap_command_with_script_tty(command: list[str]) -> list[str]:
+    if not command:
+        return command
+    script_path = shutil.which("script")
+    if not script_path:
+        return command
+    return [script_path, "-q", "-e", "-c", shlex.join(command), "/dev/null"]
 
 
 def format_login_session_ref(session_id: str) -> str:
@@ -245,7 +610,6 @@ def register_onboarding_message(
 def start_oauth_flow(session_id: str, provider: str = "github") -> tuple[str, str]:
     """Return (auth_url, state) and persist one-time state hash for provider."""
     auth_provider = _normalize_provider(provider)
-    base_url = _required_env("NEXUS_PUBLIC_BASE_URL").rstrip("/")
     state = secrets.token_urlsafe(32)
 
     resolved_session_id = resolve_login_session_id(session_id)
@@ -268,7 +632,8 @@ def start_oauth_flow(session_id: str, provider: str = "github") -> tuple[str, st
 
     if auth_provider == "github":
         client_id = _required_env("NEXUS_GITHUB_CLIENT_ID")
-        callback_url = f"{base_url}/auth/github/callback"
+        _required_env("NEXUS_GITHUB_CLIENT_SECRET")
+        callback_url = _oauth_callback_url("github")
         query = urlencode(
             {
                 "client_id": client_id,
@@ -280,7 +645,8 @@ def start_oauth_flow(session_id: str, provider: str = "github") -> tuple[str, st
         return f"https://github.com/login/oauth/authorize?{query}", state
 
     client_id = _required_env("NEXUS_GITLAB_CLIENT_ID")
-    callback_url = f"{base_url}/auth/gitlab/callback"
+    _required_env("NEXUS_GITLAB_CLIENT_SECRET")
+    callback_url = _oauth_callback_url("gitlab")
     query = urlencode(
         {
             "client_id": client_id,
@@ -296,6 +662,7 @@ def start_oauth_flow(session_id: str, provider: str = "github") -> tuple[str, st
 def _github_exchange_code_for_token(code: str) -> dict[str, Any]:
     client_id = _required_env("NEXUS_GITHUB_CLIENT_ID")
     client_secret = _required_env("NEXUS_GITHUB_CLIENT_SECRET")
+    callback_url = _oauth_callback_url("github")
     response = requests.post(
         "https://github.com/login/oauth/access_token",
         headers={"Accept": "application/json"},
@@ -303,6 +670,7 @@ def _github_exchange_code_for_token(code: str) -> dict[str, Any]:
             "client_id": client_id,
             "client_secret": client_secret,
             "code": str(code or "").strip(),
+            "redirect_uri": callback_url,
         },
         timeout=15,
     )
@@ -331,7 +699,7 @@ def _github_exchange_code_for_token(code: str) -> dict[str, Any]:
 def _gitlab_exchange_code_for_token(code: str) -> dict[str, Any]:
     client_id = _required_env("NEXUS_GITLAB_CLIENT_ID")
     client_secret = _required_env("NEXUS_GITLAB_CLIENT_SECRET")
-    callback_url = f"{_required_env('NEXUS_PUBLIC_BASE_URL').rstrip('/')}/auth/gitlab/callback"
+    callback_url = _oauth_callback_url("gitlab")
     response = requests.post(
         f"{_gitlab_base_url()}/oauth/token",
         data={
@@ -366,15 +734,23 @@ def _gitlab_exchange_code_for_token(code: str) -> dict[str, Any]:
 
 
 def _github_get(path: str, token: str) -> requests.Response:
-    return requests.get(
-        f"https://api.github.com{path}",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+    url = f"https://api.github.com{path}"
+    common_headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    response = requests.get(
+        url,
+        headers={**common_headers, "Authorization": f"token {token}"},
         timeout=15,
     )
+    if response.status_code in {401, 403}:
+        response = requests.get(
+            url,
+            headers={**common_headers, "Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+    return response
 
 
 def _gitlab_get(path: str, token: str) -> requests.Response:
@@ -874,16 +1250,27 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
     if session_record.status not in {"oauth_done", "completed"}:
         raise ValueError("OAuth step is not complete yet")
 
-    provider_name = str(provider or "").strip().lower()
-    if provider_name != "codex":
-        raise ValueError("Only Codex account-connect is supported right now")
+    provider_name = _normalize_provider_account_connector(provider)
+    provider_label = _provider_account_label(provider_name)
+    login_cmd = _provider_account_login_command(provider_name)
+    if provider_name == "gemini" and _gemini_should_use_pty_wrapper():
+        wrapped = _wrap_command_with_script_tty(login_cmd)
+        if wrapped != login_cmd:
+            login_cmd = wrapped
+        else:
+            logger.warning(
+                "[provider-connect] gemini pty wrapper unavailable; continuing without pseudo-tty"
+            )
+    provider_home_env = str(_PROVIDER_ACCOUNT_CONNECT_HOME_ENV.get(provider_name) or "").strip()
+    provider_home = _provider_runtime_home(provider=provider_name, nexus_id=session_record.nexus_id)
+    user_home = _provider_user_runtime_home(nexus_id=session_record.nexus_id)
 
-    codex_cli_path = str(os.getenv("CODEX_CLI_PATH", "codex")).strip() or "codex"
-    codex_home = _provider_runtime_home(provider=provider_name, nexus_id=session_record.nexus_id)
-    _ensure_private_dir(codex_home)
-    _ensure_private_dir(os.path.join(codex_home, "log"))
-    _ensure_private_dir(os.path.join(codex_home, "memories"))
-    log_dir = os.path.join(codex_home, "device-auth")
+    _ensure_private_dir(user_home)
+    _ensure_private_dir(provider_home)
+    _ensure_private_dir(os.path.join(provider_home, "log"))
+    _ensure_private_dir(os.path.join(provider_home, "memories"))
+    _prepare_provider_runtime_state(provider=provider_name, user_home=user_home)
+    log_dir = os.path.join(provider_home, "device-auth")
     _ensure_private_dir(log_dir)
     timestamp = _now_utc().strftime("%Y%m%d_%H%M%S")
     log_path = os.path.join(log_dir, f"{provider_name}_{timestamp}.log")
@@ -896,6 +1283,16 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
             if getattr(existing_proc, "poll", None) and existing_proc.poll() is None:
                 log_text = _log_tail(str(existing.get("log_path") or ""))
                 verify_url, user_code = _parse_device_auth_url_and_code(log_text)
+                callback_url_hint = _parse_local_callback_url(log_text)
+                requires_code = _requires_manual_auth_code(provider=provider_name, log_text=log_text)
+                last_line = _truncate_for_log(_last_log_line(log_text, ""), limit=220)
+                if last_line:
+                    logger.info(
+                        "[provider-connect] still pending provider=%s session=%s output=%s",
+                        provider_name,
+                        session_record.session_id,
+                        last_line,
+                    )
                 return {
                     "started": False,
                     "session_id": session_record.session_id,
@@ -904,7 +1301,9 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
                     "state": "pending",
                     "verify_url": verify_url,
                     "user_code": user_code,
-                    "message": "Device-auth login is already running.",
+                    "callback_url_hint": callback_url_hint,
+                    "requires_code": requires_code,
+                    "message": f"{provider_label} account login is already running.",
                 }
             existing_handle = existing.get("log_file")
             if existing_handle is not None:
@@ -920,13 +1319,24 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
             raise RuntimeError(f"Unable to create device-auth log file: {exc}") from exc
         _ensure_private_file(log_path)
 
-        env = {**os.environ, "CODEX_HOME": codex_home}
+        env = {**os.environ, "HOME": user_home}
+        if provider_home_env:
+            env[provider_home_env] = provider_home
+        if provider_name == "gemini":
+            # Force browser URL output in server-side environments where opening a local browser is impossible.
+            env.setdefault("NO_BROWSER", "true")
+            # Gemini CLI variants resolve config from GEMINI_CLI_HOME while older builds use GEMINI_HOME/HOME.
+            env.setdefault("GEMINI_CLI_HOME", user_home)
+        process_stdin: int | Any = subprocess.DEVNULL
+        if provider_name == "gemini":
+            # Gemini asks for an authorization code on stdin after browser confirmation.
+            process_stdin = subprocess.PIPE
         try:
             process = subprocess.Popen(
-                [codex_cli_path, "login", "--device-auth"],
-                cwd=codex_home,
+                login_cmd,
+                cwd=provider_home,
                 env=env,
-                stdin=subprocess.DEVNULL,
+                stdin=process_stdin,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -936,7 +1346,7 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
                 log_file.close()
             except Exception:
                 pass
-            raise RuntimeError(f"Failed to start Codex device-auth login: {exc}") from exc
+            raise RuntimeError(f"Failed to start {provider_label} account login: {exc}") from exc
 
         _DEVICE_AUTH_JOBS[job_key] = {
             "provider": provider_name,
@@ -946,9 +1356,20 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
             "log_path": log_path,
             "log_file": log_file,
             "started_at": _now_utc().isoformat(),
-            "codex_home": codex_home,
+            "provider_home": provider_home,
+            "user_home": user_home,
+            "command": login_cmd,
+            "last_status_line_logged": "",
         }
 
+    logger.info(
+        "[provider-connect] started provider=%s session=%s cmd=%s home=%s log=%s",
+        provider_name,
+        session_record.session_id,
+        " ".join(login_cmd),
+        provider_home,
+        log_path,
+    )
     return {
         "started": True,
         "session_id": session_record.session_id,
@@ -957,7 +1378,7 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
         "state": "starting",
         "verify_url": "",
         "user_code": "",
-        "message": "Codex account connection started. Poll status for device instructions.",
+        "message": f"{provider_label} account connection started. Poll status for device instructions.",
     }
 
 
@@ -968,19 +1389,33 @@ def get_provider_account_login_status(*, session_id: str, provider: str) -> dict
         return {"exists": False, "state": "invalid_session", "message": "Invalid session"}
 
     provider_name = str(provider or "").strip().lower()
-    if provider_name != "codex":
+    if provider_name not in _SUPPORTED_PROVIDER_ACCOUNT_CONNECTORS:
+        supported = ", ".join(_SUPPORTED_PROVIDER_ACCOUNT_CONNECTORS)
         return {
             "exists": False,
             "session_id": session_record.session_id,
             "session_ref": format_login_session_ref(session_record.session_id),
             "provider": provider_name,
             "state": "unsupported_provider",
-            "message": "Only Codex account-connect is supported right now",
+            "message": f"Unsupported provider account-connect target. Supported: {supported}",
+        }
+    provider_label = _provider_account_label(provider_name)
+    provider_toggle_key = f"{provider_name}_account_enabled"
+    store_toggle_field = _provider_account_toggle_field(provider_name)
+    if not store_toggle_field:
+        return {
+            "exists": False,
+            "session_id": session_record.session_id,
+            "session_ref": format_login_session_ref(session_record.session_id),
+            "provider": provider_name,
+            "state": "unsupported_provider",
+            "message": f"Unsupported provider account-connect target: {provider_name}",
         }
 
     setup = get_setup_status(session_record.nexus_id)
-    connected_flag = bool(setup.get("codex_account_enabled"))
+    connected_flag = bool(setup.get(provider_toggle_key))
     job_key = _device_job_key(session_id=session_record.session_id, provider=provider_name)
+    force_connect_via_existing_login = False
 
     with _DEVICE_AUTH_LOCK:
         job = _DEVICE_AUTH_JOBS.get(job_key)
@@ -1001,35 +1436,103 @@ def get_provider_account_login_status(*, session_id: str, provider: str) -> dict
         log_path = str(job.get("log_path") or "")
         log_text = _log_tail(log_path)
         verify_url, user_code = _parse_device_auth_url_and_code(log_text)
+        callback_url_hint = _parse_local_callback_url(log_text)
+        requires_code = _requires_manual_auth_code(provider=provider_name, log_text=log_text)
         exit_code = process.poll() if getattr(process, "poll", None) else None
 
         if exit_code is None:
+            if provider_name == "gemini" and not verify_url and _gemini_has_logged_in_identity(log_text):
+                force_connect_via_existing_login = True
+                if getattr(process, "terminate", None):
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
+                log_file = job.get("log_file")
+                if log_file is not None:
+                    try:
+                        log_file.close()
+                    except Exception:
+                        pass
+                _DEVICE_AUTH_JOBS.pop(job_key, None)
+
+            if not force_connect_via_existing_login:
+                status_line = _truncate_for_log(_last_log_line(log_text, ""), limit=220)
+                previous_logged_line = str(job.get("last_status_line_logged") or "").strip()
+                if status_line and status_line != previous_logged_line:
+                    logger.info(
+                        "[provider-connect] pending provider=%s session=%s output=%s",
+                        provider_name,
+                        session_record.session_id,
+                        status_line,
+                    )
+                    job["last_status_line_logged"] = status_line
+                return {
+                    "exists": True,
+                    "session_id": session_record.session_id,
+                    "session_ref": format_login_session_ref(session_record.session_id),
+                    "provider": provider_name,
+                    "state": "pending",
+                    "connected": connected_flag,
+                    "verify_url": verify_url,
+                    "user_code": user_code,
+                    "callback_url_hint": callback_url_hint,
+                    "requires_code": requires_code,
+                    "message": (
+                        "Gemini login is waiting for authorization code submission."
+                        if requires_code
+                        else f"{provider_label} login is waiting for browser confirmation."
+                    ),
+                }
+
+        if not force_connect_via_existing_login:
+            log_file = job.get("log_file")
+            if log_file is not None:
+                try:
+                    log_file.close()
+                except Exception:
+                    pass
+            _DEVICE_AUTH_JOBS.pop(job_key, None)
+
+    if force_connect_via_existing_login:
+        try:
+            store_ai_provider_keys(**{"session_id": session_record.session_id, store_toggle_field: True})
+        except Exception as exc:
             return {
                 "exists": True,
                 "session_id": session_record.session_id,
                 "session_ref": format_login_session_ref(session_record.session_id),
                 "provider": provider_name,
-                "state": "pending",
+                "state": "connected_but_not_saved",
                 "connected": connected_flag,
                 "verify_url": verify_url,
                 "user_code": user_code,
-                "message": "Login is waiting for browser confirmation.",
+                "callback_url_hint": callback_url_hint,
+                "message": f"Login detected but saving setup failed: {exc}",
             }
 
-        log_file = job.get("log_file")
-        if log_file is not None:
-            try:
-                log_file.close()
-            except Exception:
-                pass
-        _DEVICE_AUTH_JOBS.pop(job_key, None)
+        refreshed = get_setup_status(session_record.nexus_id)
+        logger.info(
+            "[provider-connect] connected provider=%s session=%s (existing login detected)",
+            provider_name,
+            session_record.session_id,
+        )
+        return {
+            "exists": True,
+            "session_id": session_record.session_id,
+            "session_ref": format_login_session_ref(session_record.session_id),
+            "provider": provider_name,
+            "state": "connected",
+            "connected": bool(refreshed.get(provider_toggle_key)),
+            "verify_url": verify_url,
+            "user_code": user_code,
+            "callback_url_hint": callback_url_hint,
+            "message": f"{provider_label} account is already authenticated and has been connected.",
+        }
 
     if int(exit_code) == 0:
         try:
-            store_ai_provider_keys(
-                session_id=session_record.session_id,
-                use_codex_account=True,
-            )
+            store_ai_provider_keys(**{"session_id": session_record.session_id, store_toggle_field: True})
         except Exception as exc:
             return {
                 "exists": True,
@@ -1044,31 +1547,241 @@ def get_provider_account_login_status(*, session_id: str, provider: str) -> dict
             }
 
         refreshed = get_setup_status(session_record.nexus_id)
+        logger.info(
+            "[provider-connect] connected provider=%s session=%s",
+            provider_name,
+            session_record.session_id,
+        )
         return {
             "exists": True,
             "session_id": session_record.session_id,
             "session_ref": format_login_session_ref(session_record.session_id),
             "provider": provider_name,
             "state": "connected",
-            "connected": bool(refreshed.get("codex_account_enabled")),
-            "verify_url": verify_url,
-            "user_code": user_code,
-            "message": "Codex account connected successfully.",
-        }
+                "connected": bool(refreshed.get(provider_toggle_key)),
+                "verify_url": verify_url,
+                "user_code": user_code,
+                "callback_url_hint": callback_url_hint,
+                "message": f"{provider_label} account connected successfully.",
+            }
 
-    error_tail = log_text.strip().splitlines()
-    error_message = error_tail[-1] if error_tail else "Device-auth process failed"
+    failure_state, failure_message = _classify_provider_account_login_failure(
+        provider=provider_name,
+        log_text=log_text,
+    )
+    logger.error(
+        "[provider-connect] failed provider=%s session=%s state=%s message=%s output_tail=%s",
+        provider_name,
+        session_record.session_id,
+        failure_state,
+        _truncate_for_log(failure_message, limit=260),
+        _format_log_excerpt(log_text, max_chars=900),
+    )
     return {
         "exists": True,
         "session_id": session_record.session_id,
         "session_ref": format_login_session_ref(session_record.session_id),
         "provider": provider_name,
-        "state": "failed",
+        "state": failure_state,
         "connected": connected_flag,
         "verify_url": verify_url,
         "user_code": user_code,
-        "message": error_message,
+        "callback_url_hint": callback_url_hint,
+        "message": failure_message,
     }
+
+
+def relay_provider_account_login_callback(
+    *,
+    session_id: str,
+    provider: str,
+    callback_url: str,
+) -> dict[str, Any]:
+    resolved_session_id = resolve_login_session_id(session_id)
+    session_record = get_auth_session(str(resolved_session_id))
+    if not session_record:
+        return {"relayed": False, "state": "invalid_session", "message": "Invalid session"}
+
+    provider_name = _normalize_provider_account_connector(provider)
+    if provider_name != "gemini":
+        return {
+            "relayed": False,
+            "session_id": session_record.session_id,
+            "session_ref": format_login_session_ref(session_record.session_id),
+            "provider": provider_name,
+            "state": "unsupported_provider",
+            "message": "Callback relay is currently supported only for Gemini.",
+        }
+
+    try:
+        safe_callback_url = _validate_local_callback_url(callback_url)
+    except ValueError as exc:
+        return {
+            "relayed": False,
+            "session_id": session_record.session_id,
+            "session_ref": format_login_session_ref(session_record.session_id),
+            "provider": provider_name,
+            "state": "invalid_callback_url",
+            "message": str(exc),
+        }
+
+    job_key = _device_job_key(session_id=str(session_record.session_id), provider=provider_name)
+    with _DEVICE_AUTH_LOCK:
+        job = _DEVICE_AUTH_JOBS.get(job_key)
+        process = job.get("process") if isinstance(job, dict) else None
+        is_running = bool(getattr(process, "poll", None) and process.poll() is None)
+    if not is_running:
+        idle_status = get_provider_account_login_status(
+            session_id=session_record.session_id,
+            provider=provider_name,
+        )
+        idle_status["relayed"] = False
+        if str(idle_status.get("state") or "").strip().lower() == "idle":
+            idle_status["state"] = "no_active_job"
+            idle_status["message"] = "No active Gemini login job. Click Connect Gemini Account first."
+        return idle_status
+
+    timeout_raw = str(os.getenv("NEXUS_PROVIDER_CALLBACK_RELAY_TIMEOUT_SECONDS", "12")).strip()
+    try:
+        timeout_seconds = max(2, min(30, int(timeout_raw)))
+    except ValueError:
+        timeout_seconds = 12
+
+    try:
+        relay_response = requests.get(
+            safe_callback_url,
+            timeout=timeout_seconds,
+            allow_redirects=False,
+        )
+        logger.info(
+            "[provider-connect] relay-callback provider=%s session=%s callback=%s http_status=%s",
+            provider_name,
+            session_record.session_id,
+            safe_callback_url,
+            relay_response.status_code,
+        )
+    except Exception as exc:
+        logger.error(
+            "[provider-connect] relay-callback failed provider=%s session=%s callback=%s error=%s",
+            provider_name,
+            session_record.session_id,
+            safe_callback_url,
+            exc,
+        )
+        pending_status = get_provider_account_login_status(
+            session_id=session_record.session_id,
+            provider=provider_name,
+        )
+        pending_status["relayed"] = False
+        pending_status["state"] = "callback_relay_failed"
+        pending_status["message"] = f"Failed to relay callback URL to Gemini CLI: {exc}"
+        return pending_status
+
+    status = get_provider_account_login_status(session_id=session_record.session_id, provider=provider_name)
+    status["relayed"] = True
+    status["relay_http_status"] = int(relay_response.status_code)
+    if str(status.get("state") or "").strip().lower() in {"starting", "pending"}:
+        status["message"] = (
+            "Gemini callback URL relayed. Waiting for Gemini login confirmation..."
+        )
+    return status
+
+
+def submit_provider_account_login_code(
+    *,
+    session_id: str,
+    provider: str,
+    authorization_code: str,
+) -> dict[str, Any]:
+    resolved_session_id = resolve_login_session_id(session_id)
+    session_record = get_auth_session(str(resolved_session_id))
+    if not session_record:
+        return {"submitted": False, "state": "invalid_session", "message": "Invalid session"}
+
+    provider_name = _normalize_provider_account_connector(provider)
+    if provider_name != "gemini":
+        return {
+            "submitted": False,
+            "session_id": session_record.session_id,
+            "session_ref": format_login_session_ref(session_record.session_id),
+            "provider": provider_name,
+            "state": "unsupported_provider",
+            "message": "Authorization-code submission is currently supported only for Gemini.",
+        }
+
+    code_value = _normalize_provider_auth_code(authorization_code)
+
+    job_key = _device_job_key(session_id=str(session_record.session_id), provider=provider_name)
+    process: Any = None
+    with _DEVICE_AUTH_LOCK:
+        job = _DEVICE_AUTH_JOBS.get(job_key)
+        if isinstance(job, dict):
+            process = job.get("process")
+    if not job or not isinstance(job, dict):
+        idle_status = get_provider_account_login_status(
+            session_id=session_record.session_id,
+            provider=provider_name,
+        )
+        idle_status["submitted"] = False
+        if str(idle_status.get("state") or "").strip().lower() == "idle":
+            idle_status["state"] = "no_active_job"
+            idle_status["message"] = "No active Gemini login job. Click Connect Gemini Account first."
+        return idle_status
+
+    if not (getattr(process, "poll", None) and process.poll() is None):
+        completed_status = get_provider_account_login_status(
+            session_id=session_record.session_id,
+            provider=provider_name,
+        )
+        completed_status["submitted"] = False
+        if str(completed_status.get("state") or "").strip().lower() == "idle":
+            completed_status["state"] = "no_active_job"
+            completed_status["message"] = "Gemini login process is no longer active."
+        return completed_status
+
+    stdin_handle = getattr(process, "stdin", None)
+    if stdin_handle is None:
+        return {
+            "submitted": False,
+            "session_id": session_record.session_id,
+            "session_ref": format_login_session_ref(session_record.session_id),
+            "provider": provider_name,
+            "state": "stdin_unavailable",
+            "message": "Gemini login stdin is unavailable; restart Connect Gemini Account.",
+        }
+
+    try:
+        stdin_handle.write(f"{code_value}\n")
+        stdin_handle.flush()
+    except Exception as exc:
+        logger.error(
+            "[provider-connect] submit-code failed provider=%s session=%s error=%s",
+            provider_name,
+            session_record.session_id,
+            exc,
+        )
+        return {
+            "submitted": False,
+            "session_id": session_record.session_id,
+            "session_ref": format_login_session_ref(session_record.session_id),
+            "provider": provider_name,
+            "state": "submit_failed",
+            "message": f"Failed to submit authorization code to Gemini CLI: {exc}",
+        }
+
+    logger.info(
+        "[provider-connect] submit-code provider=%s session=%s",
+        provider_name,
+        session_record.session_id,
+    )
+    status = get_provider_account_login_status(
+        session_id=session_record.session_id,
+        provider=provider_name,
+    )
+    status["submitted"] = True
+    if str(status.get("state") or "").strip().lower() in {"starting", "pending"}:
+        status["message"] = "Authorization code submitted to Gemini CLI. Waiting for confirmation..."
+    return status
 
 
 def get_session_and_setup_status(session_id: str) -> dict[str, Any]:
@@ -1104,3 +1817,51 @@ def get_latest_login_session_status(nexus_id: str) -> dict[str, Any]:
         "last_error": record.last_error,
         "nexus_id": record.nexus_id,
     }
+
+
+def start_provider_account_login_for_nexus(*, nexus_id: str, provider: str) -> dict[str, Any]:
+    record = get_latest_auth_session_for_nexus(str(nexus_id))
+    if not record:
+        return {
+            "started": False,
+            "exists": False,
+            "state": "oauth_required",
+            "message": "No existing OAuth session found. Run /login github or /login gitlab first.",
+        }
+
+    session_ref = format_login_session_ref(record.session_id)
+    if record.expires_at and record.expires_at < _now_utc():
+        return {
+            "started": False,
+            "exists": True,
+            "session_id": record.session_id,
+            "session_ref": session_ref,
+            "state": "oauth_required",
+            "message": "Latest OAuth session expired. Run /login github or /login gitlab again.",
+        }
+
+    status = str(record.status or "").strip().lower()
+    if status not in {"oauth_done", "completed"}:
+        return {
+            "started": False,
+            "exists": True,
+            "session_id": record.session_id,
+            "session_ref": session_ref,
+            "state": "oauth_required",
+            "message": "OAuth setup is incomplete. Finish /login github or /login gitlab first.",
+        }
+
+    start_result = start_provider_account_login(session_id=record.session_id, provider=provider)
+    login_status = get_provider_account_login_status(session_id=record.session_id, provider=provider)
+    merged = dict(start_result)
+    for key in ("exists", "state", "verify_url", "user_code", "connected", "message"):
+        if key in login_status:
+            merged[key] = login_status[key]
+    final_state = str(merged.get("state") or "").strip().lower()
+    if final_state in _PROVIDER_ACCOUNT_CONNECT_FAILURE_STATES:
+        merged["started"] = False
+    if "session_id" not in merged:
+        merged["session_id"] = record.session_id
+    if "session_ref" not in merged:
+        merged["session_ref"] = session_ref
+    return merged

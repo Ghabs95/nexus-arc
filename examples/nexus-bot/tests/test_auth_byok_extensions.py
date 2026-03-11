@@ -443,6 +443,10 @@ def test_build_execution_env_allows_cli_account_without_api_keys(monkeypatch):
     assert env["GITLAB_TOKEN"] == "gitlab-access-token"
     assert env["GITHUB_TOKEN"] == "gitlab-access-token"
     assert env["NEXUS_ACCOUNT_AUTH_PROVIDERS"] == "codex"
+    assert str(env.get("HOME", "")).endswith("/auth/home/nexus-acc-env")
+    assert str(env.get("CODEX_HOME", "")).endswith("/auth/codex/nexus-acc-env")
+    assert str(env.get("GEMINI_HOME", "")).endswith("/auth/gemini/nexus-acc-env")
+    assert str(env.get("CLAUDE_HOME", "")).endswith("/auth/claude/nexus-acc-env")
 
 
 def test_build_execution_env_rejects_insecure_codex_home_owner(monkeypatch):
@@ -664,3 +668,26 @@ def test_compute_gitlab_project_grants_accepts_top_level_group():
         project_config=config,
     )
     assert ("acme", "acme") in grants
+
+
+def test_github_request_retries_with_bearer_after_token_401(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    class _Response:
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+
+    responses = [_Response(401), _Response(200)]
+
+    def _fake_get(url, headers, timeout):
+        calls.append({"url": url, "headers": dict(headers), "timeout": timeout})
+        return responses.pop(0)
+
+    monkeypatch.setattr(access_svc.requests, "get", _fake_get)
+
+    response = access_svc._github_request("https://api.github.com/user", "oauth-token", timeout=12)
+
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert calls[0]["headers"]["Authorization"] == "token oauth-token"
+    assert calls[1]["headers"]["Authorization"] == "Bearer oauth-token"

@@ -38,7 +38,9 @@ from nexus.core.config import (
     NEXUS_FEATURE_REGISTRY_MAX_ITEMS_PER_PROJECT,
     NEXUS_AUTH_ENABLED,
     NEXUS_GITHUB_CLIENT_ID,
+    NEXUS_GITHUB_CLIENT_SECRET,
     NEXUS_GITLAB_CLIENT_ID,
+    NEXUS_GITLAB_CLIENT_SECRET,
     NEXUS_PUBLIC_BASE_URL,
     NEXUS_CORE_STORAGE_DIR,
     NEXUS_STORAGE_DSN,
@@ -78,6 +80,9 @@ from nexus.core.auth import (
     get_setup_status as _svc_get_setup_status,
 )
 from nexus.core.auth import register_onboarding_message as _svc_register_onboarding_message
+from nexus.core.auth import (
+    start_provider_account_login_for_nexus as _svc_start_provider_account_login_for_nexus,
+)
 from nexus.core.command_contract import (
     validate_command_parity,
     validate_required_command_interface,
@@ -1593,13 +1598,15 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if requested_provider in {"codex", "gemini", "claude", "copilot"}
         else ""
     )
-    if requested_provider == "github" and not NEXUS_GITHUB_CLIENT_ID:
+    github_oauth_ready = bool(NEXUS_GITHUB_CLIENT_ID and NEXUS_GITHUB_CLIENT_SECRET)
+    gitlab_oauth_ready = bool(NEXUS_GITLAB_CLIENT_ID and NEXUS_GITLAB_CLIENT_SECRET)
+    if requested_provider == "github" and not github_oauth_ready:
         await update.effective_message.reply_text(
             "⚠️ GitHub OAuth is not configured. Use `/login gitlab`.",
             parse_mode="Markdown",
         )
         return
-    if requested_provider == "gitlab" and not NEXUS_GITLAB_CLIENT_ID:
+    if requested_provider == "gitlab" and not gitlab_oauth_ready:
         await update.effective_message.reply_text(
             "⚠️ GitLab OAuth is not configured. Use `/login github`.",
             parse_mode="Markdown",
@@ -1607,16 +1614,10 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user = _get_or_create_telegram_user(update.effective_user)
-    session_id = create_login_session_for_user(
-        nexus_id=str(user.nexus_id),
-        discord_user_id=str(update.effective_user.id),
-        discord_username=getattr(update.effective_user, "username", None),
-    )
-    session_ref = _svc_format_login_session_ref(session_id) or session_id
     available_providers: list[str] = []
-    if NEXUS_GITHUB_CLIENT_ID:
+    if github_oauth_ready:
         available_providers.append("github")
-    if NEXUS_GITLAB_CLIENT_ID:
+    if gitlab_oauth_ready:
         available_providers.append("gitlab")
     if not available_providers:
         await update.effective_message.reply_text(
@@ -1628,6 +1629,78 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⚠️ Copilot account mode requires GitHub OAuth, but GitHub OAuth is not configured.",
         )
         return
+
+    if account_provider_target in {"codex", "gemini", "claude"}:
+        try:
+            provider_login = _svc_start_provider_account_login_for_nexus(
+                nexus_id=str(user.nexus_id),
+                provider=account_provider_target,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Provider login bootstrap failed for %s (nexus_id=%s): %s",
+                account_provider_target,
+                user.nexus_id,
+                exc,
+            )
+            provider_login = {"started": False, "state": "oauth_required"}
+
+        provider_state = str(provider_login.get("state") or "").strip().lower()
+        provider_message = str(provider_login.get("message") or "").strip()
+        verify_url = str(provider_login.get("verify_url") or "").strip()
+        user_code = str(provider_login.get("user_code") or "").strip()
+
+        if bool(provider_login.get("started")) or provider_state in {"starting", "pending"}:
+            steps = [
+                "🔐 Provider account login started.",
+                f"Provider: {account_provider_target.title()}",
+            ]
+            if verify_url:
+                steps.append(f"1. Open: {verify_url}")
+            if user_code:
+                steps.append(f"2. Enter code: {user_code}")
+            steps.append("3. Complete provider authorization in the browser")
+            steps.append("4. Run `/setup_status`")
+            await update.effective_message.reply_text(
+                "\n".join(steps),
+                disable_web_page_preview=True,
+            )
+            return
+        if provider_state == "connected":
+            await update.effective_message.reply_text(
+                "\n".join(
+                    [
+                        f"✅ {account_provider_target.title()} account already connected.",
+                        "Run `/setup_status` to verify setup readiness.",
+                    ]
+                ),
+                disable_web_page_preview=True,
+            )
+            return
+        if provider_state and provider_state != "oauth_required":
+            lines = [
+                f"⚠️ {provider_message or 'Provider account login failed.'}",
+                f"Provider: {account_provider_target.title()}",
+            ]
+            if verify_url:
+                lines.append(f"Open: {verify_url}")
+            if user_code:
+                lines.append(f"Code: {user_code}")
+            if provider_state == "rate_limited":
+                lines.append("Wait 1-2 minutes and retry `/login` for this provider.")
+            lines.append("Run `/setup_status` after retry.")
+            await update.effective_message.reply_text(
+                "\n".join(lines),
+                disable_web_page_preview=True,
+            )
+            return
+
+    session_id = create_login_session_for_user(
+        nexus_id=str(user.nexus_id),
+        discord_user_id=str(update.effective_user.id),
+        discord_username=getattr(update.effective_user, "username", None),
+    )
+    session_ref = _svc_format_login_session_ref(session_id) or session_id
     oauth_provider = requested_provider
     if account_provider_target:
         oauth_provider = "github" if "github" in available_providers else available_providers[0]

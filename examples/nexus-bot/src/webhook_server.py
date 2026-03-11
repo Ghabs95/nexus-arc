@@ -117,10 +117,16 @@ from nexus.core.auth import (
     refresh_stale_access_grants as _svc_refresh_stale_access_grants,
 )
 from nexus.core.auth import (
+    relay_provider_account_login_callback as _svc_relay_provider_account_login_callback,
+)
+from nexus.core.auth import (
     resolve_login_session_id as _svc_resolve_login_session_id,
 )
 from nexus.core.auth import (
     start_provider_account_login as _svc_start_provider_account_login,
+)
+from nexus.core.auth import (
+    submit_provider_account_login_code as _svc_submit_provider_account_login_code,
 )
 from nexus.core.auth import (
     start_oauth_flow as _svc_start_oauth_flow,
@@ -168,6 +174,47 @@ socketio = SocketIO(app, async_mode=_socketio_async_mode, cors_allowed_origins="
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = str(os.getenv(name, "true" if default else "false")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def _cli_auth_mode() -> str:
+    mode = str(os.getenv("NEXUS_CLI_AUTH_MODE", "account")).strip().lower()
+    return mode if mode in {"account", "api-key", "auto"} else "account"
+
+
+def _allow_api_keys_in_web_setup() -> bool:
+    return _cli_auth_mode() != "account"
+
+
+def _oauth_provider_configured(provider: str) -> bool:
+    normalized = str(provider or "").strip().lower()
+    if normalized == "github":
+        return bool(
+            str(os.getenv("NEXUS_GITHUB_CLIENT_ID", "")).strip()
+            and str(os.getenv("NEXUS_GITHUB_CLIENT_SECRET", "")).strip()
+        )
+    if normalized == "gitlab":
+        return bool(
+            str(os.getenv("NEXUS_GITLAB_CLIENT_ID", "")).strip()
+            and str(os.getenv("NEXUS_GITLAB_CLIENT_SECRET", "")).strip()
+        )
+    return False
+
+
+def _configured_oauth_providers() -> list[str]:
+    providers: list[str] = []
+    if _oauth_provider_configured("github"):
+        providers.append("github")
+    if _oauth_provider_configured("gitlab"):
+        providers.append("gitlab")
+    return providers
+
+
+def _default_oauth_provider(providers: list[str]) -> str:
+    if "gitlab" in providers:
+        return "gitlab"
+    if "github" in providers:
+        return "github"
+    return ""
 
 # Track processed events to avoid duplicates
 processed_events = set()
@@ -357,13 +404,29 @@ def _visualizer_login_redirect(next_path: str = "/visualizer"):
 
 
 def _render_login_page(*, message_html: str = "", session_hint: str = ""):
-    preferred_provider = "gitlab" if os.getenv("NEXUS_GITLAB_CLIENT_ID") else "github"
+    providers = _configured_oauth_providers()
+    preferred_provider = _default_oauth_provider(providers) or "github"
     session_value = html.escape(str(session_hint or "").strip(), quote=True)
-    provider_options = (
-        '<option value="github">GitHub</option><option value="gitlab">GitLab</option>'
+    ordered_providers = (
+        providers
         if preferred_provider == "github"
-        else '<option value="gitlab">GitLab</option><option value="github">GitHub</option>'
+        else sorted(providers, key=lambda item: (item != "gitlab", item))
     )
+    provider_options = "".join(
+        f'<option value="{name}">{name.title()}</option>' for name in ordered_providers
+    )
+    provider_disabled_attr = "" if ordered_providers else " disabled"
+    submit_disabled_attr = "" if ordered_providers else " disabled"
+    missing_provider_note = (
+        ""
+        if ordered_providers
+        else (
+            "<p><small>No OAuth providers are fully configured yet. "
+            "Set both client ID and client secret for GitHub and/or GitLab.</small></p>"
+        )
+    )
+    if not provider_options:
+        provider_options = '<option value="">No OAuth providers configured</option>'
     body = f"""
 <p>Authenticate using the same OAuth onboarding used by Telegram/Discord <code>/login</code>.</p>
 {message_html}
@@ -371,11 +434,12 @@ def _render_login_page(*, message_html: str = "", session_hint: str = ""):
   <label for="session"><strong>Session Reference</strong></label>
   <input id="session" name="session" type="text" value="{session_value}" placeholder="Paste the session reference from /login" spellcheck="false" autocapitalize="off" autocorrect="off" required />
   <label for="provider"><strong>Provider</strong></label>
-  <select id="provider" name="provider" style="width:100%; padding:0.6rem; border-radius:8px; border:1px solid #94a3b8;">
+  <select id="provider" name="provider" style="width:100%; padding:0.6rem; border-radius:8px; border:1px solid #94a3b8;"{provider_disabled_attr}>
     {provider_options}
   </select>
-  <button type="submit" class="form-submit">Continue Login</button>
+  <button type="submit" class="form-submit"{submit_disabled_attr}>Continue Login</button>
 </form>
+{missing_provider_note}
 <p><small>Tip: run <code>/login</code> in Telegram or Discord, then paste the session reference shown in chat.</small></p>
 """
     return _render_auth_message("Nexus Login", body, status_code=200)
@@ -754,6 +818,7 @@ def _render_auth_message(title: str, body: str, *, status_code: int = 200):
 def _render_ai_key_form(
     *,
     session_id: str,
+    show_api_key_inputs: bool,
     copilot_checked: bool,
     show_copilot_option: bool,
     copilot_token_set: bool,
@@ -771,7 +836,9 @@ def _render_ai_key_form(
     gemini_account_attr = " checked" if gemini_account_enabled else ""
     claude_account_attr = " checked" if claude_account_enabled else ""
     copilot_account_attr = " checked" if copilot_account_enabled else ""
-    codex_field = """
+    api_key_mode_notice = ""
+    if show_api_key_inputs:
+        codex_field = """
   <label for="codex_api_key"><strong>Codex/OpenAI API Key (optional)</strong></label>
   <div class="field-row">
     <input id="codex_api_key" name="codex_api_key" type="password" placeholder="sk-..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
@@ -791,7 +858,7 @@ def _render_ai_key_form(
     <small>Leave empty and save to clear this key.</small>
   </div>
 """
-    gemini_field = """
+        gemini_field = """
   <label for="gemini_api_key"><strong>Gemini API Key (optional)</strong></label>
   <div class="field-row">
     <input id="gemini_api_key" name="gemini_api_key" type="password" placeholder="AIza..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
@@ -811,7 +878,7 @@ def _render_ai_key_form(
     <small>Leave empty and save to clear this key.</small>
   </div>
 """
-    claude_field = """
+        claude_field = """
   <label for="claude_api_key"><strong>Claude API Key (optional)</strong></label>
   <div class="field-row">
     <input id="claude_api_key" name="claude_api_key" type="password" placeholder="sk-ant-..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
@@ -831,7 +898,7 @@ def _render_ai_key_form(
     <small>Leave empty and save to clear this key.</small>
   </div>
 """
-    copilot_token_field = """
+        copilot_token_field = """
   <label for="copilot_github_token"><strong>Copilot Token (optional)</strong></label>
   <div class="field-row">
     <input id="copilot_github_token" name="copilot_github_token" type="password" placeholder="ghp_..." autocomplete="new-password" spellcheck="false" autocapitalize="off" autocorrect="off" />
@@ -851,12 +918,35 @@ def _render_ai_key_form(
     <small>Leave empty and save to clear this token.</small>
   </div>
 """
+    else:
+        codex_field = ""
+        gemini_field = ""
+        claude_field = ""
+        copilot_token_field = ""
+        api_key_mode_notice = (
+            '<p><small>API key/token fields are hidden because '
+            '<code>NEXUS_CLI_AUTH_MODE=account</code>.</small></p>'
+        )
     account_mode_html = f"""
   <hr />
   <p><strong>Provider Account Login (No API Key)</strong><br /><small>Enable these toggles if you connected provider account login for this workspace.</small></p>
   <div style="margin:0.4rem 0 0.8rem;">
     <button type="button" onclick="startProviderConnect('codex')">Connect Codex Account</button>
+    <button type="button" onclick="startProviderConnect('gemini')">Connect Gemini Account</button>
+    <button type="button" onclick="startProviderConnect('claude')">Connect Claude Account</button>
     <small id="provider_connect_status" style="display:block; margin-top:0.4rem;">This opens a browser-based device flow and saves the result to your session.</small>
+  </div>
+  <div id="gemini_code_section" style="display:none; margin:0.45rem 0 0.8rem;">
+    <label for="gemini_authorization_code"><small>Gemini authorization code</small></label>
+    <input id="gemini_authorization_code" type="text" placeholder="Paste the code shown after Google sign-in" spellcheck="false" autocapitalize="off" autocorrect="off" />
+    <button type="button" style="margin-top:0.45rem; margin-bottom:0.25rem;" onclick="submitProviderAuthCode('gemini')">Submit Gemini Authorization Code</button>
+    <small style="display:block;">If prompted with "Enter the authorization code", paste it here.</small>
+  </div>
+  <div id="gemini_callback_section" style="display:none; margin:0.2rem 0 0.8rem;">
+    <label for="gemini_callback_url"><small>Gemini localhost callback URL (fallback)</small></label>
+    <input id="gemini_callback_url" type="text" placeholder="http://localhost:41725/oauth2callback?..." spellcheck="false" autocapitalize="off" autocorrect="off" />
+    <button type="button" style="margin-top:0.45rem; margin-bottom:0.25rem;" onclick="relayProviderCallback('gemini')">Submit Gemini Callback URL</button>
+    <small style="display:block;">Use this only if Gemini redirects to localhost and login remains pending.</small>
   </div>
   <label style="display:block; margin-top:0.4rem;">
     <input type="checkbox" name="use_codex_account" value="1"{codex_account_attr} />
@@ -892,6 +982,7 @@ def _render_ai_key_form(
   {gemini_field}
   {claude_field}
   {copilot_token_field}
+  {api_key_mode_notice}
   {account_mode_html}
   {copilot_html}
   <button type="submit" class="form-submit">Save Setup</button>
@@ -909,36 +1000,197 @@ function enableProviderField(fieldName) {{
   }}
 }}
 var providerConnectPoll = null;
+var providerConnectOpenedUrls = Object.create(null);
+var providerConnectPopups = Object.create(null);
+function providerDisplayName(provider) {{
+  var key = String(provider || "").trim().toLowerCase();
+  if (key === "gemini") return "Gemini";
+  if (key === "claude") return "Claude";
+  return "Codex";
+}}
+function setProviderAccountToggle(provider, enabled) {{
+  var key = String(provider || "").trim().toLowerCase();
+  var fieldName = "";
+  if (key === "gemini") fieldName = "use_gemini_account";
+  else if (key === "claude") fieldName = "use_claude_account";
+  else if (key === "codex") fieldName = "use_codex_account";
+  if (!fieldName) return;
+  var input = document.querySelector('input[name="' + fieldName + '"]');
+  if (input) input.checked = !!enabled;
+}}
+function _escapeHtml(value) {{
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}}
 function setProviderConnectStatus(text) {{
   var el = document.getElementById("provider_connect_status");
-  if (el) el.textContent = text;
+  if (el) el.textContent = String(text || "");
 }}
+function setProviderConnectStatusWithLink(message, verifyUrl, userCode) {{
+  var el = document.getElementById("provider_connect_status");
+  if (!el) return;
+  var url = String(verifyUrl || "").trim();
+  if (!url) {{
+    setProviderConnectStatus(message);
+    return;
+  }}
+  var safeMessage = _escapeHtml(message || "Open the verification link and confirm login.");
+  var safeUrl = _escapeHtml(url);
+  var safeCode = _escapeHtml(String(userCode || "").trim());
+  var codeHtml = safeCode ? ("<br />Code: <code>" + safeCode + "</code>") : "";
+  el.innerHTML =
+    safeMessage
+    + ' <a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Open verification link</a>.'
+    + codeHtml;
+}}
+function _isVisible(el) {{
+  return !!el && String(el.style.display || "") !== "none";
+}}
+function setGeminiProviderSections(opts) {{
+  var showCode = !!(opts && opts.showCode);
+  var showCallback = !!(opts && opts.showCallback);
+  var codeSection = document.getElementById("gemini_code_section");
+  var callbackSection = document.getElementById("gemini_callback_section");
+  if (codeSection) codeSection.style.display = showCode ? "block" : "none";
+  if (callbackSection) callbackSection.style.display = showCallback ? "block" : "none";
+}}
+function _providerConnectPendingUrl(provider, sessionId) {{
+  var key = encodeURIComponent(String(provider || "").trim().toLowerCase() || "codex");
+  var sid = encodeURIComponent(String(sessionId || "").trim());
+  return "/auth/provider-connect/pending?provider=" + key + "&session_id=" + sid;
+}}
+function primeProviderPopup(provider, sessionId) {{
+  try {{
+    var existing = providerConnectPopups[provider];
+    if (existing && !existing.closed) return;
+    var pendingUrl = _providerConnectPendingUrl(provider, sessionId);
+    var popup = window.open(pendingUrl, "_blank");
+    if (!popup) return;
+    providerConnectPopups[provider] = popup;
+  }} catch (err) {{
+    return;
+  }}
+}}
+function maybeOpenProviderVerifyUrl(provider, verifyUrl) {{
+  var url = String(verifyUrl || "").trim();
+  if (!url) return false;
+  var dedupeKey = String(provider || "") + "::" + url;
+  if (providerConnectOpenedUrls[dedupeKey]) return true;
+  providerConnectOpenedUrls[dedupeKey] = true;
+  try {{
+    var popup = providerConnectPopups[provider];
+    if (popup && !popup.closed) {{
+      popup.location.href = url;
+      return true;
+    }}
+  }} catch (err) {{
+    // Fall through and try regular open.
+  }}
+  try {{
+    var opened = window.open(url, "_blank", "noopener,noreferrer");
+    return !!opened;
+  }} catch (err) {{
+    return false;
+  }}
+}}
+window.addEventListener("message", function(event) {{
+  try {{
+    if (!event || event.origin !== window.location.origin) return;
+    var payload = event.data;
+    if (!payload || payload.source !== "nexus-provider-connect") return;
+    var provider = String(payload.provider || "").trim().toLowerCase();
+    var state = String(payload.state || "").trim().toLowerCase();
+    var message = String(payload.message || "").trim();
+    if (payload.verify_url) {{
+      maybeOpenProviderVerifyUrl(provider, String(payload.verify_url));
+    }}
+    if (state === "connected") {{
+      setProviderAccountToggle(provider, true);
+      if (provider === "gemini") {{
+        setGeminiProviderSections({{ showCode: false, showCallback: false }});
+      }}
+      setProviderConnectStatus(providerDisplayName(provider) + " account connected. Save Setup to keep the toggle.");
+      if (providerConnectPoll) {{
+        clearTimeout(providerConnectPoll);
+        providerConnectPoll = null;
+      }}
+      var popup = providerConnectPopups[provider];
+      if (popup && !popup.closed) {{
+        try {{ popup.close(); }} catch (err) {{ /* ignore */ }}
+      }}
+      return;
+    }}
+    if (message) {{
+      setProviderConnectStatus(message);
+    }}
+  }} catch (err) {{
+    return;
+  }}
+}});
 async function pollProviderConnect(provider, sessionId) {{
   try {{
     var response = await fetch("/auth/provider-connect/status?provider=" + encodeURIComponent(provider) + "&session_id=" + encodeURIComponent(sessionId));
     var payload = await response.json();
     var state = String(payload.state || "");
-    if (payload.user_code && payload.verify_url) {{
-      setProviderConnectStatus("Open " + payload.verify_url + " and enter code " + payload.user_code + ". Waiting for confirmation...");
+    if (String(provider || "").toLowerCase() === "gemini") {{
+      var callbackInput = document.getElementById("gemini_callback_url");
+      if (payload.callback_url_hint && callbackInput && !String(callbackInput.value || "").trim()) {{
+        callbackInput.value = String(payload.callback_url_hint);
+      }}
+      var callbackVisible = _isVisible(document.getElementById("gemini_callback_section"));
+      var messageLower = String(payload.message || "").toLowerCase();
+      var shouldShowCallback = callbackVisible
+        || !!payload.callback_url_hint
+        || messageLower.indexOf("localhost") >= 0;
+      setGeminiProviderSections({{
+        showCode: state !== "connected",
+        showCallback: state !== "connected" && shouldShowCallback
+      }});
+    }}
+    if (payload.verify_url) {{
+      var openedFromPoll = maybeOpenProviderVerifyUrl(provider, payload.verify_url);
+      setProviderConnectStatusWithLink(
+        openedFromPoll
+          ? "Verification tab opened."
+          : "If no browser tab opened automatically, use this link:",
+        payload.verify_url,
+        payload.user_code
+      );
     }} else if (payload.message) {{
       setProviderConnectStatus(String(payload.message));
     }}
     if (state === "connected") {{
-      setProviderConnectStatus("Codex account connected. Save Setup to keep the toggle.");
+      setProviderAccountToggle(provider, true);
+      setProviderConnectStatus(providerDisplayName(provider) + " account connected. Save Setup to keep the toggle.");
+      var popup = providerConnectPopups[provider];
+      if (popup && !popup.closed) {{
+        try {{ popup.close(); }} catch (err) {{ /* ignore */ }}
+      }}
       if (providerConnectPoll) {{
         clearTimeout(providerConnectPoll);
         providerConnectPoll = null;
       }}
       return;
     }}
-    if (state === "failed" || state === "connected_but_not_saved") {{
+    if (
+      state === "failed"
+      || state === "connected_but_not_saved"
+      || state === "rate_limited"
+      || state === "interactive_required"
+      || state === "unsupported_provider"
+      || state === "invalid_session"
+    ) {{
       if (providerConnectPoll) {{
         clearTimeout(providerConnectPoll);
         providerConnectPoll = null;
       }}
       return;
     }}
-    providerConnectPoll = setTimeout(function() {{ pollProviderConnect(provider, sessionId); }}, 2000);
+    providerConnectPoll = setTimeout(function() {{ pollProviderConnect(provider, sessionId); }}, 1500);
   }} catch (err) {{
     setProviderConnectStatus("Could not poll provider-connect status. Retry.");
   }}
@@ -950,7 +1202,16 @@ async function startProviderConnect(provider) {{
     setProviderConnectStatus("Missing session id.");
     return;
   }}
-  setProviderConnectStatus("Starting provider account connection...");
+  var providerKey = String(provider || "").toLowerCase();
+  if (providerKey === "codex" || providerKey === "gemini" || providerKey === "claude") {{
+    primeProviderPopup(provider, sessionId);
+  }}
+  if (providerKey === "gemini") {{
+    setGeminiProviderSections({{ showCode: true, showCallback: false }});
+  }} else {{
+    setGeminiProviderSections({{ showCode: false, showCallback: false }});
+  }}
+  setProviderConnectStatus("Starting " + providerDisplayName(provider) + " account connection...");
   try {{
     var response = await fetch("/auth/provider-connect/start", {{
       method: "POST",
@@ -962,13 +1223,99 @@ async function startProviderConnect(provider) {{
       setProviderConnectStatus(String(payload.message || "Could not start provider connect."));
       return;
     }}
+    if (payload.verify_url) {{
+      var openedFromStart = maybeOpenProviderVerifyUrl(provider, payload.verify_url);
+      setProviderConnectStatusWithLink(
+        openedFromStart
+          ? "Verification tab opened."
+          : "If no browser tab opened automatically, use this link:",
+        payload.verify_url,
+        payload.user_code
+      );
+    }} else if (payload.message) {{
+      setProviderConnectStatus(String(payload.message));
+    }}
+    if (providerConnectPoll) clearTimeout(providerConnectPoll);
+    var initialPollDelay = String(provider || "").toLowerCase() === "gemini" ? 250 : 1000;
+    providerConnectPoll = setTimeout(function() {{ pollProviderConnect(provider, sessionId); }}, initialPollDelay);
+  }} catch (err) {{
+    setProviderConnectStatus("Could not start provider connect.");
+  }}
+}}
+async function relayProviderCallback(provider) {{
+  var sessionInput = document.querySelector('input[name="session_id"]');
+  var sessionId = sessionInput ? String(sessionInput.value || "").trim() : "";
+  if (!sessionId) {{
+    setProviderConnectStatus("Missing session id.");
+    return;
+  }}
+  var callbackInput = document.getElementById("gemini_callback_url");
+  var callbackUrl = callbackInput ? String(callbackInput.value || "").trim() : "";
+  if (!callbackUrl) {{
+    setProviderConnectStatus("Paste the Gemini localhost callback URL first.");
+    return;
+  }}
+  setProviderConnectStatus("Relaying callback URL to Gemini CLI...");
+  try {{
+    var response = await fetch("/auth/provider-connect/relay-callback", {{
+      method: "POST",
+      headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{
+        provider: provider,
+        session_id: sessionId,
+        callback_url: callbackUrl
+      }})
+    }});
+    var payload = await response.json();
+    if (!response.ok) {{
+      setProviderConnectStatus(String(payload.message || "Could not relay callback URL."));
+      return;
+    }}
     if (payload.message) {{
       setProviderConnectStatus(String(payload.message));
     }}
     if (providerConnectPoll) clearTimeout(providerConnectPoll);
     providerConnectPoll = setTimeout(function() {{ pollProviderConnect(provider, sessionId); }}, 1000);
   }} catch (err) {{
-    setProviderConnectStatus("Could not start provider connect.");
+    setProviderConnectStatus("Could not relay callback URL.");
+  }}
+}}
+async function submitProviderAuthCode(provider) {{
+  var sessionInput = document.querySelector('input[name="session_id"]');
+  var sessionId = sessionInput ? String(sessionInput.value || "").trim() : "";
+  if (!sessionId) {{
+    setProviderConnectStatus("Missing session id.");
+    return;
+  }}
+  var codeInput = document.getElementById("gemini_authorization_code");
+  var authorizationCode = codeInput ? String(codeInput.value || "").trim() : "";
+  if (!authorizationCode) {{
+    setProviderConnectStatus("Paste the Gemini authorization code first.");
+    return;
+  }}
+  setProviderConnectStatus("Submitting authorization code to Gemini CLI...");
+  try {{
+    var response = await fetch("/auth/provider-connect/submit-code", {{
+      method: "POST",
+      headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{
+        provider: provider,
+        session_id: sessionId,
+        authorization_code: authorizationCode
+      }})
+    }});
+    var payload = await response.json();
+    if (!response.ok) {{
+      setProviderConnectStatus(String(payload.message || "Could not submit authorization code."));
+      return;
+    }}
+    if (payload.message) {{
+      setProviderConnectStatus(String(payload.message));
+    }}
+    if (providerConnectPoll) clearTimeout(providerConnectPoll);
+    providerConnectPoll = setTimeout(function() {{ pollProviderConnect(provider, sessionId); }}, 1000);
+  }} catch (err) {{
+    setProviderConnectStatus("Could not submit authorization code.");
   }}
 }}
 </script>
@@ -1064,9 +1411,31 @@ def auth_start():
     resolved_session_id = _svc_resolve_login_session_id(session_value)
     if not resolved_session_id:
         return _render_auth_message("Invalid Request", "Invalid <code>session</code> parameter.", status_code=400)
+    configured_providers = _configured_oauth_providers()
+    if not configured_providers:
+        return _render_auth_message(
+            "Login Error",
+            (
+                "OAuth is not configured. Set both client ID and client secret for "
+                "GitHub and/or GitLab."
+            ),
+            status_code=400,
+        )
     provider = str(request.args.get("provider", "")).strip().lower()
     if not provider:
-        provider = "gitlab" if os.getenv("NEXUS_GITLAB_CLIENT_ID") else "github"
+        provider = _default_oauth_provider(configured_providers)
+    if provider not in {"github", "gitlab"}:
+        return _render_auth_message(
+            "Invalid Request",
+            "Unsupported <code>provider</code>. Use <code>github</code> or <code>gitlab</code>.",
+            status_code=400,
+        )
+    if provider not in configured_providers:
+        return _render_auth_message(
+            "Login Error",
+            f"{provider.title()} OAuth is not fully configured in this environment.",
+            status_code=400,
+        )
     try:
         oauth_url, _state = _svc_start_oauth_flow(session_value, provider=provider)
     except Exception as exc:
@@ -1088,6 +1457,26 @@ def auth_github_callback():
         )
     code = str(request.args.get("code", "")).strip()
     state = str(request.args.get("state", "")).strip()
+    oauth_error = str(request.args.get("error", "")).strip()
+    if oauth_error:
+        oauth_error_detail = str(
+            request.args.get("error_description")
+            or request.args.get("error_reason")
+            or oauth_error
+        ).strip()
+        if state:
+            try:
+                session = _svc_get_auth_session_by_state(state)
+                session_id = str(getattr(session, "session_id", "") or "").strip()
+                if session_id:
+                    _notify_onboarding_message(
+                        session_id=session_id,
+                        text=f"❌ GitHub OAuth failed: {oauth_error_detail}\nRun /login to retry.",
+                    )
+            except Exception:
+                pass
+        safe_detail = html.escape(oauth_error_detail, quote=True)
+        return _render_auth_message("OAuth Error", f"GitHub returned: <code>{safe_detail}</code>", status_code=400)
     if not code or not state:
         return _render_auth_message(
             "OAuth Error",
@@ -1141,12 +1530,14 @@ def auth_github_callback():
             or setup.get("copilot_account_enabled")
         )
     )
+    api_keys_allowed = _allow_api_keys_in_web_setup()
     form_body = f"""
 <p>GitHub login linked successfully as <strong>{github_login or "unknown"}</strong>.</p>
 <p>Project grants resolved: <strong>{grants_count}</strong>.</p>
 <p>Session reference: <code>{session_ref or session_id}</code>.</p>
     """ + _render_ai_key_form(
         session_id=session_ref or session_id,
+        show_api_key_inputs=api_keys_allowed,
         copilot_checked=True,
         show_copilot_option=True,
         copilot_token_set=bool(isinstance(setup, dict) and setup.get("copilot_token_set")),
@@ -1164,8 +1555,16 @@ def auth_github_callback():
                 if has_existing_keys
                 else ""
             )
-            + "Use Reset to clear a saved value. If all provider credentials are cleared, setup may show as not ready until one is added again. "
-            + "Keys/tokens are encrypted at rest and used only for your own task execution."
+            + (
+                "Use Reset to clear a saved value. If all provider credentials are cleared, "
+                "setup may show as not ready until one is added again. Keys/tokens are encrypted at "
+                "rest and used only for your own task execution."
+                if api_keys_allowed
+                else (
+                    "CLI auth mode is account-only, so API key/token fields are hidden on this page. "
+                    "Enable provider account login toggles and save setup."
+                )
+            )
         ),
     )
     _notify_onboarding_message(
@@ -1190,6 +1589,26 @@ def auth_gitlab_callback():
         )
     code = str(request.args.get("code", "")).strip()
     state = str(request.args.get("state", "")).strip()
+    oauth_error = str(request.args.get("error", "")).strip()
+    if oauth_error:
+        oauth_error_detail = str(
+            request.args.get("error_description")
+            or request.args.get("error_reason")
+            or oauth_error
+        ).strip()
+        if state:
+            try:
+                session = _svc_get_auth_session_by_state(state)
+                session_id = str(getattr(session, "session_id", "") or "").strip()
+                if session_id:
+                    _notify_onboarding_message(
+                        session_id=session_id,
+                        text=f"❌ GitLab OAuth failed: {oauth_error_detail}\nRun /login to retry.",
+                    )
+            except Exception:
+                pass
+        safe_detail = html.escape(oauth_error_detail, quote=True)
+        return _render_auth_message("OAuth Error", f"GitLab returned: <code>{safe_detail}</code>", status_code=400)
     if not code or not state:
         return _render_auth_message(
             "OAuth Error",
@@ -1243,6 +1662,7 @@ def auth_gitlab_callback():
             or setup.get("copilot_account_enabled")
         )
     )
+    api_keys_allowed = _allow_api_keys_in_web_setup()
     copilot_ready = bool(isinstance(setup, dict) and setup.get("copilot_ready"))
     form_body = f"""
 <p>GitLab account linked successfully as <strong>{gitlab_username or "unknown"}</strong>.</p>
@@ -1250,6 +1670,7 @@ def auth_gitlab_callback():
 <p>Session reference: <code>{session_ref or session_id}</code>.</p>
     """ + _render_ai_key_form(
         session_id=session_ref or session_id,
+        show_api_key_inputs=api_keys_allowed,
         copilot_checked=copilot_ready,
         show_copilot_option=False,
         copilot_token_set=bool(isinstance(setup, dict) and setup.get("copilot_token_set")),
@@ -1267,8 +1688,16 @@ def auth_gitlab_callback():
                 if has_existing_keys
                 else ""
             )
-            + "Use Reset to clear a saved value. If all provider credentials are cleared, setup may show as not ready until one is added again. "
-            + "Keys/tokens are encrypted at rest and used only for your own task execution."
+            + (
+                "Use Reset to clear a saved value. If all provider credentials are cleared, "
+                "setup may show as not ready until one is added again. Keys/tokens are encrypted at "
+                "rest and used only for your own task execution."
+                if api_keys_allowed
+                else (
+                    "CLI auth mode is account-only, so API key/token fields are hidden on this page. "
+                    "Enable provider account login toggles and save setup."
+                )
+            )
         ),
     )
     _notify_onboarding_message(
@@ -1356,6 +1785,19 @@ def auth_ai_keys():
     copilot_token_supplied = ("copilot_github_token" in request.form) or (
         isinstance(payload, dict) and "copilot_github_token" in payload
     )
+    api_keys_allowed = _allow_api_keys_in_web_setup()
+    if (
+        not api_keys_allowed
+        and (codex_supplied or gemini_supplied or claude_supplied or copilot_token_supplied)
+    ):
+        return _render_auth_message(
+            "Credential Error",
+            (
+                "API key/token submission is disabled because "
+                "<code>NEXUS_CLI_AUTH_MODE=account</code>. Use provider account login toggles instead."
+            ),
+            status_code=400,
+        )
     if not session_id:
         return _render_auth_message(
             "Invalid Request",
@@ -1420,6 +1862,159 @@ def auth_provider_connect_start():
     return jsonify({"status": "ok", **result}), 200
 
 
+def _render_provider_connect_pending_page(*, provider: str, session_id: str) -> str:
+    provider_key = str(provider or "codex").strip().lower()
+    if provider_key not in {"codex", "gemini", "claude"}:
+        provider_key = "codex"
+    provider_label = "Codex" if provider_key == "codex" else ("Gemini" if provider_key == "gemini" else "Claude")
+    safe_provider = html.escape(provider_key, quote=True)
+    safe_provider_label = html.escape(provider_label, quote=False)
+    safe_session_id = html.escape(str(session_id or ""), quote=True)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{safe_provider_label} Login</title>
+  <style>
+    body {{
+      margin: 0;
+      padding: 1.2rem;
+      font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: #0f172a;
+      background: #f8fafc;
+    }}
+    .card {{
+      max-width: 42rem;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+    }}
+    .status {{
+      margin-top: 0.6rem;
+      color: #334155;
+      white-space: pre-wrap;
+    }}
+    code {{
+      background: #e2e8f0;
+      border-radius: 5px;
+      padding: 0.05rem 0.25rem;
+    }}
+  </style>
+</head>
+<body data-provider="{safe_provider}" data-session-id="{safe_session_id}">
+  <div class="card">
+    <h2 style="margin:0 0 0.4rem;">{safe_provider_label} Account Login</h2>
+    <div id="provider_pending_status" class="status">
+      Waiting for Nexus to generate the verification link...
+    </div>
+    <p style="margin:0.9rem 0 0; color:#475569;">
+      Keep this tab open. It will redirect automatically when the provider link is ready.
+    </p>
+  </div>
+  <script>
+  (function() {{
+    var root = document.body;
+    var provider = String(root.getAttribute("data-provider") || "codex");
+    var sessionId = String(root.getAttribute("data-session-id") || "");
+    var statusEl = document.getElementById("provider_pending_status");
+    var openerOrigin = window.location.origin;
+    function setStatus(text) {{
+      if (statusEl) statusEl.textContent = String(text || "");
+    }}
+    function notifyOpener(payload) {{
+      try {{
+        if (!window.opener || window.opener.closed) return;
+        var body = payload && typeof payload === "object" ? payload : {{}};
+        body.source = "nexus-provider-connect";
+        body.provider = provider;
+        body.session_id = sessionId;
+        window.opener.postMessage(body, openerOrigin);
+      }} catch (err) {{
+        return;
+      }}
+    }}
+    var stopStates = {{
+      failed: true,
+      connected: true,
+      connected_but_not_saved: true,
+      rate_limited: true,
+      interactive_required: true,
+      unsupported_provider: true,
+      invalid_session: true
+    }};
+    async function poll() {{
+      if (!sessionId) {{
+        setStatus("Missing session id.");
+        return;
+      }}
+      try {{
+        var response = await fetch(
+          "/auth/provider-connect/status?provider=" + encodeURIComponent(provider) + "&session_id=" + encodeURIComponent(sessionId),
+          {{ credentials: "same-origin" }}
+        );
+        var payload = await response.json();
+        var verifyUrl = String(payload.verify_url || "").trim();
+        if (verifyUrl) {{
+          notifyOpener({{
+            state: String(payload.state || "pending"),
+            verify_url: verifyUrl,
+            message: String(payload.message || "")
+          }});
+          setStatus("Redirecting to provider verification...");
+          window.location.replace(verifyUrl);
+          return;
+        }}
+        if (payload.message) {{
+          setStatus(String(payload.message));
+        }}
+        var state = String(payload.state || "");
+        if (stopStates[state]) {{
+          notifyOpener({{
+            state: state,
+            message: String(payload.message || "")
+          }});
+          if (state === "connected") {{
+            setStatus("Connected. Closing this tab...");
+            window.setTimeout(function() {{
+              try {{ window.close(); }} catch (err) {{ /* ignore */ }}
+            }}, 450);
+          }}
+          return;
+        }}
+      }} catch (err) {{
+        setStatus("Waiting for provider instructions...");
+      }}
+      window.setTimeout(poll, 1200);
+    }}
+    poll();
+  }})();
+  </script>
+</body>
+</html>
+"""
+
+
+@app.route("/auth/provider-connect/pending", methods=["GET"])
+def auth_provider_connect_pending():
+    if not NEXUS_AUTH_ENABLED:
+        return _render_auth_message("Auth Disabled", "Auth onboarding is disabled.", status_code=404)
+    session_id = str(request.args.get("session_id", "")).strip()
+    provider = str(request.args.get("provider", "codex")).strip().lower()
+    if not session_id:
+        return _render_auth_message(
+            "Missing Session",
+            "Missing <code>session_id</code> for provider account login.",
+            status_code=400,
+        )
+    response = make_response(_render_provider_connect_pending_page(provider=provider, session_id=session_id))
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @app.route("/auth/provider-connect/status", methods=["GET"])
 def auth_provider_connect_status():
     if not NEXUS_AUTH_ENABLED:
@@ -1429,6 +2024,56 @@ def auth_provider_connect_status():
     if not session_id:
         return jsonify({"status": "error", "message": "session_id query param is required"}), 400
     result = _svc_get_provider_account_login_status(session_id=session_id, provider=provider)
+    return jsonify({"status": "ok", **result}), 200
+
+
+@app.route("/auth/provider-connect/relay-callback", methods=["POST"])
+def auth_provider_connect_relay_callback():
+    if not NEXUS_AUTH_ENABLED:
+        return jsonify({"status": "disabled", "message": "Auth onboarding is disabled."}), 404
+    payload = request.get_json(silent=True) if request.is_json else {}
+    payload = payload if isinstance(payload, dict) else {}
+    session_id = str(payload.get("session_id") or request.form.get("session_id") or "").strip()
+    provider = str(payload.get("provider") or request.form.get("provider") or "gemini").strip().lower()
+    callback_url = str(payload.get("callback_url") or request.form.get("callback_url") or "").strip()
+    if not session_id:
+        return jsonify({"status": "error", "message": "session_id is required"}), 400
+    if not callback_url:
+        return jsonify({"status": "error", "message": "callback_url is required"}), 400
+    try:
+        result = _svc_relay_provider_account_login_callback(
+            session_id=session_id,
+            provider=provider,
+            callback_url=callback_url,
+        )
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc), "provider": provider}), 400
+    return jsonify({"status": "ok", **result}), 200
+
+
+@app.route("/auth/provider-connect/submit-code", methods=["POST"])
+def auth_provider_connect_submit_code():
+    if not NEXUS_AUTH_ENABLED:
+        return jsonify({"status": "disabled", "message": "Auth onboarding is disabled."}), 404
+    payload = request.get_json(silent=True) if request.is_json else {}
+    payload = payload if isinstance(payload, dict) else {}
+    session_id = str(payload.get("session_id") or request.form.get("session_id") or "").strip()
+    provider = str(payload.get("provider") or request.form.get("provider") or "gemini").strip().lower()
+    authorization_code = str(
+        payload.get("authorization_code") or request.form.get("authorization_code") or ""
+    ).strip()
+    if not session_id:
+        return jsonify({"status": "error", "message": "session_id is required"}), 400
+    if not authorization_code:
+        return jsonify({"status": "error", "message": "authorization_code is required"}), 400
+    try:
+        result = _svc_submit_provider_account_login_code(
+            session_id=session_id,
+            provider=provider,
+            authorization_code=authorization_code,
+        )
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc), "provider": provider}), 400
     return jsonify({"status": "ok", **result}), 200
 
 

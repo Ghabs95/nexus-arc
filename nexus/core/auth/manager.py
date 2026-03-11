@@ -92,8 +92,40 @@ class AuthManager:
     def start_provider_account_login(self, *, session_id: str, provider: str) -> dict[str, Any]:
         return _auth_sessions.start_provider_account_login(session_id=session_id, provider=provider)
 
+    def start_provider_account_login_for_nexus(self, *, nexus_id: str, provider: str) -> dict[str, Any]:
+        return _auth_sessions.start_provider_account_login_for_nexus(
+            nexus_id=nexus_id,
+            provider=provider,
+        )
+
     def get_provider_account_login_status(self, *, session_id: str, provider: str) -> dict[str, Any]:
         return _auth_sessions.get_provider_account_login_status(session_id=session_id, provider=provider)
+
+    def relay_provider_account_login_callback(
+        self,
+        *,
+        session_id: str,
+        provider: str,
+        callback_url: str,
+    ) -> dict[str, Any]:
+        return _auth_sessions.relay_provider_account_login_callback(
+            session_id=session_id,
+            provider=provider,
+            callback_url=callback_url,
+        )
+
+    def submit_provider_account_login_code(
+        self,
+        *,
+        session_id: str,
+        provider: str,
+        authorization_code: str,
+    ) -> dict[str, Any]:
+        return _auth_sessions.submit_provider_account_login_code(
+            session_id=session_id,
+            provider=provider,
+            authorization_code=authorization_code,
+        )
 
     def get_latest_login_session_status(self, nexus_id: str) -> dict[str, Any]:
         return _auth_sessions.get_latest_login_session_status(nexus_id=nexus_id)
@@ -211,8 +243,41 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
     return auth_manager.start_provider_account_login(session_id=session_id, provider=provider)
 
 
+def start_provider_account_login_for_nexus(*, nexus_id: str, provider: str) -> dict[str, Any]:
+    return auth_manager.start_provider_account_login_for_nexus(
+        nexus_id=nexus_id,
+        provider=provider,
+    )
+
+
 def get_provider_account_login_status(*, session_id: str, provider: str) -> dict[str, Any]:
     return auth_manager.get_provider_account_login_status(session_id=session_id, provider=provider)
+
+
+def relay_provider_account_login_callback(
+    *,
+    session_id: str,
+    provider: str,
+    callback_url: str,
+) -> dict[str, Any]:
+    return auth_manager.relay_provider_account_login_callback(
+        session_id=session_id,
+        provider=provider,
+        callback_url=callback_url,
+    )
+
+
+def submit_provider_account_login_code(
+    *,
+    session_id: str,
+    provider: str,
+    authorization_code: str,
+) -> dict[str, Any]:
+    return auth_manager.submit_provider_account_login_code(
+        session_id=session_id,
+        provider=provider,
+        authorization_code=authorization_code,
+    )
 
 
 def get_latest_login_session_status(nexus_id: str) -> dict[str, Any]:

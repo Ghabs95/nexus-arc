@@ -50,7 +50,7 @@ def build_help_text() -> str:
         "🤖 **Nexus Commands**\n\n"
         "Use /menu for a categorized, button-driven view.\n\n"
         "🔐 **Onboarding:**\n"
-        "/login [github|gitlab] - Link Git provider and configure AI credentials (Codex/Gemini/Claude/Copilot)\n"
+        "/login [github|gitlab|codex|gemini|claude|copilot] - Link Git provider and configure AI credentials (Codex/Gemini/Claude/Copilot)\n"
         "/setup_status - Show onboarding and project-access readiness\n"
         "/whoami - Show your Telegram/Nexus identity mapping\n\n"
         "🗣️ **Chat & Strategy:**\n"

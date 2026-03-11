@@ -33,7 +33,9 @@ from nexus.core.config import (
     DISCORD_TOKEN,
     NEXUS_AUTH_ENABLED,
     NEXUS_GITHUB_CLIENT_ID,
+    NEXUS_GITHUB_CLIENT_SECRET,
     NEXUS_GITLAB_CLIENT_ID,
+    NEXUS_GITLAB_CLIENT_SECRET,
     NEXUS_PUBLIC_BASE_URL,
     ORCHESTRATOR_CONFIG,
     PROJECT_CONFIG,
@@ -212,6 +214,9 @@ from nexus.core.auth import (
 from nexus.core.auth import register_onboarding_message as _svc_register_onboarding_message
 from nexus.core.auth import (
     has_project_access as _svc_has_project_access,
+)
+from nexus.core.auth import (
+    start_provider_account_login_for_nexus as _svc_start_provider_account_login_for_nexus,
 )
 from nexus.core.memory import (
     append_message,
@@ -2287,10 +2292,12 @@ async def login_command(
         if selected_provider in {"codex", "gemini", "claude", "copilot"}
         else ""
     )
+    github_oauth_ready = bool(NEXUS_GITHUB_CLIENT_ID and NEXUS_GITHUB_CLIENT_SECRET)
+    gitlab_oauth_ready = bool(NEXUS_GITLAB_CLIENT_ID and NEXUS_GITLAB_CLIENT_SECRET)
     available_providers: list[str] = []
-    if NEXUS_GITHUB_CLIENT_ID:
+    if github_oauth_ready:
         available_providers.append("github")
-    if NEXUS_GITLAB_CLIENT_ID:
+    if gitlab_oauth_ready:
         available_providers.append("gitlab")
     if not available_providers:
         await interaction.response.send_message(
@@ -2304,11 +2311,72 @@ async def login_command(
             ephemeral=True,
         )
         return
+
+    user = _get_or_create_discord_user(interaction.user)
+
+    if account_provider_target in {"codex", "gemini", "claude"}:
+        try:
+            provider_login = _svc_start_provider_account_login_for_nexus(
+                nexus_id=str(user.nexus_id),
+                provider=account_provider_target,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Provider login bootstrap failed for %s (nexus_id=%s): %s",
+                account_provider_target,
+                user.nexus_id,
+                exc,
+            )
+            provider_login = {"started": False, "state": "oauth_required"}
+
+        provider_state = str(provider_login.get("state") or "").strip().lower()
+        provider_message = str(provider_login.get("message") or "").strip()
+        verify_url = str(provider_login.get("verify_url") or "").strip()
+        user_code = str(provider_login.get("user_code") or "").strip()
+
+        if bool(provider_login.get("started")) or provider_state in {"starting", "pending"}:
+            lines = [
+                "🔐 Provider account login started.",
+                f"Provider: **{account_provider_target.title()}**",
+            ]
+            if verify_url:
+                lines.append(f"1. Open: <{verify_url}>")
+            if user_code:
+                lines.append(f"2. Enter code: `{user_code}`")
+            lines.append("3. Complete provider authorization in the browser")
+            lines.append("4. Use `/setup-status` to verify readiness")
+            await interaction.response.send_message("\n".join(lines), ephemeral=True)
+            return
+        if provider_state == "connected":
+            await interaction.response.send_message(
+                "\n".join(
+                    [
+                        f"✅ **{account_provider_target.title()}** account already connected.",
+                        "Use `/setup-status` to verify readiness.",
+                    ]
+                ),
+                ephemeral=True,
+            )
+            return
+        if provider_state and provider_state != "oauth_required":
+            lines = [
+                f"⚠️ {provider_message or 'Provider account login failed.'}",
+                f"Provider: **{account_provider_target.title()}**",
+            ]
+            if verify_url:
+                lines.append(f"Open: <{verify_url}>")
+            if user_code:
+                lines.append(f"Code: `{user_code}`")
+            if provider_state == "rate_limited":
+                lines.append("Wait 1-2 minutes and retry `/login` for this provider.")
+            lines.append("Use `/setup-status` after retry.")
+            await interaction.response.send_message("\n".join(lines), ephemeral=True)
+            return
+
     oauth_provider = selected_provider
     if account_provider_target:
         oauth_provider = "github" if "github" in available_providers else available_providers[0]
 
-    user = _get_or_create_discord_user(interaction.user)
     session_id = _svc_create_login_session_for_user(
         nexus_id=str(user.nexus_id),
         discord_user_id=str(interaction.user.id),
