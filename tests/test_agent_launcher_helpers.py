@@ -309,7 +309,7 @@ def test_invoke_ai_agent_skips_worktree_provision_for_triage(monkeypatch, tmp_pa
     monkeypatch.setattr(
         agent_launcher,
         "_load_issue_body_from_project_repo",
-        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("triage should not load issue branch")),
+        lambda *_a, **_k: ().throw(AssertionError("triage should not load issue branch")),
     )
     monkeypatch.setattr(
         "nexus.core.workspace.WorkspaceManager.provision_worktree",
@@ -388,8 +388,8 @@ def test_invoke_ai_agent_provisions_project_repos_with_repo_specific_base_branch
 
     captured: dict[str, str] = {}
     provision_calls: list[tuple[str, str, str | None]] = []
-    cosmos_dir = tmp_path / "wlbl-cosmos"
-    workflow_dir = tmp_path / "wlbl-workflow-os"
+    cosmos_dir = tmp_path / "example-shared"
+    workflow_dir = tmp_path / "example-project"
     cosmos_dir.mkdir()
     workflow_dir.mkdir()
 
