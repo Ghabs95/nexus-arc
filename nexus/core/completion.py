@@ -129,17 +129,18 @@ def build_completion_step_dedup_key(
 ) -> str:
     """Build strict idempotency key for completion processing.
 
-    Key contract: ``issue_number + workflow_id + step_id + agent_type``.
+    Key contract: ``issue_number + workflow_id + step_id + step_num + agent_type``.
     """
     data = dict(payload or {})
     issue_norm = _budget_token_field(issue_number, max_chars=64) or "unknown-issue"
     workflow_id = _budget_token_field(data.get("workflow_id", ""), max_chars=160) or "unknown-workflow"
     step_id = _normalize_step_id(data.get("step_id", "")) or "unknown-step"
+    step_num = _normalize_step_num(data.get("step_num", 0))
     agent_norm = (
         _budget_token_field(agent_type or data.get("agent_type", ""), max_chars=80)
         or "unknown-agent"
     )
-    return f"{issue_norm}:{workflow_id}:{step_id}:{agent_norm}"
+    return f"{issue_norm}:{workflow_id}:{step_id}:{step_num}:{agent_norm}"
 
 
 def _normalize_effort_breakdown(value: Any) -> dict[str, str]:

@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 _STORAGE_TYPE_ENV = "NEXUS_STORAGE_BACKEND"
 _STORAGE_DSN_ENV = "NEXUS_STORAGE_DSN"
 _STORAGE_DIR_ENV = "NEXUS_STORAGE_DIR"
+_EXECUTION_STEP_NUM_KEY = "_nexus_current_execution_step_num"
+_EXECUTION_STEP_ID_KEY = "_nexus_current_execution_step_id"
 
 
 class WorkflowStateEnginePlugin:
@@ -86,6 +88,41 @@ class WorkflowStateEnginePlugin:
         else:
             metadata.pop("_nexus_completion_reason", None)
         workflow.metadata = metadata
+
+    @staticmethod
+    def _set_workflow_execution_step(workflow: Any, *, step_num: int, step_id: str) -> None:
+        metadata = dict(getattr(workflow, "metadata", {}) or {})
+        try:
+            normalized_step_num = int(step_num)
+        except (TypeError, ValueError):
+            normalized_step_num = 0
+        metadata[_EXECUTION_STEP_NUM_KEY] = normalized_step_num if normalized_step_num > 0 else 0
+        metadata[_EXECUTION_STEP_ID_KEY] = str(step_id or "")
+        workflow.metadata = metadata
+
+    def _workflow_execution_step_num(self, workflow: Any, step: Any | None) -> int:
+        if step is None:
+            return 0
+        try:
+            fallback_step_num = int(getattr(step, "step_num", 0) or 0)
+        except (TypeError, ValueError):
+            fallback_step_num = 0
+
+        metadata = dict(getattr(workflow, "metadata", {}) or {})
+        try:
+            execution_step_num = int(metadata.get(_EXECUTION_STEP_NUM_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            execution_step_num = 0
+        execution_step_id = self._normalize_ref(str(metadata.get(_EXECUTION_STEP_ID_KEY, "")))
+        current_step_id = self._normalize_ref(str(getattr(step, "name", "") or ""))
+
+        if execution_step_num > 0:
+            if not execution_step_id or not current_step_id:
+                return execution_step_num
+            if self._refs_match(execution_step_id, current_step_id):
+                return execution_step_num
+
+        return fallback_step_num if fallback_step_num > 0 else 0
 
     def _build_storage(self) -> StorageBackend:
         """Construct the appropriate StorageBackend from config / env vars."""
@@ -525,12 +562,19 @@ class WorkflowStateEnginePlugin:
                     current_step_obj = steps[0]
                     current_step_display = 1
 
+            current_step_def_num = int(getattr(current_step_obj, "step_num", 0) or 0)
+            current_execution_step_num = self._workflow_execution_step_num(
+                workflow, current_step_obj
+            )
+
             return {
                 "workflow_id": workflow.id,
                 "name": workflow.name,
                 "state": workflow.state.value,
                 "current_step": current_step_display,
-                "current_step_num": int(getattr(current_step_obj, "step_num", 0) or 0),
+                "current_step_num": current_execution_step_num,
+                "current_step_def_num": current_step_def_num,
+                "current_execution_step_num": current_execution_step_num,
                 "current_step_id": str(getattr(current_step_obj, "name", "") or ""),
                 "total_steps": total_steps,
                 "current_step_name": getattr(current_step_obj, "name", "unknown"),
@@ -769,7 +813,7 @@ class WorkflowStateEnginePlugin:
                 )
 
             expected_step_id = self._normalize_ref(getattr(running_step, "name", ""))
-            expected_step_num = int(getattr(running_step, "step_num", 0) or 0)
+            expected_step_num = self._workflow_execution_step_num(workflow, running_step)
             expected_agent = self._normalize_ref(
                 getattr(getattr(running_step, "agent", None), "name", "")
             )
@@ -817,14 +861,14 @@ class WorkflowStateEnginePlugin:
                     payload.get("step_id", ""),
                     payload.get("step_num", ""),
                     running_step.name,
-                    running_step.step_num,
+                    expected_step_num,
                     event_id or "<none>",
                 )
                 raise CompletionStaleError(
                     f"Completion stale/mismatched for issue #{issue_number}: "
                     f"completed_agent={completed_agent_type}, active_agent={workflow.active_agent_type}, "
                     f"reported_step=({payload.get('step_id', '')},{payload.get('step_num', '')}), "
-                    f"active_step=({running_step.name},{running_step.step_num})"
+                    f"active_step=({running_step.name},{expected_step_num})"
                 )
 
             # Event-level idempotency guard — reject duplicate step-completion signals.
@@ -832,7 +876,7 @@ class WorkflowStateEnginePlugin:
             if event_id:
                 idem_key = IdempotencyKey(
                     issue_id=str(issue_number),
-                    step_num=running_step.step_num,
+                    step_num=expected_step_num,
                     agent_type=expected_agent or completed_agent_type,
                     event_id=event_id,
                 )
@@ -841,7 +885,7 @@ class WorkflowStateEnginePlugin:
                         "complete_step_for_issue: duplicate event suppressed for issue #%s "
                         "(step=%s, agent=%s, event_id=%s)",
                         issue_number,
-                        running_step.step_num,
+                        expected_step_num,
                         expected_agent or completed_agent_type,
                         event_id,
                     )
@@ -855,7 +899,7 @@ class WorkflowStateEnginePlugin:
             normalized_outputs = self._normalize_completion_outputs(workflow, running_step, outputs)
             normalized_outputs["workflow_id"] = str(workflow_id)
             normalized_outputs["step_id"] = running_step.name
-            normalized_outputs["step_num"] = running_step.step_num
+            normalized_outputs["step_num"] = expected_step_num
 
             result = await engine.complete_step(
                 workflow_id=workflow_id,
@@ -927,6 +971,11 @@ class WorkflowStateEnginePlugin:
 
         workflow.state = WorkflowState.RUNNING
         workflow.current_step = target_step.step_num
+        self._set_workflow_execution_step(
+            workflow,
+            step_num=target_step.step_num,
+            step_id=target_step.name,
+        )
         workflow.completed_at = None
         workflow.updated_at = now
         await engine.storage.save_workflow(workflow)

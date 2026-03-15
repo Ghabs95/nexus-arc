@@ -970,6 +970,100 @@ def test_recover_completion_from_agent_log_skips_duplicate_comment(monkeypatch, 
     assert posted["added"] == []
 
 
+def test_recover_completion_from_agent_log_posts_when_existing_step_comment_body_differs(
+    monkeypatch, tmp_path
+):
+    import asyncio
+    import inspect
+
+    from nexus.core.runtime import agent_launcher
+
+    log_file = tmp_path / "codex_119_20260315_220426.log"
+    log_file.write_text(
+        (
+            "```bash\n"
+            "curl -s -X POST http://webhook:8081/api/v1/completion \\\n"
+            "  -H \"Content-Type: application/json\" \\\n"
+            "  -d '{\n"
+            "    \"issue_number\": \"119\",\n"
+            "    \"agent_type\": \"developer\",\n"
+            "    \"step_id\": \"develop\",\n"
+            "    \"step_num\": 4,\n"
+            "    \"summary\": \"validated implementation\",\n"
+            "    \"next_agent\": \"reviewer\",\n"
+            "    \"comment_markdown\": \"## 🔍 Implementation Complete — developer\\n\\n**Step ID:** `develop`\\n**Step Num:** 4\\n\\n- Verified branch state\\n- Validated workflow YAML\\n\\nReady for **@Reviewer**\"\n"
+            "  }'\n"
+            "```\n"
+        ),
+        encoding="utf-8",
+    )
+
+    class _FakeStore:
+        def __init__(self, *, backend, storage, base_dir, nexus_dir):
+            pass
+
+        def save(self, issue_number, agent_type, data):
+            return "dedup-recovered-119"
+
+    posted: dict[str, object] = {"added": []}
+
+    class _Platform:
+        async def get_comments(self, _issue_num):
+            return [
+                {
+                    "body": (
+                        "## 🔍 <Step Name> Complete — developer\n\n"
+                        "**Step ID:** `develop`\n"
+                        "**Step Num:** 4\n\n"
+                        "- Finding 1\n"
+                        "- Finding 2"
+                    )
+                }
+            ]
+
+        async def add_comment(self, issue_num, body):
+            posted["added"].append((issue_num, body))
+            return {"id": 1001}
+
+    monkeypatch.setattr(agent_launcher, "is_postgres_backend", lambda _backend: True)
+    monkeypatch.setattr("nexus.core.completion_store.CompletionStore", _FakeStore)
+    monkeypatch.setattr(
+        "nexus.core.integrations.workflow_state_factory.get_storage_backend",
+        lambda: "fake-storage",
+    )
+    monkeypatch.setattr(
+        "nexus.core.orchestration.nexus_core_helpers.get_workflow_status",
+        lambda _issue_num: {"workflow_id": "nexus-119-full"},
+    )
+    monkeypatch.setattr(agent_launcher, "_resolve_requester_token_for_issue", lambda *_a, **_k: None)
+    monkeypatch.setattr(agent_launcher, "_get_git_platform_client", lambda *_a, **_k: _Platform())
+    monkeypatch.setattr(
+        agent_launcher,
+        "_run_coro_sync",
+        lambda coro_factory: (
+            asyncio.run(value)
+            if inspect.isawaitable(value := coro_factory())
+            else value
+        ),
+    )
+    monkeypatch.setattr(agent_launcher, "get_nexus_dir_name", lambda: ".nexus")
+    monkeypatch.setattr(agent_launcher, "_extract_repo_from_issue_url", lambda _url: "Ghabs95/nexus-arc")
+
+    dedup = agent_launcher._recover_completion_from_agent_log(
+        issue_num="119",
+        agent_type="developer",
+        workspace_dir=str(tmp_path),
+        project_key="nexus",
+        tool_name="codex",
+        log_path=str(log_file),
+        issue_url="https://github.com/Ghabs95/nexus-arc/issues/119",
+    )
+
+    assert dedup == "dedup-recovered-119"
+    assert len(posted["added"]) == 1
+    assert posted["added"][0][0] == "119"
+
+
 def test_recover_completion_from_agent_log_persists_payload_in_filesystem_mode(
     monkeypatch, tmp_path
 ):

@@ -306,7 +306,7 @@ class TestScanForCompletions:
         (completion_dir / "completion_summary_10.json").write_text(json.dumps(data))
 
         results = scan_for_completions(str(tmp_path))
-        assert results[0].dedup_key == "10:unknown-workflow:unknown-step:debug"
+        assert results[0].dedup_key == "10:unknown-workflow:unknown-step:0:debug"
 
     def test_uses_newest_completion_per_issue_across_paths(self, tmp_path):
         older_dir = tmp_path / ".nexus" / "tasks" / "project_a" / "completions"
@@ -369,7 +369,35 @@ class TestDetectedCompletion:
             issue_number="5",
             summary=s,
         )
-        assert d.dedup_key == "5:wf-5:build:design"
+        assert d.dedup_key == "5:wf-5:build:0:design"
+
+    def test_dedup_key_includes_step_num_for_repeated_step_ids(self):
+        first = CompletionSummary(
+            agent_type="developer",
+            workflow_id="wf-119",
+            step_id="develop",
+            step_num=4,
+        )
+        second = CompletionSummary(
+            agent_type="developer",
+            workflow_id="wf-119",
+            step_id="develop",
+            step_num=6,
+        )
+
+        first_detected = DetectedCompletion(
+            file_path="/tmp/completion_summary_119.json",
+            issue_number="119",
+            summary=first,
+        )
+        second_detected = DetectedCompletion(
+            file_path="/tmp/completion_summary_119.json",
+            issue_number="119",
+            summary=second,
+        )
+
+        assert first_detected.dedup_key == "119:wf-119:develop:4:developer"
+        assert second_detected.dedup_key == "119:wf-119:develop:6:developer"
 
 
 class _FakeCompletionStorage:
@@ -409,8 +437,8 @@ class TestCompletionStore:
         assert len(second) == 1
         second_key = second[0].dedup_key
 
-        assert first_key == "113:unknown-workflow:unknown-step:developer"
-        assert second_key == "113:unknown-workflow:unknown-step:developer"
+        assert first_key == "113:unknown-workflow:unknown-step:0:developer"
+        assert second_key == "113:unknown-workflow:unknown-step:0:developer"
 
     def test_postgres_scan_includes_filesystem_fallback(self, tmp_path):
         storage = _FakeCompletionStorage([])

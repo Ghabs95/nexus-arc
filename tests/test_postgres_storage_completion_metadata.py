@@ -191,8 +191,8 @@ def test_sync_save_completion_duplicate_step_keeps_dedup_identity() -> None:
             assert len(rows) == 2
             developer = next(row for row in rows if row.agent_type == "developer")
             reviewer = next(row for row in rows if row.agent_type == "reviewer")
-            assert developer.dedup_key == "113:wf-113:develop:developer"
-            assert reviewer.dedup_key == "113:wf-113:review:reviewer"
+            assert developer.dedup_key == "113:wf-113:develop:4:developer"
+            assert reviewer.dedup_key == "113:wf-113:review:5:reviewer"
             assert "updated implementation" in str(developer.data)
     finally:
         backend.close()

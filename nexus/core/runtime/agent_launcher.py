@@ -736,6 +736,12 @@ def _recover_completion_from_agent_log(
             if exact_body_required and body_norm_expected in body_norm:
                 return True
 
+            # When we have a concrete markdown body, avoid weak step-id/step-num
+            # dedupe. Reprocess/rerun can legitimately post a richer updated
+            # comment for the same step identity.
+            if exact_body_required:
+                continue
+
             if step_id_re.search(body) and step_num_re.search(body):
                 return True
         return False
@@ -1832,7 +1838,10 @@ def _resolve_issue_step_context(issue_url: str) -> tuple[str, int]:
         or status.get("current_step_name")
         or ""
     ).strip()
-    step_num_raw = status.get("current_step_num", status.get("current_step"))
+    step_num_raw = status.get(
+        "current_execution_step_num",
+        status.get("current_step_num", status.get("current_step")),
+    )
     try:
         step_num = int(step_num_raw)
     except (TypeError, ValueError):

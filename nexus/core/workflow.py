@@ -60,6 +60,39 @@ _MAX_LOOP_ITERATIONS = max(
     1, int(os.getenv("NEXUS_MAX_LOOP_ITERATIONS", "20"))
 )  # Maximum times a step can be re-activated by a goto before aborting
 _DEFAULT_BACKOFF_BASE = 1.0  # Default base delay (seconds) used when step.initial_delay is unset
+_EXECUTION_STEP_NUM_KEY = "_nexus_current_execution_step_num"
+_EXECUTION_STEP_ID_KEY = "_nexus_current_execution_step_id"
+
+
+def _ensure_workflow_metadata(workflow: Workflow) -> dict[str, Any]:
+    metadata = dict(getattr(workflow, "metadata", {}) or {})
+    workflow.metadata = metadata
+    return metadata
+
+
+def _set_current_execution_step(workflow: Workflow, *, step_num: int, step_id: str) -> None:
+    metadata = _ensure_workflow_metadata(workflow)
+    try:
+        normalized_step_num = int(step_num)
+    except (TypeError, ValueError):
+        normalized_step_num = 0
+    metadata[_EXECUTION_STEP_NUM_KEY] = normalized_step_num if normalized_step_num > 0 else 0
+    metadata[_EXECUTION_STEP_ID_KEY] = str(step_id or "")
+
+
+def _get_current_execution_step_num(workflow: Workflow, *, fallback: int = 0) -> int:
+    metadata = dict(getattr(workflow, "metadata", {}) or {})
+    try:
+        value = int(metadata.get(_EXECUTION_STEP_NUM_KEY, 0) or 0)
+    except (TypeError, ValueError):
+        value = 0
+    if value > 0:
+        return value
+    try:
+        fb = int(fallback)
+    except (TypeError, ValueError):
+        fb = 0
+    return fb if fb > 0 else 0
 
 
 class WorkflowEngine:
@@ -133,6 +166,11 @@ class WorkflowEngine:
             first_step.status = StepStatus.RUNNING
             first_step.started_at = datetime.now(UTC)
             workflow.current_step = first_step.step_num
+            _set_current_execution_step(
+                workflow,
+                step_num=first_step.step_num,
+                step_id=first_step.name,
+            )
             await self._emit(
                 StepStarted(
                     workflow_id=workflow_id,
@@ -217,6 +255,8 @@ class WorkflowEngine:
         step = workflow.get_step(step_num)
         if not step:
             raise ValueError(f"Step {step_num} not found in workflow")
+        if _get_current_execution_step_num(workflow, fallback=0) <= 0:
+            _set_current_execution_step(workflow, step_num=step.step_num, step_id=step.name)
         completion_result = await apply_step_completion_result(
             workflow=workflow,
             workflow_id=workflow_id,
@@ -270,6 +310,20 @@ class WorkflowEngine:
                 audit=self._audit,
             )
             activated_step = transition_outcome.activated_step
+            if activated_step is not None:
+                previous_execution_step_num = _get_current_execution_step_num(
+                    workflow, fallback=step.step_num
+                )
+                next_execution_step_num = previous_execution_step_num + 1
+                if next_execution_step_num <= 0:
+                    next_execution_step_num = int(getattr(activated_step, "step_num", 0) or 0)
+                if next_execution_step_num < int(getattr(activated_step, "step_num", 0) or 0):
+                    next_execution_step_num = int(getattr(activated_step, "step_num", 0) or 0)
+                _set_current_execution_step(
+                    workflow,
+                    step_num=next_execution_step_num,
+                    step_id=activated_step.name,
+                )
 
             if transition_outcome.goto_reset_error:
                 logger.error(transition_outcome.goto_reset_error)
