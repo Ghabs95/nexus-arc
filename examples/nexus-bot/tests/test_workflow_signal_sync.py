@@ -1,4 +1,7 @@
-from nexus.core.workflow_runtime.workflow_signal_sync import extract_structured_completion_signals
+from nexus.core.workflow_runtime.workflow_signal_sync import (
+    extract_structured_completion_signals,
+    normalize_agent_reference,
+)
 
 
 def test_extract_structured_completion_signals_includes_nexus_automated_comments():
@@ -70,3 +73,12 @@ def test_extract_structured_completion_signals_accepts_terminal_comment_without_
     assert signals[0]["next_agent"] == "none"
     assert signals[0]["step_id"] == "document_close"
     assert signals[0]["step_num"] == "3"
+
+
+def test_normalize_agent_reference_rejects_instruction_placeholder():
+    assert (
+        normalize_agent_reference(
+            "<agent_type from workflow steps — NOT the step id or display name>"
+        )
+        == ""
+    )

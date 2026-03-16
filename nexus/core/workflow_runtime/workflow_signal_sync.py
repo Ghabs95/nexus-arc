@@ -29,6 +29,14 @@ _CHECKLIST_DONE_STEP_RE = re.compile(
     r"^\s*-\s*\[x\]\s*([0-9]+)\.\s+\*\*([^*]+)\*\*\s*[-–—:]\s*`?@?([a-zA-Z0-9_-]+)`?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+_INSTRUCTION_TEMPLATE_MARKERS = (
+    "<agent_type from workflow steps",
+    "<step name>",
+    "<finding 1>",
+    "<finding 2>",
+    "<one-line summary of what you did>",
+    "@<display name>",
+)
 
 
 def _coerce_step_num(value: Any) -> int:
@@ -47,7 +55,15 @@ def normalize_agent_reference(agent_ref: str) -> str:
     """Normalize agent references used in comments/completion files."""
     value = str(agent_ref or "").strip()
     value = value.lstrip("@").strip()
-    return value.strip("`").strip()
+    value = value.strip("`").strip()
+    lowered = value.lower()
+    if not lowered:
+        return ""
+    if ("<" in lowered and ">" in lowered) or any(
+        marker in lowered for marker in _INSTRUCTION_TEMPLATE_MARKERS
+    ):
+        return ""
+    return value
 
 
 def _normalize_step_id_from_label(label: str) -> str:

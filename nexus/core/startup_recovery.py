@@ -6,6 +6,24 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+_INSTRUCTION_TEMPLATE_MARKERS = (
+    "<agent_type from workflow steps",
+    "<step name>",
+    "<finding 1>",
+    "<finding 2>",
+    "<one-line summary of what you did>",
+    "@<display name>",
+)
+
+
+def _looks_like_instruction_template(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    if "<" in text and ">" in text:
+        return True
+    return any(marker in text for marker in _INSTRUCTION_TEMPLATE_MARKERS)
+
 
 def build_startup_workflow_payload_loader(
     *,
@@ -155,12 +173,16 @@ def reconcile_completion_signals_on_startup(
         drifts = []
         local_agent = normalize_agent_reference((local_signal or {}).get("agent_type", "")).lower()
         local_next = (local_signal or {}).get("next_agent", "")
+        if _looks_like_instruction_template(local_next):
+            local_next = ""
         local_step_id = normalize_agent_reference((local_signal or {}).get("step_id", "")).lower()
         try:
             local_step_num = int((local_signal or {}).get("step_num", 0) or 0)
         except (TypeError, ValueError):
             local_step_num = 0
         comment_next = (comment_signal or {}).get("next_agent", "")
+        if _looks_like_instruction_template(comment_next):
+            comment_next = ""
         comment_completed = (comment_signal or {}).get("completed_agent", "")
         comment_step_id = normalize_agent_reference((comment_signal or {}).get("step_id", "")).lower()
         try:

@@ -670,6 +670,45 @@ def test_extract_completion_payload_from_log_text_handles_shell_escaped_apostrop
     assert payload["next_agent"] == "ceo"
 
 
+def test_extract_completion_payload_from_log_text_ignores_prompt_template_placeholder():
+    from nexus.core.runtime import agent_launcher
+
+    log_text = """{"issue_number":"1","agent_type":"triage","step_id":"dispatch","step_num":2,"status":"complete","summary":"routed to ceo","next_agent":"ceo","comment_markdown":"## Dispatch Complete"}
+```bash
+curl -s -X POST http://webhook:8081/api/v1/completion \
+  -H "Content-Type: application/json" \
+  -d '{
+    "issue_number": "1",
+    "agent_type": "triage",
+    "step_id": "dispatch",
+    "step_num": 2,
+    "status": "complete",
+    "summary": "<one-line summary of what you did>",
+    "key_findings": ["<finding 1>", "<finding 2>"],
+    "next_agent": "<agent_type from workflow steps — NOT the step id or display name>",
+    "comment_markdown": "## 🔍 <Step Name> Complete — triage
+
+**Step ID:** `dispatch`
+**Step Num:** 2
+
+- Finding 1
+- Finding 2"
+  }'
+```
+"""
+
+    payload = agent_launcher._extract_completion_payload_from_log_text(
+        log_text,
+        issue_num="1",
+        agent_type="triage",
+    )
+
+    assert isinstance(payload, dict)
+    assert payload["summary"] == "routed to ceo"
+    assert payload["next_agent"] == "ceo"
+    assert payload["comment_markdown"] == "## Dispatch Complete"
+
+
 def test_recover_completion_from_agent_log_persists_payload(monkeypatch, tmp_path):
     import asyncio
     import inspect

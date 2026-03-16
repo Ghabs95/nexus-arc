@@ -548,6 +548,37 @@ def _extract_completion_payload_from_log_text(
     agent_type: str,
 ) -> dict | None:
     """Best-effort extraction of completion JSON printed by an agent CLI."""
+
+    def _looks_like_instruction_template(value: object) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return False
+        lowered = text.lower()
+        markers = (
+            "<one-line summary of what you did>",
+            "<finding 1>",
+            "<finding 2>",
+            "<step name>",
+            "<agent_type from workflow steps",
+            "@<display name>",
+            "<placeholder>",
+        )
+        return any(marker in lowered for marker in markers)
+
+    def _is_template_payload(candidate: dict) -> bool:
+        if _looks_like_instruction_template(candidate.get("summary")):
+            return True
+        if _looks_like_instruction_template(candidate.get("next_agent")):
+            return True
+        if _looks_like_instruction_template(candidate.get("comment_markdown")):
+            return True
+        findings = candidate.get("key_findings")
+        if isinstance(findings, list):
+            for item in findings:
+                if _looks_like_instruction_template(item):
+                    return True
+        return False
+
     expected_issue = str(issue_num or "").strip()
     expected_agent = _normalize_agent_reference(agent_type)
     latest_match: dict | None = None
@@ -570,6 +601,8 @@ def _extract_completion_payload_from_log_text(
             continue
 
         if "summary" not in candidate and "comment_markdown" not in candidate:
+            continue
+        if _is_template_payload(candidate):
             continue
 
         payload = dict(candidate)
