@@ -495,6 +495,8 @@ async def _handle_continue_status_outcome(
 async def _maybe_reset_continue_workflow_position(
     ctx: Any, deps: Any, *, issue_num: Any, continue_ctx: dict[str, Any]
 ) -> bool:
+    from nexus.core.workflow_runtime.workflow_signal_sync import normalize_agent_reference
+
     workflow_plugin = deps.get_workflow_state_plugin(
         **deps.workflow_state_plugin_kwargs, cache_key="workflow:state-engine"
     )
@@ -522,9 +524,16 @@ async def _maybe_reset_continue_workflow_position(
     if not should_reset:
         return True
 
-    agent_type = str(continue_ctx.get("agent_type") or "").strip()
+    raw_agent_type = str(continue_ctx.get("agent_type") or "").strip()
+    agent_type = normalize_agent_reference(raw_agent_type).strip().lower() if raw_agent_type else ""
     if not agent_type:
         await ctx.reply_text(f"❌ Missing target agent for workflow reset on issue #{issue_num}.")
+        if raw_agent_type:
+            deps.logger.warning(
+                "Continue issue #%s: refusing to reset workflow to invalid agent reference %r",
+                issue_num,
+                raw_agent_type,
+            )
         return False
 
     reset_ok = False

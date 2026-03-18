@@ -225,6 +225,37 @@ async def test_maybe_reset_continue_workflow_position_resets_when_workflow_faile
 
 
 @pytest.mark.asyncio
+async def test_maybe_reset_continue_workflow_position_rejects_placeholder_agent_type():
+    class _WorkflowPlugin:
+        async def get_workflow_status(self, issue_num):
+            assert issue_num == "119"
+            return {"state": "failed"}
+
+        async def reset_to_agent_for_issue(self, issue_num, agent_type):
+            raise AssertionError("reset_to_agent_for_issue should not be called")
+
+    deps = SimpleNamespace(
+        logger=logging.getLogger("test"),
+        workflow_state_plugin_kwargs={},
+        get_workflow_state_plugin=lambda **kwargs: _WorkflowPlugin(),
+    )
+    ctx = _Ctx()
+    ok = await _maybe_reset_continue_workflow_position(
+        ctx,
+        deps,
+        issue_num="119",
+        continue_ctx={
+            "forced_agent_override": False,
+            "sync_workflow_to_agent": False,
+            "agent_type": "<agent_type from workflow steps — NOT the step id or display name>",
+        },
+    )
+
+    assert ok is False
+    assert ctx.replies == ["❌ Missing target agent for workflow reset on issue #119."]
+
+
+@pytest.mark.asyncio
 async def test_maybe_reset_continue_workflow_position_skips_when_running_and_no_override():
     called = {"reset": 0}
 

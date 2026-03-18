@@ -23,6 +23,43 @@ def _looks_like_codex_auth_failure(excerpt: str) -> bool:
     return any(marker in text for marker in auth_markers)
 
 
+def _looks_like_codex_bwrap_namespace_failure(excerpt: str) -> bool:
+    text = str(excerpt or "").lower()
+    markers = (
+        "bwrap:",
+        "no permissions to create a new namespace",
+        "kernel.unprivileged_userns_clone",
+    )
+    return all(marker in text for marker in markers)
+
+
+def _build_codex_exec_cmd(
+    *,
+    codex_cli_path: str,
+    codex_model: str,
+    agent_prompt: str,
+    sandbox_mode: str,
+) -> list[str]:
+    cmd = [
+        codex_cli_path,
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        sandbox_mode,
+    ]
+    if sandbox_mode == "workspace-write":
+        cmd.extend(
+            [
+                "-c",
+                'sandbox_permissions=["network-access"]',
+            ]
+        )
+    if codex_model:
+        cmd.extend(["--model", codex_model])
+    cmd.append(agent_prompt)
+    return cmd
+
+
 def _cleanup_empty_rollout_files(*, logger: Any, codex_home: str | None = None) -> int:
     """Remove zero-byte Codex rollout session files that can crash reconcile startup."""
     home = str(codex_home or os.getenv("CODEX_HOME") or os.path.expanduser("~/.codex")).strip()
@@ -104,20 +141,7 @@ def invoke_codex_cli(
 
     _cleanup_empty_rollout_files(logger=logger)
 
-    # Force writable workspace + network permission so Codex can post issue comments
-    # and write completion summaries during workflow handoff.
-    cmd = [
-        codex_cli_path,
-        "exec",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "workspace-write",
-        "-c",
-        'sandbox_permissions=["network-access"]',
-    ]
-    if codex_model:
-        cmd.extend(["--model", codex_model])
-    cmd.append(agent_prompt)
+    sandbox_modes = ["workspace-write", "danger-full-access"]
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     log_dir = get_tasks_logs_dir(workspace_dir, log_subdir)
@@ -149,11 +173,15 @@ def invoke_codex_cli(
             except Exception:
                 return ""
 
-        max_start_attempts = 1
-        for attempt in range(1, max_start_attempts + 1):
-            retry_index = attempt - 1
+        for retry_index, sandbox_mode in enumerate(sandbox_modes):
             attempt_log_path = (
                 log_path if retry_index == 0 else f"{log_path}.retry{retry_index}"
+            )
+            cmd = _build_codex_exec_cmd(
+                codex_cli_path=codex_cli_path,
+                codex_model=codex_model,
+                agent_prompt=agent_prompt,
+                sandbox_mode=sandbox_mode,
             )
             process = subprocess.Popen(
                 cmd,
@@ -205,6 +233,15 @@ def invoke_codex_cli(
                     f"Codex account login required or expired (exit={exit_code}). "
                     "Run `codex login` in the runtime environment."
                 )
+            if (
+                sandbox_mode == "workspace-write"
+                and _looks_like_codex_bwrap_namespace_failure(excerpt)
+            ):
+                logger.warning(
+                    "Codex workspace-write sandbox is unavailable on this host; "
+                    "retrying launch with danger-full-access."
+                )
+                continue
             raise tool_unavailable_error(f"Codex exited immediately (exit={exit_code})")
 
         raise tool_unavailable_error("Codex launch retry budget exhausted")

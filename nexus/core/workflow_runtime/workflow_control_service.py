@@ -22,6 +22,18 @@ logger = logging.getLogger(__name__)
 
 _PROMPT_MAX_CHARS = int(os.getenv("AI_PROMPT_MAX_CHARS", "16000"))
 _CONTEXT_SUMMARY_MAX_CHARS = int(os.getenv("AI_CONTEXT_SUMMARY_MAX_CHARS", "1200"))
+_TERMINAL_AGENT_REFERENCES = frozenset(
+    {
+        "none",
+        "n/a",
+        "null",
+        "done",
+        "end",
+        "finish",
+        "complete",
+        "",
+    }
+)
 
 
 def _run_coro_sync(coro_factory):
@@ -95,6 +107,15 @@ def prepare_continue_context(
     requester_nexus_id: str | None = None,
 ) -> dict[str, Any]:
     """Build context for /continue and return either a terminal state or launch payload."""
+
+    def _normalize_routable_agent(value: Any) -> str | None:
+        normalized = normalize_agent_reference(value)
+        if not normalized:
+            return None
+        normalized_text = str(normalized).strip()
+        if normalized_text.lower() in _TERMINAL_AGENT_REFERENCES:
+            return None
+        return normalized_text
 
     def _extract_repo_from_text(text: str) -> str | None:
         if not text:
@@ -325,17 +346,8 @@ def prepare_continue_context(
                     resumed_from = latest.summary.agent_type
                 else:
                     raw_next = latest.summary.next_agent
-                    normalized = normalize_agent_reference(raw_next)
-                    if normalized and normalized.lower() not in {
-                        "none",
-                        "n/a",
-                        "null",
-                        "done",
-                        "end",
-                        "finish",
-                        "complete",
-                        "",
-                    }:
+                    normalized = _normalize_routable_agent(raw_next)
+                    if normalized:
                         agent_type = normalized
                         agent_from_completion = True
                         resumed_from = latest.summary.agent_type
@@ -345,27 +357,20 @@ def prepare_continue_context(
                             resumed_from,
                             agent_type,
                         )
+                    elif str(raw_next or "").strip():
+                        logger.warning(
+                            "Continue issue #%s: ignoring invalid recovered next_agent from completion: %r",
+                            issue_num,
+                            raw_next,
+                        )
         except Exception as exc:
             logger.warning("Could not scan completions for issue #%s: %s", issue_num, exc)
     else:
         latest_completion = _read_latest_completion_from_storage(str(issue_num))
         if latest_completion:
             status = str(latest_completion.get("status") or "").strip().lower()
-            normalized = normalize_agent_reference(latest_completion.get("next_agent"))
-            has_next_agent = bool(
-                normalized
-                and normalized.lower()
-                not in {
-                    "none",
-                    "n/a",
-                    "null",
-                    "done",
-                    "end",
-                    "finish",
-                    "complete",
-                    "",
-                }
-            )
+            normalized = _normalize_routable_agent(latest_completion.get("next_agent"))
+            has_next_agent = bool(normalized)
             terminal_statuses = {"done", "workflow_done", "workflow_complete", "closed"}
 
             if latest_completion.get("is_workflow_done") or (
@@ -377,6 +382,12 @@ def prepare_continue_context(
                 agent_type = normalized
                 agent_from_completion = True
                 resumed_from = latest_completion.get("agent_type") or resumed_from
+            elif str(latest_completion.get("next_agent") or "").strip():
+                logger.warning(
+                    "Continue issue #%s: ignoring invalid recovered next_agent from storage: %r",
+                    issue_num,
+                    latest_completion.get("next_agent"),
+                )
 
     if forced_agent:
         agent_type = normalize_agent_reference(forced_agent) or forced_agent
@@ -403,7 +414,14 @@ def prepare_continue_context(
 
     if not agent_type:
         agent_type_match = re.search(r"\*\*Agent Type:\*\*\s*(.+)", content)
-        agent_type = agent_type_match.group(1).strip() if agent_type_match else "triage"
+        raw_agent_type = agent_type_match.group(1).strip() if agent_type_match else "triage"
+        agent_type = _normalize_routable_agent(raw_agent_type) or "triage"
+        if raw_agent_type != agent_type:
+            logger.warning(
+                "Continue issue #%s: ignoring invalid fallback agent reference from issue/task content: %r",
+                issue_num,
+                raw_agent_type,
+            )
         logger.info(
             "Continue issue #%s: no prior completion found, starting with %s",
             issue_num,
@@ -446,8 +464,26 @@ def prepare_continue_context(
             agent_type = normalized_expected
             normalized_requested = normalized_expected
 
+    normalized_final = _normalize_routable_agent(agent_type) if agent_type else None
     if not agent_type and normalized_expected:
         agent_type = normalized_expected
+    elif not normalized_final and normalized_expected:
+        logger.warning(
+            "Continue issue #%s: discarding unresolved agent reference %r; using workflow RUNNING step %s",
+            issue_num,
+            agent_type,
+            normalized_expected,
+        )
+        agent_type = normalized_expected
+    elif normalized_final:
+        agent_type = normalized_final
+    else:
+        logger.warning(
+            "Continue issue #%s: discarding unresolved agent reference %r; falling back to triage",
+            issue_num,
+            agent_type,
+        )
+        agent_type = "triage"
 
     label_tier = None
     if not local_issue_fallback:
