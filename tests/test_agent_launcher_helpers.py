@@ -170,6 +170,78 @@ def test_invoke_ai_agent_pauses_and_notifies_when_worktree_provision_fails(monke
     assert audits and audits[0][1] == "WORKTREE_PROVISION_FAILED"
 
 
+def test_invoke_ai_agent_blocks_launch_when_required_worktree_targets_cannot_resolve(
+    monkeypatch, tmp_path
+):
+    from nexus.core.runtime import agent_launcher
+
+    pause_calls = {"count": 0}
+    alerts: list[str] = []
+    audits: list[tuple[int, str, str]] = []
+
+    class _Orchestrator:
+        def invoke_agent(self, **kwargs):  # noqa: ANN003
+            raise AssertionError("invoke_agent should not be called when required worktree is unresolved")
+
+    monkeypatch.setattr(agent_launcher, "_get_launch_policy_plugin", lambda: None)
+    monkeypatch.setattr(agent_launcher, "_resolve_workflow_path", lambda _project: None)
+    monkeypatch.setattr(agent_launcher, "_resolve_issue_step_context", lambda _url: ("develop", 2))
+    monkeypatch.setattr(agent_launcher, "_resolve_step_requires_worktree", lambda **_kwargs: True)
+    monkeypatch.setattr(agent_launcher, "_ensure_agent_definition", lambda *_a, **_k: True)
+    monkeypatch.setattr(agent_launcher, "get_orchestrator", lambda _cfg: _Orchestrator())
+    monkeypatch.setattr(agent_launcher, "auth_enabled", lambda: False)
+    monkeypatch.setattr(agent_launcher, "_resolve_worktree_base_repo", lambda *_a, **_k: str(tmp_path))
+    monkeypatch.setattr(agent_launcher, "_is_git_repo", lambda _path: False)
+    monkeypatch.setattr(agent_launcher, "_load_issue_body_from_project_repo", lambda *_a, **_k: ("", "", ""))
+    monkeypatch.setattr(agent_launcher, "_derive_issue_branch_name", lambda **_k: "feat/issue-42")
+    monkeypatch.setattr(agent_launcher, "_run_coro_sync", lambda coro_factory: coro_factory())
+
+    def _pause_workflow(issue_number, reason):  # noqa: ANN001
+        pause_calls["count"] += 1
+        assert str(issue_number) == "42"
+        assert "worktree" in str(reason).lower()
+        return True
+
+    monkeypatch.setattr(
+        "nexus.core.orchestration.nexus_core_helpers.pause_workflow",
+        _pause_workflow,
+    )
+    monkeypatch.setattr(
+        agent_launcher,
+        "emit_alert",
+        lambda message, **_kwargs: alerts.append(str(message)),
+    )
+    monkeypatch.setattr(
+        agent_launcher.AuditStore,
+        "audit_log",
+        lambda issue, event, message: audits.append((issue, event, str(message))),
+    )
+    monkeypatch.setattr(agent_launcher, "get_repos", lambda _project: ["acme-org/sample-repo"])
+    monkeypatch.setattr(
+        agent_launcher,
+        "_resolve_git_dir_for_repo",
+        lambda **_kwargs: None,
+    )
+
+    pid, tool = agent_launcher.invoke_ai_agent(
+        agents_dir=str(tmp_path / "agents"),
+        workspace_dir=str(tmp_path),
+        issue_url="https://github.com/acme-org/sample-repo/issues/42",
+        tier_name="full",
+        task_content="test",
+        continuation=False,
+        agent_type="developer",
+        project_name="nexus",
+        log_subdir="nexus",
+    )
+
+    assert pid is None
+    assert tool is None
+    assert pause_calls["count"] == 1
+    assert alerts and "Could not create isolated worktree" in alerts[0]
+    assert audits and audits[0][1] == "WORKTREE_PROVISION_FAILED"
+
+
 def test_invoke_ai_agent_sanitizes_deprecated_helper_scripts(monkeypatch, tmp_path):
     from nexus.core.runtime import agent_launcher
 

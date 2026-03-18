@@ -2088,14 +2088,14 @@ def invoke_ai_agent(
                 issue_repo_slug=issue_repo_slug,
                 fallback_repo_dir=worktree_base_repo,
             )
-            if not worktree_targets:
-                logger.warning(
-                    "Skipping worktree provisioning for issue %s: no git repositories resolved "
-                    "(base=%s)",
-                    issue_num,
-                    worktree_base_repo,
-                )
             try:
+                if not worktree_targets:
+                    raise WorktreeProvisionError(
+                        "Required isolated worktree could not be resolved: "
+                        f"project={project_name or log_subdir or 'nexus'} "
+                        f"issue_repo={issue_repo_slug or 'unknown'} "
+                        f"base={worktree_base_repo}"
+                    )
                 provisioned_paths: dict[str, str] = {}
                 failures: dict[str, str] = {}
                 for target_repo, target_repo_dir in worktree_targets.items():
