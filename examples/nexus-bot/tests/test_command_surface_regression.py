@@ -5,7 +5,6 @@ from pathlib import Path
 
 from nexus.core import command_contract
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TELEGRAM_BOOTSTRAP_FILE = REPO_ROOT / "nexus" / "core" / "telegram" / "telegram_main_bootstrap_service.py"
 TELEGRAM_BOT_FILE = REPO_ROOT / "examples" / "nexus-bot" / "src" / "telegram_bot.py"

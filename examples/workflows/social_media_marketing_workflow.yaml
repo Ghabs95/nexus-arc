@@ -9,6 +9,7 @@ workflow_type: "social-marketing"
 timeout_seconds: 10800
 allowed_tools:
   - "vcs:read_issue"
+  - "vcs:read_comments"
   - "vcs:add_comment"
   - "vcs:add_label"
   - "vcs:search_codebase"
@@ -20,6 +21,8 @@ allowed_tools:
   - "vcs:review_pr"
   - "vcs:request_changes"
   - "vcs:approve_pr"
+  - "vcs:merge_pr"
+  - "vcs:create_release"
   - "vcs:close_issue"
 
 steps:
@@ -28,6 +31,10 @@ steps:
     description: "Classify campaign request, priority, and execution path"
     agent_type: "triage"
     context_policy: "minimal"
+    tools:
+      - vcs:read_issue
+      - vcs:add_comment
+      - vcs:add_label
     inputs:
       - issue_url: "string"
     outputs:

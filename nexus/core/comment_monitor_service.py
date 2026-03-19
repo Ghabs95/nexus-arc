@@ -55,6 +55,15 @@ def run_comment_monitor_cycle(
             or "requester token" in text
         )
 
+    def _is_benign_list_error(exc: Exception) -> bool:
+        text = str(exc or "").lower()
+        return (
+            _is_authz_error(exc)
+            or "token required" in text
+            or "404" in text
+            or "not found" in text
+        )
+
     try:
         all_issue_nums: list[tuple[Any, str, str]] = []
         for project_name, _cfg in iter_projects():
@@ -82,9 +91,9 @@ def run_comment_monitor_cycle(
                     all_issue_nums.append((issue_number, project_name, repo))
                 clear_polling_failures(list_scope)
             except Exception as exc:
-                if _is_authz_error(exc):
+                if _is_benign_list_error(exc):
                     logger.warning(
-                        "Skipping issue polling for project %s due to access denial: %s",
+                        "Skipping issue polling for project %s due to non-actionable list error: %s",
                         project_name,
                         exc,
                     )

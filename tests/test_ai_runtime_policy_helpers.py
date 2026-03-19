@@ -764,7 +764,7 @@ def test_codex_invoker_account_mode_strips_openai_key_and_skips_auto_login(monke
 
 
 def test_codex_invoker_falls_back_when_workspace_write_hits_bwrap_namespace_failure(
-    monkeypatch, tmp_path
+        monkeypatch, tmp_path
 ):
     import nexus.plugins.builtin.ai_runtime.provider_invokers.codex_invoker as codex_mod
 

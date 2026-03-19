@@ -166,7 +166,15 @@ def invoke_codex_cli(
 
     _cleanup_empty_rollout_files(logger=logger)
 
-    sandbox_modes = ["workspace-write", "danger-full-access"]
+    # Only include the danger-full-access fallback when the operator has explicitly
+    # opted in via NEXUS_CODEX_ALLOW_DANGER_SANDBOX=1. Automatically escalating
+    # privileges on hosts without unprivileged user namespaces would be a silent
+    # security escalation.
+    effective_env = {**os.environ, **(env or {})}
+    allow_danger_sandbox = (
+        str(effective_env.get("NEXUS_CODEX_ALLOW_DANGER_SANDBOX") or "").strip() == "1"
+    )
+    sandbox_modes = ["workspace-write", "danger-full-access"] if allow_danger_sandbox else ["workspace-write"]
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     log_dir = get_tasks_logs_dir(workspace_dir, log_subdir)

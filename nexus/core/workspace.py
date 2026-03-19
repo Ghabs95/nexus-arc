@@ -171,7 +171,7 @@ class WorkspaceManager:
 
         env = os.environ.copy()
 
-        # Check if the branch already exists locally or remotely
+        # Check if the branch already exists locally
         branch_exists_locally = WorkspaceManager._branch_exists(
             base_repo_path,
             branch_name,
