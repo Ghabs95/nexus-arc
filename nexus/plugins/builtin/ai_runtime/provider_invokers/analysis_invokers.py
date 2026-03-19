@@ -4,6 +4,9 @@ from typing import Any, Callable
 from nexus.plugins.builtin.ai_runtime.provider_invokers.agent_invokers import (
     prepare_provider_cli_env,
 )
+from nexus.plugins.builtin.ai_runtime.provider_invokers.codex_invoker import (
+    _build_codex_exec_cmd,
+)
 from nexus.plugins.builtin.ai_runtime.provider_invokers.subprocess_utils import (
     run_cli_prompt,
     wrap_timeout_error,
@@ -103,10 +106,11 @@ def run_codex_analysis_cli(
     provider_env, _auth_mode = prepare_provider_cli_env(provider="codex", env=env)
 
     prompt = build_analysis_prompt(text, task, **kwargs)
-    cmd = [codex_cli_path, "exec"]
-    if codex_model:
-        cmd.extend(["--model", codex_model])
-    cmd.append(prompt)
+    cmd = _build_codex_exec_cmd(
+        codex_cli_path=codex_cli_path,
+        codex_model=codex_model,
+        agent_prompt=prompt,
+    )
 
     try:
         result = run_cli_prompt(cmd, timeout=timeout, env=provider_env, cwd=cwd)

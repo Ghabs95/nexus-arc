@@ -22,6 +22,7 @@ from nexus.plugins.builtin.ai_runtime.provider_invokers.agent_invokers import (
 )
 from nexus.plugins.builtin.ai_runtime.provider_invokers.analysis_invokers import (
     run_copilot_analysis_cli,
+    run_codex_analysis_cli,
     run_gemini_analysis_cli,
 )
 from nexus.plugins.builtin.ai_runtime.provider_invokers.codex_invoker import invoke_codex_cli
@@ -453,6 +454,55 @@ def test_copilot_analysis_invoker_success_and_unavailable(monkeypatch):
         assert False, "expected unavailable error"
     except RuntimeError as exc:
         assert "Copilot CLI not available" in str(exc)
+
+
+def test_codex_analysis_invoker_uses_skip_git_repo_check(monkeypatch):
+    import nexus.plugins.builtin.ai_runtime.provider_invokers.analysis_invokers as invokers_mod
+
+    captured: dict[str, Any] = {}
+
+    class _Result:
+        returncode = 0
+        stderr = ""
+        stdout = '{"ok": true}'
+
+    def _fake_run(cmd, timeout, env=None, cwd=None):
+        captured["cmd"] = list(cmd)
+        captured["timeout"] = timeout
+        captured["env"] = env
+        captured["cwd"] = cwd
+        return _Result()
+
+    monkeypatch.setattr(invokers_mod, "run_cli_prompt", _fake_run)
+
+    out = run_codex_analysis_cli(
+        check_tool_available=lambda provider: True,
+        codex_provider=AIProvider.CODEX,
+        codex_cli_path="codex",
+        codex_model="gpt-5-codex",
+        build_analysis_prompt=lambda text, task, **kwargs: "prompt",
+        parse_analysis_result=lambda output, task: {"parsed": output, "task": task},
+        tool_unavailable_error=RuntimeError,
+        rate_limited_error=RuntimeError,
+        text="x",
+        task="chat",
+        timeout=11,
+        kwargs={},
+        env={"OPENAI_API_KEY": "test-key"},
+        cwd="/tmp/workspace",
+    )
+
+    assert out == {"parsed": '{"ok": true}', "task": "chat"}
+    assert captured["cmd"] == [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--model",
+        "gpt-5-codex",
+        "prompt",
+    ]
+    assert captured["timeout"] == 11
+    assert captured["cwd"] == "/tmp/workspace"
 
 
 def test_wrap_timeout_error_helper_message():

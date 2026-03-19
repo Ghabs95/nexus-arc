@@ -1173,7 +1173,7 @@ class TestCodexCLIProvider:
         with patch(
             "nexus.adapters.ai.codex_provider.asyncio.create_subprocess_exec",
             return_value=mock_proc,
-        ):
+        ) as create_subprocess_exec:
             ctx = ExecutionContext(
                 agent_name="developer",
                 prompt="Implement feature X",
@@ -1184,6 +1184,17 @@ class TestCodexCLIProvider:
         assert result.success is True
         assert result.provider_used == "codex"
         assert "ok" in result.output
+        create_subprocess_exec.assert_called_once_with(
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--model",
+            "gpt-5-codex",
+            "Implement feature X",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd="/tmp",
+        )
 
     def test_execute_agent_timeout(self):
         from nexus.adapters.ai.base import ExecutionContext

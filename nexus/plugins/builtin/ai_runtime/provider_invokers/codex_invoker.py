@@ -38,15 +38,15 @@ def _build_codex_exec_cmd(
     codex_cli_path: str,
     codex_model: str,
     agent_prompt: str,
-    sandbox_mode: str,
+    sandbox_mode: str | None = None,
 ) -> list[str]:
     cmd = [
         codex_cli_path,
         "exec",
         "--skip-git-repo-check",
-        "--sandbox",
-        sandbox_mode,
     ]
+    if sandbox_mode:
+        cmd.extend(["--sandbox", sandbox_mode])
     if sandbox_mode == "workspace-write":
         cmd.extend(
             [

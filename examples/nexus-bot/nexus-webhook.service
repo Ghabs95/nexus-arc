@@ -8,6 +8,8 @@ User=ubuntu
 WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
 EnvironmentFile=/opt/nexus/.env
 Environment="PYTHONUNBUFFERED=1"
+Environment="HOME=/home/ubuntu"
+Environment="XDG_CACHE_HOME=/home/ubuntu/.cache"
 # Include system paths so system binaries (e.g. /usr/bin/gh) are available
 Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python3 /opt/nexus-arc/examples/nexus-bot/src/webhook_server.py

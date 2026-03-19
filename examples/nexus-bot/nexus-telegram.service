@@ -8,6 +8,8 @@ User=ubuntu
 WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
 EnvironmentFile=/opt/nexus/.env
 Environment="PYTHONUNBUFFERED=1"
+Environment="HOME=/home/ubuntu"
+Environment="XDG_CACHE_HOME=/home/ubuntu/.cache"
 # Include system paths so system binaries (e.g. /usr/bin/gh) are available
 Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/python src/telegram_bot.py

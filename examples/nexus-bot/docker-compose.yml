@@ -15,6 +15,8 @@ services:
       NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
       NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379/0
+      HOME: ${NEXUS_CLI_HOME:-/var/lib/nexus/cli-home}
+      XDG_CACHE_HOME: ${NEXUS_CLI_CACHE_HOME:-/var/lib/nexus/cli-home/.cache}
     volumes:
       - ${NEXUS_RUNTIME_DIR:-/var/lib/nexus}:${NEXUS_RUNTIME_DIR:-/var/lib/nexus}
       - ${LOGS_DIR:-/var/lib/nexus/logs}:${LOGS_DIR:-/var/lib/nexus/logs}
@@ -34,6 +36,8 @@ services:
       NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
       NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379/0
+      HOME: ${NEXUS_CLI_HOME:-/var/lib/nexus/cli-home}
+      XDG_CACHE_HOME: ${NEXUS_CLI_CACHE_HOME:-/var/lib/nexus/cli-home/.cache}
     volumes:
       - ${NEXUS_RUNTIME_DIR:-/var/lib/nexus}:${NEXUS_RUNTIME_DIR:-/var/lib/nexus}
       - ${LOGS_DIR:-/var/lib/nexus/logs}:${LOGS_DIR:-/var/lib/nexus/logs}
@@ -56,6 +60,8 @@ services:
       NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
       NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379/0
+      HOME: ${NEXUS_CLI_HOME:-/var/lib/nexus/cli-home}
+      XDG_CACHE_HOME: ${NEXUS_CLI_CACHE_HOME:-/var/lib/nexus/cli-home/.cache}
     volumes:
       - ${NEXUS_RUNTIME_DIR:-/var/lib/nexus}:${NEXUS_RUNTIME_DIR:-/var/lib/nexus}
       - ${LOGS_DIR:-/var/lib/nexus/logs}:${LOGS_DIR:-/var/lib/nexus/logs}
@@ -75,6 +81,8 @@ services:
       WEBHOOK_PORT: "8081"
       NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379/0
+      HOME: ${NEXUS_CLI_HOME:-/var/lib/nexus/cli-home}
+      XDG_CACHE_HOME: ${NEXUS_CLI_CACHE_HOME:-/var/lib/nexus/cli-home/.cache}
     ports:
       - "8081:8081"
     volumes:
@@ -102,6 +110,8 @@ services:
       NEXUS_WEBHOOK_INTERNAL_URL: http://webhook:8081
       NEXUS_STORAGE_DSN: postgresql://nexus:nexus@postgres:5432/nexus
       REDIS_URL: redis://redis:6379/0
+      HOME: ${NEXUS_CLI_HOME:-/var/lib/nexus/cli-home}
+      XDG_CACHE_HOME: ${NEXUS_CLI_CACHE_HOME:-/var/lib/nexus/cli-home/.cache}
     ports:
       - "8080:8080"
     volumes:

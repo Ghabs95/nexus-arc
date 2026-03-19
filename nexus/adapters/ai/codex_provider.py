@@ -78,7 +78,7 @@ class CodexCLIProvider(AIProvider):
         workspace.mkdir(parents=True, exist_ok=True)
         self._cleanup_empty_rollout_files()
 
-        cmd = [self._binary, "exec"]
+        cmd = [self._binary, "exec", "--skip-git-repo-check"]
         if self._model:
             cmd.extend(["--model", self._model])
         cmd.extend(self._extra_args)
