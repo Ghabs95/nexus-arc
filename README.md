@@ -291,6 +291,27 @@ steps:
 ```
 **Complete history from bug report to fix, all in GitHub.**
 
+### Social Media Marketing Workflow
+Automated content planning, review, and multi-platform publishing:
+```yaml
+workflow: social_media_marketing
+trigger: campaign_brief (label: marketing)
+steps:
+  - triage: Classify & prioritize
+    → Labels issue, sets priority
+  - designer: Campaign design
+    → Creates campaign architecture & platform plan
+  - developer: Content implementation
+    → Generates platform-specific drafts (X, LinkedIn, Discord)
+  - reviewer: Quality review
+    → Validates tone & channel formatting
+  - compliance: Governance check
+    → Ensures legal & safety compliance
+  - deployer: Multi-platform publish
+    → Publishes or schedules approved content
+```
+**Dry-run-first rollout with shared campaign context and platform-agnostic adapters.**
+
 ---
 
 ## Examples

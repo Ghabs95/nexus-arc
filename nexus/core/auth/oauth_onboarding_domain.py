@@ -8,13 +8,14 @@ import logging
 import os
 import re
 import secrets
-import shutil
 import shlex
+import shutil
 import subprocess
 import tempfile
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode, urlparse
 
 import requests
@@ -45,6 +46,13 @@ logger = logging.getLogger(__name__)
 
 def _now_utc() -> datetime:
     return datetime.now(tz=UTC)
+
+
+def _current_uid() -> int | None:
+    getuid = cast(Callable[[], int] | None, getattr(os, "getuid", None))
+    if not callable(getuid):
+        return None
+    return int(getuid())
 
 
 def _required_env(name: str) -> str:
@@ -288,10 +296,9 @@ def _ensure_private_dir(path: str) -> None:
         os.chmod(path, 0o700)
     except Exception:
         pass
-    getuid = getattr(os, "getuid", None)
-    if callable(getuid):
+    current_uid = _current_uid()
+    if current_uid is not None:
         try:
-            current_uid = int(getuid())
             owner_uid = int(os.stat(path).st_uid)
         except Exception as exc:
             raise RuntimeError(f"Unable to verify private directory owner for {path}: {exc}") from exc
@@ -307,10 +314,9 @@ def _ensure_private_file(path: str) -> None:
         os.chmod(path, 0o600)
     except Exception:
         pass
-    getuid = getattr(os, "getuid", None)
-    if callable(getuid):
+    current_uid = _current_uid()
+    if current_uid is not None:
         try:
-            current_uid = int(getuid())
             owner_uid = int(os.stat(path).st_uid)
         except Exception as exc:
             raise RuntimeError(f"Unable to verify private file owner for {path}: {exc}") from exc
@@ -325,14 +331,14 @@ def _strip_terminal_control_sequences(raw_text: str) -> str:
     text = str(raw_text or "")
     # Remove ANSI escape/control sequences emitted by CLIs so extracted text stays parseable.
     text = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", text)
-    text = re.sub(r"\x1B\]8;;.*?(?:\x1B\\|\x07)", "", text)
+    text = re.sub(r"\x1B]8;;.*?(?:\x1B\\|\x07)", "", text)
     text = re.sub(r"[\x00-\x08\x0B-\x1F\x7F]", "", text)
     return text
 
 
 def _parse_device_auth_url_and_code(raw_text: str) -> tuple[str, str]:
     text = _strip_terminal_control_sequences(raw_text)
-    url_match = re.search(r"https?://[^\s<>\")\]']+", text, flags=re.IGNORECASE)
+    url_match = re.search(r"https?://[^]\s<>\")']+", text, flags=re.IGNORECASE)
     code_match = re.search(r"\b[A-Z0-9]{4}(?:-[A-Z0-9]{3,})+\b", text, flags=re.IGNORECASE)
     url = str(url_match.group(0) if url_match else "").strip().rstrip(".,;:")
     code = str(code_match.group(0) if code_match else "").strip().upper()
@@ -364,7 +370,7 @@ def _parse_device_auth_url_and_code(raw_text: str) -> tuple[str, str]:
 def _parse_local_callback_url(raw_text: str) -> str:
     text = _strip_terminal_control_sequences(raw_text)
     callback_match = re.search(
-        r"https?://(?:localhost|127\.0\.0\.1|\[::1\]|::1)(?::\d+)?/oauth2[^\s<>\")\]']+",
+        r"https?://(?:localhost|127\.0\.0\.1|\[::1]|::1)(?::\d+)?/oauth2[^]\s<>\")']+",
         text,
         flags=re.IGNORECASE,
     )
@@ -524,7 +530,7 @@ def _wrap_command_with_script_tty(command: list[str]) -> list[str]:
     script_path = shutil.which("script")
     if not script_path:
         return command
-    return [script_path, "-q", "-e", "-c", shlex.join(command), "/dev/null"]
+    return [str(script_path), "-q", "-e", "-c", shlex.join(command), "/dev/null"]
 
 
 def format_login_session_ref(session_id: str) -> str:

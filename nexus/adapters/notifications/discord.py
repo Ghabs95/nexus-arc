@@ -99,6 +99,7 @@ class DiscordNotificationChannel(NotificationChannel):
         self._guild_id = str(guild_id or "").strip() or None
         self._session = None
         self._session_loop = None
+        self._sessions_by_loop: dict[object, aiohttp.ClientSession] = {}
 
     # ------------------------------------------------------------------
     # NotificationChannel interface
@@ -290,24 +291,47 @@ class DiscordNotificationChannel(NotificationChannel):
     def _get_session(self) -> "aiohttp.ClientSession":
         """Return a shared aiohttp session, creating it on first use."""
         current_loop = asyncio.get_running_loop()
+        sessions_by_loop = getattr(self, "_sessions_by_loop", None)
+        if not isinstance(sessions_by_loop, dict):
+            sessions_by_loop = {}
+            self._sessions_by_loop = sessions_by_loop
+
         session = getattr(self, "_session", None)
         session_loop = getattr(self, "_session_loop", None)
+        if session is not None and session_loop is not None and session_loop not in sessions_by_loop:
+            sessions_by_loop[session_loop] = session
 
-        # Recreate session if prior one belongs to a different event loop,
-        # which can happen after runtime/plugin reloads.
-        if session is not None and (session.closed or session_loop is not current_loop):
+        session = sessions_by_loop.get(current_loop)
+        if session is not None and session.closed:
+            sessions_by_loop.pop(current_loop, None)
             session = None
 
         if session is None:
-            self._session = aiohttp.ClientSession()
-            self._session_loop = current_loop
-        return self._session  # type: ignore[return-value]
+            session = aiohttp.ClientSession()
+            sessions_by_loop[current_loop] = session
+
+        self._session = session
+        self._session_loop = current_loop
+        return session
 
     async def aclose(self) -> None:
         """Close the underlying aiohttp session, if it exists."""
+        sessions_by_loop = getattr(self, "_sessions_by_loop", None)
+        sessions: list[aiohttp.ClientSession] = []
+        if isinstance(sessions_by_loop, dict):
+            for candidate in sessions_by_loop.values():
+                if candidate not in sessions:
+                    sessions.append(candidate)
+
         session = getattr(self, "_session", None)
-        if session is not None and not session.closed:
-            await session.close()
+        if session is not None and session not in sessions:
+            sessions.append(session)
+
+        for candidate in sessions:
+            if not candidate.closed:
+                await candidate.close()
+
+        self._sessions_by_loop = {}
         self._session = None
         self._session_loop = None
 

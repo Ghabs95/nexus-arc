@@ -6,7 +6,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from urllib.parse import quote_plus
 
 import requests
@@ -43,6 +43,34 @@ def auth_enabled() -> bool:
     return _env_bool("NEXUS_AUTH_ENABLED", False)
 
 
+def _current_uid() -> int | None:
+    getuid = cast(Callable[[], int] | None, getattr(os, "getuid", None))
+    if not callable(getuid):
+        return None
+    return int(getuid())
+
+
+def get_auth_onboarding_disabled_message() -> str:
+    if auth_enabled():
+        return ""
+
+    requirements = [
+        "NEXUS_AUTH_ENABLED=true",
+        "NEXUS_STORAGE_BACKEND=postgres",
+        "NEXUS_STORAGE_DSN",
+        "NEXUS_PUBLIC_BASE_URL",
+        "GitHub or GitLab OAuth credentials "
+        "(NEXUS_GITHUB_CLIENT_ID/SECRET or NEXUS_GITLAB_CLIENT_ID/SECRET)",
+        "NEXUS_CREDENTIALS_MASTER_KEY",
+    ]
+    joined = "\n- ".join(requirements)
+    return (
+        "Auth onboarding is disabled in this environment.\n"
+        "To enable it, configure:\n"
+        f"- {joined}"
+    )
+
+
 def _cli_auth_mode() -> str:
     mode = str(os.getenv("NEXUS_CLI_AUTH_MODE", "account")).strip().lower()
     return mode if mode in {"account", "api-key", "auto"} else "account"
@@ -62,10 +90,9 @@ def _ensure_private_runtime_dir(path: str) -> str | None:
     except Exception:
         pass
 
-    getuid = getattr(os, "getuid", None)
-    if callable(getuid):
+    current_uid = _current_uid()
+    if current_uid is not None:
         try:
-            current_uid = int(getuid())
             owner_uid = int(os.stat(path).st_uid)
         except Exception as exc:
             return f"Failed to verify auth runtime directory owner for '{path}': {exc}"

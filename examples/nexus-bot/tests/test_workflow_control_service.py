@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from nexus.core.workflow_runtime import workflow_control_service as svc
 from nexus.core.task_flow.helpers import normalize_agent_reference as normalize_agent_ref
+from nexus.core.workflow_runtime import workflow_control_service as svc
 
 
 def test_prepare_continue_context_prefers_recovered_next_agent_over_stale_running_step(
@@ -86,4 +86,3 @@ def test_prepare_continue_context_ignores_placeholder_agent_type_in_issue_conten
 
     assert ctx["status"] == "ready"
     assert ctx["agent_type"] == "developer"
-

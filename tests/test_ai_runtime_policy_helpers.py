@@ -764,7 +764,7 @@ def test_codex_invoker_account_mode_strips_openai_key_and_skips_auto_login(monke
 
 
 def test_codex_invoker_falls_back_when_workspace_write_hits_bwrap_namespace_failure(
-    monkeypatch, tmp_path
+        monkeypatch, tmp_path
 ):
     import nexus.plugins.builtin.ai_runtime.provider_invokers.codex_invoker as codex_mod
 
@@ -868,6 +868,110 @@ def test_codex_invoker_falls_back_when_workspace_write_hits_bwrap_namespace_fail
         "gpt-5-codex",
         "do work",
     ]
+    assert any(
+        "retrying launch with danger-full-access" in message
+        for level, message in logger.messages
+        if level == "warning"
+    )
+
+
+def test_codex_invoker_retries_when_bwrap_failure_appears_while_process_stays_alive(
+    monkeypatch, tmp_path
+):
+    import nexus.plugins.builtin.ai_runtime.provider_invokers.codex_invoker as codex_mod
+
+    class _Logger:
+        def __init__(self):
+            self.messages = []
+
+        def info(self, msg, *args):
+            self.messages.append(("info", msg % args if args else msg))
+
+        def warning(self, msg, *args):
+            self.messages.append(("warning", msg % args if args else msg))
+
+        def error(self, msg, *args):
+            self.messages.append(("error", msg % args if args else msg))
+
+    monkeypatch.setenv("NEXUS_CLI_AUTH_MODE", "account")
+    monkeypatch.setattr(codex_mod.time, "strftime", lambda fmt: "20260101_120000")
+
+    popen_calls: list[list[str]] = []
+
+    class _ProcWarn:
+        pid = 333
+        stdout = None
+
+        def __init__(self):
+            self.terminated = False
+            self.kill_called = False
+
+        def poll(self):
+            return 1 if self.terminated else None
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.kill_called = True
+            self.terminated = True
+
+    class _ProcOk:
+        pid = 444
+        stdout = None
+
+        def poll(self):
+            return None
+
+    procs = [_ProcWarn(), _ProcOk()]
+
+    def _fake_popen(cmd, cwd, stdin, stdout, stderr, env, text, bufsize):
+        popen_calls.append(list(cmd))
+        return procs.pop(0)
+
+    def _fake_start_output_tee(*, process, log_path, logger, output_label):
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as handle:
+            if process.pid == 333:
+                handle.write(
+                    "bwrap: No permissions to create a new namespace, likely because the "
+                    "kernel does not allow non-privileged user namespaces. "
+                    "On e.g. debian this can be enabled with 'sysctl "
+                    "kernel.unprivileged_userns_clone=1'.\n"
+                    "I can’t execute shell commands in this environment."
+                )
+            else:
+                handle.write("started")
+
+    tick = {"value": 946685000.0}
+
+    def _fake_time():
+        tick["value"] += 1.0
+        return tick["value"]
+
+    monkeypatch.setattr(codex_mod.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(codex_mod, "_start_output_tee", _fake_start_output_tee)
+    monkeypatch.setattr(codex_mod.time, "time", _fake_time)
+    monkeypatch.setattr(codex_mod.time, "sleep", lambda _seconds: None)
+
+    logger = _Logger()
+    pid = invoke_codex_cli(
+        check_tool_available=lambda provider: True,
+        codex_provider=AIProvider.CODEX,
+        codex_cli_path="codex",
+        codex_model="gpt-5-codex",
+        get_tasks_logs_dir=lambda workspace, subdir: str(tmp_path / "logs"),
+        tool_unavailable_error=RuntimeError,
+        logger=logger,
+        agent_prompt="do work",
+        workspace_dir=str(tmp_path / "repo"),
+        issue_num="104",
+        env={"OPENAI_API_KEY": "request-key"},
+    )
+
+    assert pid == 444
+    assert popen_calls[0][4] == "workspace-write"
+    assert popen_calls[1][4] == "danger-full-access"
     assert any(
         "retrying launch with danger-full-access" in message
         for level, message in logger.messages

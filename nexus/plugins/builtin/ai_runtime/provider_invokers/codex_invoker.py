@@ -100,6 +100,31 @@ def _cleanup_empty_rollout_files(*, logger: Any, codex_home: str | None = None) 
     return removed
 
 
+def _terminate_process_for_retry(process: subprocess.Popen[Any]) -> None:
+    terminate = getattr(process, "terminate", None)
+    if callable(terminate):
+        try:
+            terminate()
+        except Exception:
+            pass
+
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            if process.poll() is not None:
+                return
+        except Exception:
+            return
+        time.sleep(0.1)
+
+    kill = getattr(process, "kill", None)
+    if callable(kill):
+        try:
+            kill()
+        except Exception:
+            pass
+
+
 def invoke_codex_cli(
     *,
     check_tool_available: Callable[[Any], bool],
@@ -217,11 +242,27 @@ def invoke_codex_cli(
             # fallback to another provider in the same launch cycle.
             exit_code = None
             deadline = time.time() + 8.0
+            retry_for_bwrap_failure = False
             while time.time() < deadline:
+                excerpt = _read_log_excerpt(attempt_log_path)
+                if (
+                    sandbox_mode == "workspace-write"
+                    and _looks_like_codex_bwrap_namespace_failure(excerpt)
+                ):
+                    logger.warning(
+                        "Codex workspace-write sandbox is unavailable on this host; "
+                        "retrying launch with danger-full-access."
+                    )
+                    _terminate_process_for_retry(process)
+                    retry_for_bwrap_failure = True
+                    break
                 exit_code = process.poll()
                 if exit_code is not None:
                     break
                 time.sleep(0.5)
+
+            if retry_for_bwrap_failure:
+                continue
 
             if exit_code is None:
                 logger.info("🚀 Codex launched (PID: %s)", process.pid)

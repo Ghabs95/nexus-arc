@@ -45,16 +45,16 @@ All configuration lives in environment variables (loaded from `.env`) and `confi
 
 ### Agent Runtime
 
-| Variable                      | Required | Default   | Description                           |
-|-------------------------------|----------|-----------|---------------------------------------|
-| `AGENT_RECENT_WINDOW`         | ❌        | `120`     | Seconds to retain launched agent PIDs |
-| `AGENT_TIMEOUT`               | ❌        | `3600`    | Default agent timeout in seconds      |
-| `NEXUS_AGENT_TIMEOUT`         | ❌        | `3600`    | Core engine default timeout fallback  |
-| `COPILOT_PROVIDER`            | ❌        | `copilot` | AI CLI provider binary name           |
+| Variable                      | Required | Default   | Description                                             |
+|-------------------------------|----------|-----------|---------------------------------------------------------|
+| `AGENT_RECENT_WINDOW`         | ❌        | `120`     | Seconds to retain launched agent PIDs                   |
+| `AGENT_TIMEOUT`               | ❌        | `3600`    | Default agent timeout in seconds                        |
+| `NEXUS_AGENT_TIMEOUT`         | ❌        | `3600`    | Core engine default timeout fallback                    |
+| `COPILOT_PROVIDER`            | ❌        | `copilot` | AI CLI provider binary name                             |
 | `NEXUS_CLI_AUTH_MODE`         | ❌        | `account` | Provider CLI auth mode: `account`, `api-key`, or `auto` |
-| `NEXUS_FULL_WORKFLOW_CONTEXT` | ❌        | `false`   | Set `true` to inject full step schema |
-| `INBOX_CHECK_INTERVAL`        | ❌        | `10`      | Polling interval for completions      |
-| `AUTO_CHAIN_CYCLE`            | ❌        | `60`      | Polling interval for auto-chaining    |
+| `NEXUS_FULL_WORKFLOW_CONTEXT` | ❌        | `false`   | Set `true` to inject full step schema                   |
+| `INBOX_CHECK_INTERVAL`        | ❌        | `10`      | Polling interval for completions                        |
+| `AUTO_CHAIN_CYCLE`            | ❌        | `60`      | Polling interval for auto-chaining                      |
 
 ## Project Config (`project_config.yaml`)
 

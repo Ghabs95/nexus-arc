@@ -1361,13 +1361,49 @@ class TestDiscordNotificationChannel:
             return sess
 
         monkeypatch.setattr(discord_mod.aiohttp, "ClientSession", _fake_client_session)
-        channel._session = _Session()
-        channel._session_loop = object()
+        prior_session = _Session()
+        object_loop = object()
+        channel._session = prior_session
+        channel._session_loop = object_loop
 
         session = channel._get_session()
 
         assert session is created[0]
         assert channel._session_loop is asyncio.get_running_loop()
+        assert channel._sessions_by_loop[asyncio.get_running_loop()] is session
+        assert channel._sessions_by_loop[object_loop] is prior_session
+
+    async def test_aclose_closes_sessions_from_multiple_loops(self):
+        channel = self._make_channel()
+
+        class _Session:
+            def __init__(self):
+                self.closed = False
+                self.close_calls = 0
+
+            async def close(self):
+                self.close_calls += 1
+                self.closed = True
+
+        current_loop = asyncio.get_running_loop()
+        prior_loop = object()
+        current_session = _Session()
+        prior_session = _Session()
+
+        channel._session = current_session
+        channel._session_loop = current_loop
+        channel._sessions_by_loop = {
+            current_loop: current_session,
+            prior_loop: prior_session,
+        }
+
+        await channel.aclose()
+
+        assert current_session.close_calls == 1
+        assert prior_session.close_calls == 1
+        assert channel._sessions_by_loop == {}
+        assert channel._session is None
+        assert channel._session_loop is None
 
     def test_requires_aiohttp_without_install(self):
         import nexus.adapters.notifications.discord as _mod
