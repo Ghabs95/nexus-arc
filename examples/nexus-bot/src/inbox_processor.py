@@ -161,6 +161,9 @@ from nexus.core.issue_finalize import (
     find_existing_pr as _finalize_find_existing_pr,
 )
 from nexus.core.issue_finalize import (
+    find_existing_pr_details as _finalize_find_existing_pr_details,
+)
+from nexus.core.issue_finalize import (
     verify_workflow_terminal_before_finalize as _verify_workflow_terminal_before_finalize,
 )
 from nexus.core.issue_lifecycle import (
@@ -677,8 +680,8 @@ def _verify_workflow_terminal_before_finalize_local(
     return allowed
 
 
-def _finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: str) -> None:
-    _svc_finalize_workflow(
+def _finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: str) -> dict:
+    return _svc_finalize_workflow(
         issue_num=str(issue_num),
         repo=repo,
         last_agent=last_agent,
@@ -710,6 +713,16 @@ def _finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name:
             str(kwargs.get("repo", "")),
         ),
         find_existing_pr_fn=lambda **kwargs: _finalize_find_existing_pr(
+            project_name=project_name,
+            repo=kwargs["repo"],
+            issue_number=str(kwargs["issue_number"]),
+            token_override=_resolve_issue_requester_token(
+                project_name,
+                kwargs["repo"],
+                str(kwargs["issue_number"]),
+            ),
+        ),
+        find_existing_pr_details_fn=lambda **kwargs: _finalize_find_existing_pr_details(
             project_name=project_name,
             repo=kwargs["repo"],
             issue_number=str(kwargs["issue_number"]),

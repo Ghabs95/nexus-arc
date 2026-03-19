@@ -271,6 +271,8 @@ class GitHubPlatform(GitPlatform):
                 [
                     "pr",
                     "list",
+                    "--state",
+                    "all",
                     "--search",
                     f"#{issue_token}",
                     "--json",

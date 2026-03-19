@@ -3,6 +3,7 @@ name: nexus
 services:
   telegram:
     image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
+    user: "${NEXUS_UID:-1000}:${NEXUS_GID:-1000}"
     command: [ "nexus-telegram-bot" ]
     working_dir: /app
     restart: unless-stopped
@@ -21,6 +22,7 @@ services:
 
   discord:
     image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
+    user: "${NEXUS_UID:-1000}:${NEXUS_GID:-1000}"
     command: [ "nexus-discord-bot" ]
     working_dir: /app
     restart: unless-stopped
@@ -39,6 +41,7 @@ services:
 
   processor:
     image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
+    user: "${NEXUS_UID:-1000}:${NEXUS_GID:-1000}"
     depends_on:
       - telegram
       - discord
@@ -60,6 +63,7 @@ services:
 
   webhook:
     image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
+    user: "${NEXUS_UID:-1000}:${NEXUS_GID:-1000}"
     command: [ "nexus-webhook" ]
     working_dir: /app
     restart: unless-stopped
@@ -80,6 +84,7 @@ services:
 
   health:
     image: ${NEXUS_BOT_IMAGE:-nexus-bot:local}
+    user: "${NEXUS_UID:-1000}:${NEXUS_GID:-1000}"
     depends_on:
       - telegram
       - discord

@@ -45,3 +45,105 @@ def test_prepare_continue_context_stops_on_human_handoff(tmp_path, monkeypatch):
     assert ctx["status"] == "awaiting_human"
     assert ctx["resumed_from"] == "reviewer"
     assert "waiting for human action" in ctx["message"]
+
+
+def test_prepare_continue_context_ignores_stale_human_handoff_when_workflow_points_forward(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(svc, "NEXUS_STORAGE_BACKEND", "filesystem", raising=False)
+
+    completion_file = tmp_path / "completion_summary_119.json"
+    completion_file.write_text("{}", encoding="utf-8")
+
+    completion = SimpleNamespace(
+        issue_number="119",
+        file_path=str(completion_file),
+        summary=SimpleNamespace(
+            is_workflow_done=False,
+            agent_type="reviewer",
+            next_agent="human",
+        ),
+    )
+
+    ctx = svc.prepare_continue_context(
+        issue_num="119",
+        project_key="nexus",
+        rest_tokens=[],
+        base_dir=str(tmp_path),
+        project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
+        default_repo="Ghabs95/nexus-arc",
+        find_task_file_by_issue=lambda _n: None,
+        get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
+            "state": "open",
+            "title": "x",
+            "body": "y",
+        },
+        resolve_project_config_from_task=lambda _p: (
+            "nexus",
+            {"agents_dir": "agents", "workspace": "."},
+        ),
+        get_runtime_ops_plugin=lambda **_k: SimpleNamespace(
+            find_agent_pid_for_issue=lambda _n: None
+        ),
+        scan_for_completions=lambda _base: [completion],
+        normalize_agent_reference=lambda ref: str(ref or "").strip().lower() or None,
+        get_expected_running_agent_from_workflow=lambda _n: "writer",
+        get_sop_tier_from_issue=lambda _n, _p: None,
+        get_sop_tier=lambda _t: ("full", None, None),
+    )
+
+    assert ctx["status"] == "ready"
+    assert ctx["agent_type"] == "writer"
+    assert ctx["resumed_from"] == "reviewer"
+
+
+def test_prepare_continue_context_treats_completed_workflow_as_done_even_with_stale_human_handoff(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(svc, "NEXUS_STORAGE_BACKEND", "postgres", raising=False)
+    monkeypatch.setattr(
+        svc,
+        "_read_latest_completion_from_storage",
+        lambda _issue: {
+            "status": "complete",
+            "agent_type": "deployer",
+            "next_agent": "human",
+            "is_workflow_done": False,
+            "summary": {},
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "_read_workflow_status_snapshot",
+        lambda _issue: {"state": "completed", "current_agent_type": "writer", "summary": {}},
+    )
+
+    ctx = svc.prepare_continue_context(
+        issue_num="119",
+        project_key="nexus",
+        rest_tokens=[],
+        base_dir=str(tmp_path),
+        project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
+        default_repo="Ghabs95/nexus-arc",
+        find_task_file_by_issue=lambda _n: None,
+        get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
+            "state": "open",
+            "title": "x",
+            "body": "y",
+        },
+        resolve_project_config_from_task=lambda _p: (
+            "nexus",
+            {"agents_dir": "agents", "workspace": "."},
+        ),
+        get_runtime_ops_plugin=lambda **_k: SimpleNamespace(
+            find_agent_pid_for_issue=lambda _n: None
+        ),
+        scan_for_completions=lambda _base: [],
+        normalize_agent_reference=lambda ref: str(ref or "").strip().lower() or None,
+        get_expected_running_agent_from_workflow=lambda _n: None,
+        get_sop_tier_from_issue=lambda _n, _p: None,
+        get_sop_tier=lambda _t: ("full", None, None),
+    )
+
+    assert ctx["status"] == "workflow_done_open"
+    assert ctx["resumed_from"] == "writer"

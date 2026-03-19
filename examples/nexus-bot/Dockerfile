@@ -39,6 +39,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 
 WORKDIR /app
 
+RUN mkdir -p /home/ubuntu \
+    && chmod 755 /home/ubuntu
+
 # Install nexus-arc from the parent repo (editable so we stay in sync)
 # Install nexus-arc from the parent repo (editable so we stay in sync)
 COPY pyproject.toml /nexus-arc/pyproject.toml

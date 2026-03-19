@@ -470,12 +470,40 @@ async def _handle_continue_status_outcome(
             f"Issue is still open — running finalization now..."
         )
         try:
-            finalize_workflow(
+            finalization_result = finalize_workflow(
                 issue_num,
                 continue_ctx["repo"],
                 continue_ctx["resumed_from"],
                 continue_ctx["project_name"],
+                emit_notifications=False,
             )
+            if isinstance(finalization_result, dict) and finalization_result.get("finalization_blocked"):
+                reasons = [
+                    str(item)
+                    for item in (finalization_result.get("blocking_reasons") or [])
+                    if str(item).strip()
+                ]
+                details = "\n".join(f"- {item}" for item in reasons) if reasons else "- Unknown reason"
+                await ctx.edit_message_text(
+                    message_id=msg_id,
+                    text=(
+                        f"⛔ Workflow complete for issue #{issue_num}, but finalization is blocked.\n"
+                        f"Last agent: `{continue_ctx['resumed_from']}`\n"
+                        "Issue remains open.\n\n"
+                        f"Reasons:\n{details}"
+                    ),
+                )
+                return True
+            if isinstance(finalization_result, dict) and finalization_result.get("issue_closed"):
+                await ctx.edit_message_text(
+                    message_id=msg_id,
+                    text=(
+                        f"✅ Workflow complete for issue #{issue_num}\n"
+                        f"Last agent: `{continue_ctx['resumed_from']}`\n"
+                        "Issue finalized and closed."
+                    ),
+                )
+                return True
             await ctx.edit_message_text(
                 message_id=msg_id,
                 text=(

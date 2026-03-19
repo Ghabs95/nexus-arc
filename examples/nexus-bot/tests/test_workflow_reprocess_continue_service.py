@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from nexus.core.workflow_runtime import workflow_control_service as control_service
 from nexus.core.workflow_runtime import workflow_reprocess_continue_service as continue_service
 from nexus.core.workflow_runtime.workflow_reprocess_continue_service import (
     _maybe_reset_continue_workflow_position,
@@ -398,3 +399,192 @@ async def test_continue_service_stops_when_recovered_state_waits_on_human(monkey
     await handle_continue(ctx, deps, finalize_workflow=lambda *a, **k: None)
 
     assert ctx.replies == ["⏸️ Issue #119 is waiting for human action, not another agent launch."]
+
+
+@pytest.mark.asyncio
+async def test_continue_service_reports_blocked_finalization_for_completed_workflow(monkeypatch):
+    ctx = _Ctx(args=["nexus", "119"])
+    captured: dict[str, object] = {}
+
+    async def _ensure(_ctx, _deps, _command):
+        return "nexus", "119", []
+
+    monkeypatch.setattr(continue_service, "_ensure_project_issue_for_command", _ensure)
+    monkeypatch.setattr(
+        continue_service,
+        "_prepare_continue_context",
+        lambda *_args, **_kwargs: {
+            "status": "workflow_done_open",
+            "repo": "Ghabs95/nexus-arc",
+            "resumed_from": "writer",
+            "project_name": "nexus",
+        },
+    )
+
+    deps = SimpleNamespace(
+        logger=logging.getLogger("test"),
+        allowed_user_ids=[],
+        requester_context_builder=None,
+    )
+
+    await handle_continue(
+        ctx,
+        deps,
+        finalize_workflow=lambda *a, **k: (
+            captured.update({"emit_notifications": k.get("emit_notifications")}) or {
+                "finalization_blocked": True,
+                "blocking_reasons": ["No non-empty PR/MR diff found in target repos for this workflow."],
+            }
+        ),
+    )
+
+    assert len(ctx.replies) == 1
+    assert "running finalization now" in ctx.replies[0]
+    assert len(ctx.edits) == 1
+    assert captured["emit_notifications"] is False
+    assert "finalization is blocked" in ctx.edits[0]["text"]
+    assert "Issue remains open." in ctx.edits[0]["text"]
+    assert "No non-empty PR/MR diff found in target repos for this workflow." in ctx.edits[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_continue_service_reports_closed_issue_when_finalization_closes(monkeypatch):
+    ctx = _Ctx(args=["nexus", "119"])
+    captured: dict[str, object] = {}
+
+    async def _ensure(_ctx, _deps, _command):
+        return "nexus", "119", []
+
+    monkeypatch.setattr(continue_service, "_ensure_project_issue_for_command", _ensure)
+    monkeypatch.setattr(
+        continue_service,
+        "_prepare_continue_context",
+        lambda *_args, **_kwargs: {
+            "status": "workflow_done_open",
+            "repo": "Ghabs95/nexus-arc",
+            "resumed_from": "writer",
+            "project_name": "nexus",
+        },
+    )
+
+    deps = SimpleNamespace(
+        logger=logging.getLogger("test"),
+        allowed_user_ids=[],
+        requester_context_builder=None,
+    )
+
+    await handle_continue(
+        ctx,
+        deps,
+        finalize_workflow=lambda *a, **k: (
+            captured.update({"emit_notifications": k.get("emit_notifications")}) or {
+                "issue_closed": True,
+                "pr_urls": ["https://github.com/Ghabs95/nexus-arc/pull/120"],
+            }
+        ),
+    )
+
+    assert len(ctx.replies) == 1
+    assert "running finalization now" in ctx.replies[0]
+    assert len(ctx.edits) == 1
+    assert captured["emit_notifications"] is False
+    assert "Issue finalized and closed." in ctx.edits[0]["text"]
+
+
+def test_example_consumer_prepare_continue_context_skips_stale_human_handoff(tmp_path, monkeypatch):
+    monkeypatch.setattr(control_service, "NEXUS_STORAGE_BACKEND", "filesystem", raising=False)
+
+    completion_file = tmp_path / "completion_summary_119.json"
+    completion_file.write_text("{}", encoding="utf-8")
+
+    completion = SimpleNamespace(
+        issue_number="119",
+        file_path=str(completion_file),
+        summary=SimpleNamespace(
+            is_workflow_done=False,
+            agent_type="reviewer",
+            next_agent="human",
+        ),
+    )
+
+    continue_ctx = control_service.prepare_continue_context(
+        issue_num="119",
+        project_key="nexus",
+        rest_tokens=[],
+        base_dir=str(tmp_path),
+        project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
+        default_repo="Ghabs95/nexus-arc",
+        find_task_file_by_issue=lambda _n: None,
+        get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
+            "state": "open",
+            "title": "x",
+            "body": "y",
+        },
+        resolve_project_config_from_task=lambda _p: (
+            "nexus",
+            {"agents_dir": "agents", "workspace": "."},
+        ),
+        get_runtime_ops_plugin=lambda **_k: SimpleNamespace(
+            find_agent_pid_for_issue=lambda _n: None
+        ),
+        scan_for_completions=lambda _base: [completion],
+        normalize_agent_reference=lambda ref: str(ref or "").strip().lower() or None,
+        get_expected_running_agent_from_workflow=lambda _n: "writer",
+        get_sop_tier_from_issue=lambda _n, _p: None,
+        get_sop_tier=lambda _t: ("full", None, None),
+    )
+
+    assert continue_ctx["status"] == "ready"
+    assert continue_ctx["agent_type"] == "writer"
+
+
+def test_example_consumer_prepare_continue_context_prefers_completed_workflow_over_stale_human_handoff(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(control_service, "NEXUS_STORAGE_BACKEND", "postgres", raising=False)
+    monkeypatch.setattr(
+        control_service,
+        "_read_latest_completion_from_storage",
+        lambda _issue: {
+            "status": "complete",
+            "agent_type": "deployer",
+            "next_agent": "human",
+            "is_workflow_done": False,
+            "summary": {},
+        },
+    )
+    monkeypatch.setattr(
+        control_service,
+        "_read_workflow_status_snapshot",
+        lambda _issue: {"state": "completed", "current_agent_type": "writer", "summary": {}},
+    )
+
+    continue_ctx = control_service.prepare_continue_context(
+        issue_num="119",
+        project_key="nexus",
+        rest_tokens=[],
+        base_dir=str(tmp_path),
+        project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
+        default_repo="Ghabs95/nexus-arc",
+        find_task_file_by_issue=lambda _n: None,
+        get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
+            "state": "open",
+            "title": "x",
+            "body": "y",
+        },
+        resolve_project_config_from_task=lambda _p: (
+            "nexus",
+            {"agents_dir": "agents", "workspace": "."},
+        ),
+        get_runtime_ops_plugin=lambda **_k: SimpleNamespace(
+            find_agent_pid_for_issue=lambda _n: None
+        ),
+        scan_for_completions=lambda _base: [],
+        normalize_agent_reference=lambda ref: str(ref or "").strip().lower() or None,
+        get_expected_running_agent_from_workflow=lambda _n: None,
+        get_sop_tier_from_issue=lambda _n, _p: None,
+        get_sop_tier=lambda _t: ("full", None, None),
+    )
+
+    assert continue_ctx["status"] == "workflow_done_open"
+    assert continue_ctx["resumed_from"] == "writer"

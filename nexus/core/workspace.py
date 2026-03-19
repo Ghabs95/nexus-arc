@@ -289,7 +289,17 @@ class WorkspaceManager:
 
         try:
             subprocess.run(
-                ["git", "worktree", "remove", "--force", worktree_dir],
+                [
+                    "git",
+                    "-c",
+                    f"safe.directory={base_repo_path}",
+                    "-c",
+                    f"safe.directory={worktree_dir}",
+                    "worktree",
+                    "remove",
+                    "--force",
+                    worktree_dir,
+                ],
                 cwd=base_repo_path,
                 check=True,
                 capture_output=True,

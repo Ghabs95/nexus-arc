@@ -131,7 +131,28 @@ class WorkflowPolicyPlugin:
         resolver = self._callback("resolve_git_dir")
         if not resolver:
             return None
-        return resolver(project_name)
+        try:
+            value = resolver(project_name=project_name)
+        except TypeError:
+            value = resolver(project_name)
+        resolved = str(value or "").strip()
+        return resolved or None
+
+    def _resolve_git_dirs(self, project_name: str) -> dict[str, str]:
+        resolver = self._callback("resolve_git_dirs")
+        if not resolver:
+            return {}
+        try:
+            value = resolver(project_name=project_name)
+        except TypeError:
+            value = resolver(project_name)
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(repo_name): str(path)
+            for repo_name, path in value.items()
+            if str(repo_name).strip() and str(path).strip()
+        }
 
     def _create_pr(
         self,
@@ -176,18 +197,53 @@ class WorkflowPolicyPlugin:
         branch = str(value or "").strip()
         return branch or None
 
-    def _find_existing_pr(self, *, repo: str, issue_number: str) -> str | None:
+    @staticmethod
+    def _normalize_existing_pr(candidate: Any) -> dict[str, str] | None:
+        if not candidate:
+            return None
+        if isinstance(candidate, dict):
+            url = str(candidate.get("url") or "").strip()
+            if not url:
+                return None
+            return {
+                "url": url,
+                "state": str(candidate.get("state") or "").strip().lower(),
+            }
+        url = str(getattr(candidate, "url", "") or "").strip()
+        if url:
+            return {
+                "url": url,
+                "state": str(getattr(candidate, "state", "") or "").strip().lower(),
+            }
+        raw = str(candidate or "").strip()
+        if not raw:
+            return None
+        return {"url": raw, "state": ""}
+
+    def _find_existing_pr(self, *, repo: str, issue_number: str) -> dict[str, str] | None:
+        detail_finder = self._callback("find_existing_pr_details")
+        if detail_finder:
+            try:
+                details = self._normalize_existing_pr(
+                    detail_finder(repo=repo, issue_number=str(issue_number))
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Error finding existing PR details for issue #%s: %s", issue_number, exc
+                )
+                details = None
+            if details:
+                return details
+
         finder = self._callback("find_existing_pr")
         if not finder:
             return None
 
         try:
-            pr_link = finder(repo=repo, issue_number=str(issue_number))
+            return self._normalize_existing_pr(finder(repo=repo, issue_number=str(issue_number)))
         except Exception as exc:
             logger.warning("Error finding existing PR for issue #%s: %s", issue_number, exc)
             return None
-
-        return str(pr_link) if pr_link else None
 
     def _close_issue(
         self,
@@ -367,6 +423,7 @@ class WorkflowPolicyPlugin:
         repo: str,
         last_agent: str,
         project_name: str,
+        emit_notifications: bool = True,
     ) -> dict[str, Any]:
         """Finalize workflow and return outcome summary."""
         result: dict[str, Any] = {
@@ -377,20 +434,14 @@ class WorkflowPolicyPlugin:
             "blocking_reasons": [],
         }
         git_dirs_by_repo: dict[str, str] = {}
+        has_open_pr = False
+        has_terminal_existing_pr = False
 
         if project_name:
-            resolve_many = self._callback("resolve_git_dirs")
-            if resolve_many:
-                try:
-                    resolved = resolve_many(project_name)
-                    if isinstance(resolved, dict):
-                        git_dirs_by_repo = {
-                            str(repo_name): str(path)
-                            for repo_name, path in resolved.items()
-                            if repo_name and path
-                        }
-                except Exception as exc:
-                    logger.warning("Error resolving git dirs for project %s: %s", project_name, exc)
+            try:
+                git_dirs_by_repo = self._resolve_git_dirs(project_name)
+            except Exception as exc:
+                logger.warning("Error resolving git dirs for project %s: %s", project_name, exc)
 
             if not git_dirs_by_repo:
                 single_dir = self._resolve_git_dir(project_name)
@@ -404,10 +455,12 @@ class WorkflowPolicyPlugin:
                     project_name=project_name,
                     repo=target_repo,
                 )
-                existing_pr_url = self._find_existing_pr(
+                existing_pr = self._find_existing_pr(
                     repo=target_repo, issue_number=issue_number
                 )
-                if existing_pr_url:
+                if existing_pr:
+                    existing_pr_url = str(existing_pr.get("url") or "").strip()
+                    existing_pr_state = str(existing_pr.get("state") or "").strip().lower()
                     if git_dirs_by_repo.get(target_repo):
                         self._sync_existing_pr_changes(
                             repo=target_repo,
@@ -427,6 +480,10 @@ class WorkflowPolicyPlugin:
                     )
                     if is_valid_diff:
                         result["pr_urls"].append(existing_pr_url)
+                        if existing_pr_state and existing_pr_state not in {"open", "opened"}:
+                            has_terminal_existing_pr = True
+                        else:
+                            has_open_pr = True
                     else:
                         result["blocking_reasons"].append(
                             validation_reason
@@ -459,6 +516,7 @@ class WorkflowPolicyPlugin:
                         )
                         if is_valid_diff:
                             result["pr_urls"].append(created_pr_url)
+                            has_open_pr = True
                         else:
                             result["blocking_reasons"].append(
                                 validation_reason
@@ -472,11 +530,6 @@ class WorkflowPolicyPlugin:
                         exc,
                     )
 
-        for git_dir in set(git_dirs_by_repo.values()):
-            if not git_dir:
-                continue
-            self._cleanup_worktree(repo_dir=git_dir, issue_number=issue_number)
-
         if not result["pr_urls"]:
             result["blocking_reasons"].append(
                 "No non-empty PR/MR diff found in target repos for this workflow."
@@ -484,35 +537,50 @@ class WorkflowPolicyPlugin:
 
         if result["blocking_reasons"]:
             result["finalization_blocked"] = True
+            if emit_notifications:
+                try:
+                    self._notify_finalization_blocked(
+                        repo=repo,
+                        issue_number=issue_number,
+                        project_name=project_name,
+                        reasons=[str(item) for item in result.get("blocking_reasons", [])],
+                    )
+                    result["notification_sent"] = self._callback("send_notification") is not None
+                except Exception as exc:
+                    logger.warning(
+                        "Error sending finalization-blocked notification for issue #%s: %s",
+                        issue_number,
+                        exc,
+                    )
+            return result
+
+        if has_terminal_existing_pr and not has_open_pr:
+            result["issue_closed"] = self._close_issue(
+                repo=repo,
+                issue_number=issue_number,
+                last_agent=last_agent,
+                pr_urls=result.get("pr_urls", []),
+            )
+
+        for git_dir in set(git_dirs_by_repo.values()):
+            if not git_dir:
+                continue
+            self._cleanup_worktree(repo_dir=git_dir, issue_number=issue_number)
+
+        if emit_notifications:
             try:
-                self._notify_finalization_blocked(
+                self._notify(
                     repo=repo,
                     issue_number=issue_number,
+                    last_agent=last_agent,
                     project_name=project_name,
-                    reasons=[str(item) for item in result.get("blocking_reasons", [])],
+                    pr_urls=result.get("pr_urls", []),
                 )
                 result["notification_sent"] = self._callback("send_notification") is not None
             except Exception as exc:
                 logger.warning(
-                    "Error sending finalization-blocked notification for issue #%s: %s",
-                    issue_number,
-                    exc,
+                    "Error sending finalization notification for issue #%s: %s", issue_number, exc
                 )
-            return result
-
-        try:
-            self._notify(
-                repo=repo,
-                issue_number=issue_number,
-                last_agent=last_agent,
-                project_name=project_name,
-                pr_urls=result.get("pr_urls", []),
-            )
-            result["notification_sent"] = self._callback("send_notification") is not None
-        except Exception as exc:
-            logger.warning(
-                "Error sending finalization notification for issue #%s: %s", issue_number, exc
-            )
 
         return result
 

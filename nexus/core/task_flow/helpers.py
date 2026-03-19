@@ -7,7 +7,11 @@ import logging
 from nexus.adapters.git.utils import build_issue_url
 from nexus.core.config import BASE_DIR, NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG, get_repo_branch
 from nexus.core.config import get_tasks_active_dir, get_tasks_closed_dir
-from nexus.core.inbox.inbox_repo_path_service import resolve_git_dir, resolve_git_dirs
+from nexus.core.inbox.inbox_repo_path_service import (
+    resolve_git_dir,
+    resolve_git_dir_for_repo,
+    resolve_git_dirs,
+)
 from nexus.core.inbox.inbox_sop_naming_service import get_sop_tier_for_task
 from nexus.core.integrations.notifications import send_notification
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
@@ -17,6 +21,7 @@ from nexus.core.issue_finalize import (
     create_pr_from_changes as _create_pr_from_changes,
     finalize_workflow as _finalize_workflow_core,
     find_existing_pr as _find_existing_pr,
+    find_existing_pr_details as _find_existing_pr_details,
     sync_existing_pr_changes as _sync_existing_pr_changes,
     verify_workflow_terminal_before_finalize as _verify_workflow_terminal_before_finalize,
 )
@@ -120,7 +125,14 @@ def get_sop_tier(task_type: str, title: str | None = None, body: str | None = No
     )
 
 
-def finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: str) -> None:
+def finalize_workflow(
+    issue_num: str,
+    repo: str,
+    last_agent: str,
+    project_name: str,
+    *,
+    emit_notifications: bool = True,
+) -> dict:
     """Finalize workflow with PR/issue close/archive semantics."""
 
     def _notify(message: str) -> None:
@@ -129,18 +141,38 @@ def finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: 
         except Exception:
             logger.debug("workflow finalize notification failed", exc_info=True)
 
-    _finalize_workflow_core(
+    def _resolve_git_dir_for_project(project_name_arg: str) -> str | None:
+        return resolve_git_dir(
+            project_name=str(project_name_arg),
+            project_config=PROJECT_CONFIG,
+            base_dir=BASE_DIR,
+        )
+
+    def _resolve_git_dirs_for_project(project_name_arg: str) -> dict[str, str]:
+        return resolve_git_dirs(
+            project_name=str(project_name_arg),
+            get_repos=lambda name: list(((PROJECT_CONFIG.get(str(name), {}) or {}).get("git_repos") or [])),
+            resolve_git_dir_for_repo=lambda name, repo_name: resolve_git_dir_for_repo(
+                project_name=str(name),
+                repo_name=str(repo_name),
+                project_config=PROJECT_CONFIG,
+                base_dir=BASE_DIR,
+            ),
+        )
+
+    return _finalize_workflow_core(
         issue_num=str(issue_num),
         repo=repo,
         last_agent=last_agent,
         project_name=project_name,
+        emit_notifications=emit_notifications,
         logger=logger,
         get_workflow_state_plugin=get_workflow_state_plugin,
         workflow_state_plugin_kwargs=_WORKFLOW_STATE_PLUGIN_KWARGS,
         verify_workflow_terminal_before_finalize_fn=_verify_workflow_terminal_before_finalize,
         get_workflow_policy_plugin=get_workflow_policy_plugin,
-        resolve_git_dir=resolve_git_dir,
-        resolve_git_dirs=resolve_git_dirs,
+        resolve_git_dir=_resolve_git_dir_for_project,
+        resolve_git_dirs=_resolve_git_dirs_for_project,
         create_pr_from_changes_fn=lambda **kwargs: _create_pr_from_changes(
             project_name=project_name,
             repo=kwargs["repo"],
@@ -161,6 +193,16 @@ def finalize_workflow(issue_num: str, repo: str, last_agent: str, project_name: 
             str(kwargs.get("repo", "")),
         ),
         find_existing_pr_fn=lambda **kwargs: _find_existing_pr(
+            project_name=project_name,
+            repo=kwargs["repo"],
+            issue_number=str(kwargs["issue_number"]),
+            token_override=_resolve_issue_requester_token(
+                project_name=project_name,
+                repo=str(kwargs["repo"]),
+                issue_number=str(kwargs["issue_number"]),
+            ),
+        ),
+        find_existing_pr_details_fn=lambda **kwargs: _find_existing_pr_details(
             project_name=project_name,
             repo=kwargs["repo"],
             issue_number=str(kwargs["issue_number"]),

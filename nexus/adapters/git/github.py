@@ -128,19 +128,24 @@ class GitHubPlatform(GitPlatform):
             re.IGNORECASE,
         )
 
-        # Prefer direct open-PR scanning over Search API to avoid index lag.
-        try:
-            pulls = await self._get(f"repos/{self.repo}/pulls?state=open&per_page=100")
-            linked_open_prs: list[PullRequest] = []
+        async def _scan_pulls(state: str) -> list[PullRequest]:
+            pulls = await self._get(f"repos/{self.repo}/pulls?state={state}&per_page=100")
+            linked_prs: list[PullRequest] = []
             for item in pulls if isinstance(pulls, list) else []:
                 title = str(item.get("title") or "")
                 body = str(item.get("body") or "")
                 if issue_ref_pattern.search(f"{title}\n{body}"):
-                    linked_open_prs.append(self._to_pr(item, linked_issues=[issue_token]))
-            if linked_open_prs:
-                return linked_open_prs
-        except RuntimeError:
-            pass
+                    linked_prs.append(self._to_pr(item, linked_issues=[issue_token]))
+            return linked_prs
+
+        # Prefer direct PR scans over Search API to avoid index lag.
+        for state in ("open", "closed"):
+            try:
+                linked_prs = await _scan_pulls(state)
+            except RuntimeError:
+                continue
+            if linked_prs:
+                return linked_prs
 
         query = urllib.parse.quote(f'repo:{self.repo} is:pr "#{issue_token}"')
         try:

@@ -128,6 +128,59 @@ def test_workflow_policy_finalize_workflow_reuses_existing_pr():
     assert captured["cleanup_called"] is True
 
 
+def test_workflow_policy_finalize_closes_issue_for_closed_existing_pr():
+    captured: dict[str, Any] = {
+        "closed_kwargs": None,
+        "cleanup_called": False,
+    }
+
+    def _resolve_git_dir(_project_name):
+        return "/tmp/repo"
+
+    def _find_existing_pr_details(**_kwargs):
+        return {
+            "url": "https://github.com/org/repo/pull/50",
+            "state": "closed",
+        }
+
+    def _validate_pr_non_empty_diff(**_kwargs):
+        return True, ""
+
+    def _close_issue(**kwargs):
+        captured["closed_kwargs"] = kwargs
+        return True
+
+    def _cleanup_worktree(**_kwargs):
+        captured["cleanup_called"] = True
+        return True
+
+    plugin = WorkflowPolicyPlugin(
+        {
+            "resolve_git_dir": _resolve_git_dir,
+            "find_existing_pr_details": _find_existing_pr_details,
+            "validate_pr_non_empty_diff": _validate_pr_non_empty_diff,
+            "close_issue": _close_issue,
+            "cleanup_worktree": _cleanup_worktree,
+        }
+    )
+
+    result = plugin.finalize_workflow(
+        issue_number="49",
+        repo="org/repo",
+        last_agent="writer",
+        project_name="nexus",
+    )
+
+    assert result["pr_urls"] == ["https://github.com/org/repo/pull/50"]
+    assert result["issue_closed"] is True
+    assert captured["closed_kwargs"] == {
+        "repo": "org/repo",
+        "issue_number": "49",
+        "comment": "✅ Workflow completed. All agent steps finished successfully.\nLast agent: `writer`\nPRs:\n- https://github.com/org/repo/pull/50",
+    }
+    assert captured["cleanup_called"] is True
+
+
 def test_workflow_policy_finalize_uses_resolved_base_branch():
     captured: dict[str, Any] = {"pr_kwargs": None}
 
@@ -165,6 +218,12 @@ def test_workflow_policy_finalize_cleans_worktree():
     def _resolve_git_dir(_project_name):
         return "/tmp/repo"
 
+    def _create_pr_from_changes(**_kwargs):
+        return "https://github.com/org/repo/pull/42"
+
+    def _validate_pr_non_empty_diff(**_kwargs):
+        return True, ""
+
     def _cleanup_worktree(**_kwargs):
         captured["cleanup_called"] = True
         return True
@@ -172,6 +231,8 @@ def test_workflow_policy_finalize_cleans_worktree():
     plugin = WorkflowPolicyPlugin(
         {
             "resolve_git_dir": _resolve_git_dir,
+            "create_pr_from_changes": _create_pr_from_changes,
+            "validate_pr_non_empty_diff": _validate_pr_non_empty_diff,
             "cleanup_worktree": _cleanup_worktree,
         }
     )
@@ -225,16 +286,23 @@ def test_workflow_policy_finalize_blocks_empty_existing_pr_diff():
 
 
 def test_workflow_policy_finalize_blocks_when_no_pr_urls_created():
+    captured: dict[str, Any] = {"cleanup_called": False}
+
     def _resolve_git_dir(_project_name):
         return "/tmp/repo"
 
     def _create_pr_from_changes(**_kwargs):
         return None
 
+    def _cleanup_worktree(**_kwargs):
+        captured["cleanup_called"] = True
+        return True
+
     plugin = WorkflowPolicyPlugin(
         {
             "resolve_git_dir": _resolve_git_dir,
             "create_pr_from_changes": _create_pr_from_changes,
+            "cleanup_worktree": _cleanup_worktree,
         }
     )
 
@@ -248,3 +316,96 @@ def test_workflow_policy_finalize_blocks_when_no_pr_urls_created():
     assert result["pr_urls"] == []
     assert result["finalization_blocked"] is True
     assert any("No non-empty PR/MR diff found" in item for item in result["blocking_reasons"])
+    assert captured["cleanup_called"] is False
+
+
+def test_workflow_policy_finalize_can_skip_blocked_notification():
+    captured: dict[str, Any] = {"message": None}
+
+    def _resolve_git_dir(_project_name):
+        return "/tmp/repo"
+
+    def _create_pr_from_changes(**_kwargs):
+        return None
+
+    def _send_notification(message):
+        captured["message"] = message
+        return True
+
+    plugin = WorkflowPolicyPlugin(
+        {
+            "resolve_git_dir": _resolve_git_dir,
+            "create_pr_from_changes": _create_pr_from_changes,
+            "send_notification": _send_notification,
+        }
+    )
+
+    result = plugin.finalize_workflow(
+        issue_number="52",
+        repo="acme/repo",
+        last_agent="deployer",
+        project_name="acme",
+        emit_notifications=False,
+    )
+
+    assert result["finalization_blocked"] is True
+    assert result["notification_sent"] is False
+    assert captured["message"] is None
+
+
+def test_workflow_policy_finalize_accepts_keyword_only_git_dir_resolver():
+    captured: dict[str, Any] = {"repo_dir": None}
+
+    def _resolve_git_dir(*, project_name):
+        assert project_name == "nexus"
+        return "/tmp/repo"
+
+    def _create_pr_from_changes(**kwargs):
+        captured["repo_dir"] = kwargs["repo_dir"]
+        return "https://github.com/org/repo/pull/77"
+
+    plugin = WorkflowPolicyPlugin(
+        {
+            "resolve_git_dir": _resolve_git_dir,
+            "create_pr_from_changes": _create_pr_from_changes,
+        }
+    )
+
+    result = plugin.finalize_workflow(
+        issue_number="77",
+        repo="org/repo",
+        last_agent="writer",
+        project_name="nexus",
+    )
+
+    assert result["pr_urls"] == ["https://github.com/org/repo/pull/77"]
+    assert captured["repo_dir"] == "/tmp/repo"
+
+
+def test_workflow_policy_finalize_accepts_keyword_only_git_dirs_resolver():
+    captured: dict[str, Any] = {"repo_dir": None}
+
+    def _resolve_git_dirs(*, project_name):
+        assert project_name == "nexus"
+        return {"org/repo": "/tmp/repo"}
+
+    def _create_pr_from_changes(**kwargs):
+        captured["repo_dir"] = kwargs["repo_dir"]
+        return "https://github.com/org/repo/pull/88"
+
+    plugin = WorkflowPolicyPlugin(
+        {
+            "resolve_git_dirs": _resolve_git_dirs,
+            "create_pr_from_changes": _create_pr_from_changes,
+        }
+    )
+
+    result = plugin.finalize_workflow(
+        issue_number="88",
+        repo="org/repo",
+        last_agent="writer",
+        project_name="nexus",
+    )
+
+    assert result["pr_urls"] == ["https://github.com/org/repo/pull/88"]
+    assert captured["repo_dir"] == "/tmp/repo"

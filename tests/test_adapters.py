@@ -6,6 +6,7 @@ extras installed.
 """
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from typing import Any, cast
@@ -380,6 +381,46 @@ class TestGitHubPlatform:
         assert second_call.startswith("search/issues?q=")
         assert third_call == "repos/owner/repo/pulls/77"
 
+    def test_search_linked_prs_finds_closed_pull_before_search_api(self):
+        platform = self._make_platform()
+        open_pulls = [
+            {
+                "id": 41,
+                "number": 41,
+                "title": "chore: unrelated",
+                "body": "No linked issue in body",
+                "state": "open",
+                "head": {"ref": "chore/unrelated"},
+                "base": {"ref": "main"},
+                "html_url": "https://github.com/owner/repo/pull/41",
+            }
+        ]
+        closed_pulls = [
+            {
+                "id": 120,
+                "number": 120,
+                "title": "feat: design social media marketing workflow",
+                "body": "## Related Issue\nCloses #119",
+                "state": "closed",
+                "head": {"ref": "feat/design-social-marketing-workflow"},
+                "base": {"ref": "main"},
+                "html_url": "https://github.com/owner/repo/pull/120",
+            }
+        ]
+        with patch.object(
+            platform,
+            "_get",
+            new=AsyncMock(side_effect=[open_pulls, closed_pulls]),
+        ) as mock_get:
+            prs = asyncio.run(platform.search_linked_prs("119"))
+
+        assert len(prs) == 1
+        assert prs[0].number == 120
+        assert prs[0].state == "closed"
+        assert mock_get.await_count == 2
+        assert mock_get.await_args_list[0].args[0] == "repos/owner/repo/pulls?state=open&per_page=100"
+        assert mock_get.await_args_list[1].args[0] == "repos/owner/repo/pulls?state=closed&per_page=100"
+
 
 # ---------------------------------------------------------------------------
 # GitHub CLI Platform
@@ -471,6 +512,38 @@ class TestGitHubCLIPlatform:
         assert pr.number == 0
         assert pr.url == "https://github.com/owner/repo/pull/42"
         assert ["git", "checkout", "-b", "nexus/issue-42"] not in seen_commands
+
+    def test_search_linked_prs_falls_back_to_all_states_search(self):
+        platform = self._make_platform()
+        seen_commands: list[list[str]] = []
+
+        def _run(args, timeout=None):
+            del timeout
+            seen_commands.append(list(args))
+            if args[:3] == ["pr", "list", "--state"] and args[3] == "open":
+                return "[]"
+            if args[:3] == ["pr", "list", "--state"] and args[3] == "all":
+                return json.dumps(
+                    [
+                        {
+                            "number": 77,
+                            "title": "fix: resolve #113",
+                            "state": "closed",
+                            "headRefName": "fix/issue-113",
+                            "baseRefName": "main",
+                            "url": "https://github.com/owner/repo/pull/77",
+                        }
+                    ]
+                )
+            raise AssertionError(f"Unexpected gh command: {args}")
+
+        with patch.object(platform, "_run_gh_command", side_effect=_run):
+            prs = asyncio.run(platform.search_linked_prs("113"))
+
+        assert len(prs) == 1
+        assert prs[0].number == 77
+        assert prs[0].state == "closed"
+        assert seen_commands[1][:4] == ["pr", "list", "--state", "all"]
 
 
 # ---------------------------------------------------------------------------

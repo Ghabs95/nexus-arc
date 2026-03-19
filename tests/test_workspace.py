@@ -301,6 +301,27 @@ def test_sanitize_worktree_helper_scripts_removes_known_files(tmp_path):
 
 
 class TestCleanupWorktreeSafety:
+    @mock.patch("nexus.core.workspace.subprocess.run")
+    def test_cleanup_worktree_passes_safe_directory_config(self, mock_run, tmp_path):
+        issue_dir = tmp_path / ".nexus" / "worktrees" / "issue-42"
+        issue_dir.mkdir(parents=True)
+        mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+
+        ok = WorkspaceManager.cleanup_worktree(str(tmp_path), "42")
+
+        assert ok is True
+        assert mock_run.call_args[0][0] == [
+            "git",
+            "-c",
+            f"safe.directory={tmp_path}",
+            "-c",
+            f"safe.directory={issue_dir}",
+            "worktree",
+            "remove",
+            "--force",
+            str(issue_dir),
+        ]
+
     @mock.patch("nexus.core.workspace.WorkspaceManager.cleanup_worktree", return_value=True)
     def test_cleanup_worktree_safe_skips_when_agent_running(self, mock_cleanup, tmp_path):
         issue_dir = tmp_path / ".nexus" / "worktrees" / "issue-42"
