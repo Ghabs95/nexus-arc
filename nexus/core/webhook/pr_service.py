@@ -3,6 +3,8 @@
 import re
 from typing import Any
 
+_PR_MERGE_CLOSE_TERMINAL_STEP_STATUSES = frozenset({"completed", "skipped"})
+
 
 def _extract_issue_numbers_from_text(text: str) -> list[str]:
     if not text:
@@ -16,6 +18,32 @@ def _extract_issue_numbers_from_text(text: str) -> list[str]:
         seen.add(match)
         ordered.append(match)
     return ordered
+
+
+def evaluate_issue_close_for_pr_merge(
+    workflow_status: dict[str, Any] | None,
+) -> tuple[bool, str]:
+    """Return whether a merged PR may auto-close the linked issue."""
+    if not isinstance(workflow_status, dict) or not workflow_status:
+        return False, "workflow status unavailable"
+
+    workflow_state = str(workflow_status.get("state", "") or "").strip().lower()
+    if workflow_state != "completed":
+        return False, f"workflow state is '{workflow_state or 'unknown'}'"
+
+    steps = workflow_status.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return False, "workflow steps unavailable"
+
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            return False, f"workflow step {index} metadata unavailable"
+        step_name = str(step.get("name", "") or f"step-{index}").strip() or f"step-{index}"
+        step_status = str(step.get("status", "") or "").strip().lower()
+        if step_status not in _PR_MERGE_CLOSE_TERMINAL_STEP_STATUSES:
+            return False, f"workflow step '{step_name}' is '{step_status or 'unknown'}'"
+
+    return True, "workflow completed"
 
 
 def handle_pull_request_event(

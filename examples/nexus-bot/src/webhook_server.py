@@ -90,7 +90,10 @@ from nexus.core.webhook.issue_service import handle_issue_opened_event as _handl
 from nexus.core.webhook.comment_service import (
     handle_issue_comment_event as _handle_issue_comment_event,
 )
-from nexus.core.webhook.pr_service import handle_pull_request_event as _handle_pull_request_event
+from nexus.core.webhook.pr_service import (
+    evaluate_issue_close_for_pr_merge,
+    handle_pull_request_event as _handle_pull_request_event,
+)
 from nexus.core.webhook.pr_review_service import (
     handle_pull_request_review_event as _handle_pull_request_review_event,
 )
@@ -616,6 +619,20 @@ def _cleanup_worktree_for_issue(repo_name: str, issue_number: str) -> bool:
 def _close_issue_for_pr_merge(repo_name: str, issue_number: str) -> bool:
     project_key = _repo_to_project_key(repo_name)
     try:
+        workflow_plugin = _get_runtime_workflow_plugin()
+        workflow_status = None
+        if workflow_plugin and hasattr(workflow_plugin, "get_workflow_status"):
+            workflow_status = asyncio.run(workflow_plugin.get_workflow_status(str(issue_number)))
+        allowed, reason = evaluate_issue_close_for_pr_merge(workflow_status)
+        if not allowed:
+            logger.info(
+                "Skipping webhook PR-merge issue close for issue #%s in %s: %s",
+                issue_number,
+                repo_name,
+                reason,
+            )
+            return False
+
         platform = get_git_platform(repo_name, project_name=project_key)
         return bool(
             asyncio.run(

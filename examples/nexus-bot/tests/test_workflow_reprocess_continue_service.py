@@ -357,3 +357,44 @@ async def test_continue_service_reconciles_before_launch_when_ready(monkeypatch)
     assert calls["reconcile"] == 1
     assert calls["prepare"] == 2
     assert calls["launched_agent"] == "developer"
+
+
+@pytest.mark.asyncio
+async def test_continue_service_stops_when_recovered_state_waits_on_human(monkeypatch):
+    ctx = _Ctx(args=["nexus", "119"])
+
+    async def _ensure(_ctx, _deps, _command):
+        return "nexus", "119", []
+
+    async def _status_outcome(_ctx, _deps, *, issue_num, continue_ctx, finalize_workflow):
+        assert issue_num == "119"
+        assert continue_ctx["status"] == "awaiting_human"
+        await _ctx.reply_text(continue_ctx["message"])
+        return True
+
+    monkeypatch.setattr(continue_service, "_ensure_project_issue_for_command", _ensure)
+    monkeypatch.setattr(
+        continue_service,
+        "_prepare_continue_context",
+        lambda *_args, **_kwargs: {
+            "status": "awaiting_human",
+            "message": "⏸️ Issue #119 is waiting for human action, not another agent launch.",
+        },
+    )
+    monkeypatch.setattr(continue_service, "_handle_continue_status_outcome", _status_outcome)
+
+    async def _unexpected(*_args, **_kwargs):
+        raise AssertionError("launch/reset should not run when waiting on human")
+
+    monkeypatch.setattr(continue_service, "_maybe_reset_continue_workflow_position", _unexpected)
+    monkeypatch.setattr(continue_service, "_launch_continue_agent", _unexpected)
+
+    deps = SimpleNamespace(
+        logger=logging.getLogger("test"),
+        allowed_user_ids=[],
+        requester_context_builder=None,
+    )
+
+    await handle_continue(ctx, deps, finalize_workflow=lambda *a, **k: None)
+
+    assert ctx.replies == ["⏸️ Issue #119 is waiting for human action, not another agent launch."]

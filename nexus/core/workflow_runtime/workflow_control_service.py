@@ -34,6 +34,7 @@ _TERMINAL_AGENT_REFERENCES = frozenset(
         "",
     }
 )
+_NON_LAUNCHABLE_AGENT_REFERENCES = frozenset({"human"})
 
 
 def _run_coro_sync(coro_factory):
@@ -108,12 +109,21 @@ def prepare_continue_context(
 ) -> dict[str, Any]:
     """Build context for /continue and return either a terminal state or launch payload."""
 
-    def _normalize_routable_agent(value: Any) -> str | None:
+    def _normalized_agent_text(value: Any) -> str:
         normalized = normalize_agent_reference(value)
-        if not normalized:
+        return str(normalized or "").strip().lower()
+
+    def _is_non_launchable_agent(value: Any) -> bool:
+        return _normalized_agent_text(value) in _NON_LAUNCHABLE_AGENT_REFERENCES
+
+    def _normalize_routable_agent(value: Any) -> str | None:
+        normalized_text = _normalized_agent_text(value)
+        if not normalized_text:
             return None
-        normalized_text = str(normalized).strip()
-        if normalized_text.lower() in _TERMINAL_AGENT_REFERENCES:
+        if (
+            normalized_text in _TERMINAL_AGENT_REFERENCES
+            or normalized_text in _NON_LAUNCHABLE_AGENT_REFERENCES
+        ):
             return None
         return normalized_text
 
@@ -190,6 +200,17 @@ def prepare_continue_context(
     if not forced_agent and filtered_rest and _looks_like_agent_ref(filtered_rest[0]):
         forced_agent = filtered_rest[0]
         filtered_rest = filtered_rest[1:]
+
+    if forced_agent and _is_non_launchable_agent(forced_agent):
+        normalized_forced = _normalized_agent_text(forced_agent)
+        return {
+            "status": "error",
+            "message": (
+                f"⚠️ `/continue` cannot launch `{normalized_forced}` because it is a human handoff, "
+                "not a runnable agent.\n\n"
+                f"Choose a real agent with `/continue {project_key} {issue_num} from:<agent>` instead."
+            ),
+        }
 
     continuation_prompt = (
         " ".join(filtered_rest) if filtered_rest else "Please continue with the next step."
@@ -329,6 +350,22 @@ def prepare_continue_context(
     if details.get("state", "").lower() == "closed":
         return {"status": "error", "message": f"⚠️ Issue #{issue_num} is closed."}
 
+    def _awaiting_human_status(last_agent: Any) -> dict[str, Any]:
+        resumed_from = str(last_agent or "").strip().lower() or None
+        last_agent_text = resumed_from or "unknown"
+        return {
+            "status": "awaiting_human",
+            "message": (
+                f"⏸️ Issue #{issue_num} is waiting for human action, not another agent launch.\n"
+                f"Last agent: `{last_agent_text}`\n\n"
+                "Use the workflow approval or review flow to proceed, "
+                f"or run `/continue {project_key} {issue_num} from:<agent>` to force a specific agent."
+            ),
+            "repo": repo,
+            "resumed_from": resumed_from,
+            "project_name": project_name or project_key,
+        }
+
     agent_type = None
     agent_from_completion = False
     resumed_from = None
@@ -346,6 +383,8 @@ def prepare_continue_context(
                     resumed_from = latest.summary.agent_type
                 else:
                     raw_next = latest.summary.next_agent
+                    if _is_non_launchable_agent(raw_next):
+                        return _awaiting_human_status(latest.summary.agent_type)
                     normalized = _normalize_routable_agent(raw_next)
                     if normalized:
                         agent_type = normalized
@@ -378,6 +417,8 @@ def prepare_continue_context(
             ):
                 workflow_already_done = True
                 resumed_from = latest_completion.get("agent_type") or resumed_from
+            elif _is_non_launchable_agent(latest_completion.get("next_agent")):
+                return _awaiting_human_status(latest_completion.get("agent_type"))
             elif has_next_agent:
                 agent_type = normalized
                 agent_from_completion = True
@@ -415,6 +456,8 @@ def prepare_continue_context(
     if not agent_type:
         agent_type_match = re.search(r"\*\*Agent Type:\*\*\s*(.+)", content)
         raw_agent_type = agent_type_match.group(1).strip() if agent_type_match else "triage"
+        if _is_non_launchable_agent(raw_agent_type):
+            return _awaiting_human_status(resumed_from)
         agent_type = _normalize_routable_agent(raw_agent_type) or "triage"
         if raw_agent_type != agent_type:
             logger.warning(
@@ -432,6 +475,11 @@ def prepare_continue_context(
     normalized_expected = (
         normalize_agent_reference(expected_running_agent) if expected_running_agent else None
     )
+    if (
+        not forced_agent
+        and str(normalized_expected or "").strip().lower() in _NON_LAUNCHABLE_AGENT_REFERENCES
+    ):
+        return _awaiting_human_status(resumed_from or normalized_expected)
     normalized_requested = normalize_agent_reference(agent_type) if agent_type else None
     if (
         not forced_agent

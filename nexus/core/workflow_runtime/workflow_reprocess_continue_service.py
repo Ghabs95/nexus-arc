@@ -454,7 +454,13 @@ async def _handle_continue_status_outcome(
     finalize_workflow: Callable[..., Any],
 ) -> bool:
     status = str(continue_ctx.get("status") or "")
-    if status in {"error", "already_running", "mismatch", "workflow_done_closed"}:
+    if status in {
+        "error",
+        "already_running",
+        "mismatch",
+        "workflow_done_closed",
+        "awaiting_human",
+    }:
         await ctx.reply_text(continue_ctx["message"])
         return True
 
@@ -535,6 +541,11 @@ async def _maybe_reset_continue_workflow_position(
                 raw_agent_type,
             )
         return False
+    if agent_type == "human":
+        await ctx.reply_text(
+            f"⏸️ Issue #{issue_num} is waiting for human action, not another agent launch."
+        )
+        return False
 
     reset_ok = False
     if workflow_plugin:
@@ -558,6 +569,12 @@ async def _maybe_reset_continue_workflow_position(
 async def _launch_continue_agent(
     ctx: Any, deps: Any, *, issue_num: Any, continue_ctx: dict[str, Any]
 ) -> None:
+    if str(continue_ctx.get("agent_type") or "").strip().lower() == "human":
+        await ctx.reply_text(
+            f"⏸️ Issue #{issue_num} is waiting for human action, not another agent launch."
+        )
+        return
+
     async def _finalize_progress_message(message_id: Any, text: str) -> None:
         try:
             await ctx.edit_message_text(
