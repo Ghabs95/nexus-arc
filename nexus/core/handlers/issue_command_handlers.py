@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,6 +46,8 @@ class IssueHandlerDeps:
     default_issue_url: Callable[[str], str]
     get_project_label: Callable[[str], str]
     track_short_projects: list[str]
+    create_planning_task: Callable[..., Awaitable[dict[str, Any]]]
+    requester_context_builder: Callable[[Any], dict[str, str]] | None = None
 
 
 def _resolve_requester_nexus_id(ctx: InteractiveContext, deps: IssueHandlerDeps) -> str | None:
@@ -228,70 +231,61 @@ async def plan_handler(ctx: InteractiveContext, deps: IssueHandlerDeps) -> None:
         log_unauthorized_access(getattr(deps, "logger", None), int(ctx.user_id))
         return
 
+    project_keys = [
+        str(key).strip().lower()
+        for key, value in (deps.project_config or {}).items()
+        if isinstance(value, dict) and str(key).strip().lower() != "system_operations"
+    ]
+
     if not ctx.args:
-        await deps.prompt_project_selection(ctx, "plan")
+        usage = "Usage: /plan <project> <planning request>"
+        if len(project_keys) == 1:
+            usage = f"Usage: /plan <planning request>\nDefault project: {project_keys[0]}"
+        await ctx.reply_text(usage)
         return
 
-    project_key, issue_number, _ = await deps.ensure_project_issue(ctx, "plan")
-    if not project_key:
+    request_tokens = [str(token or "").strip() for token in list(ctx.args or []) if str(token or "").strip()]
+    project_key: str | None = None
+    if request_tokens:
+        first_arg = request_tokens[0].lower()
+        if first_arg in project_keys:
+            project_key = first_arg
+            request_tokens = request_tokens[1:]
+        elif len(project_keys) == 1:
+            project_key = project_keys[0]
+
+    request_text = " ".join(request_tokens).strip()
+    if not project_key or not request_text:
+        usage = "Usage: /plan <project> <planning request>"
+        if len(project_keys) == 1:
+            usage = f"Usage: /plan <planning request>\nDefault project: {project_keys[0]}"
+        await ctx.reply_text(usage)
         return
 
-    repo = deps.project_repo(project_key)
-    issue_url = deps.project_issue_url(project_key, issue_number)
+    requester_context = None
+    if callable(deps.requester_context_builder):
+        try:
+            requester_context = deps.requester_context_builder(int(str(ctx.user_id)))
+        except Exception:
+            requester_context = None
+    if not isinstance(requester_context, dict):
+        requester_context = {}
 
-    msg_id = await ctx.reply_text(
-        f"🔔 Requesting Plan formulation for issue #{issue_number}..."
+    trigger_message_id = ""
+    if hasattr(ctx.raw_event, "message_id"):
+        trigger_message_id = str(ctx.raw_event.message_id or "")
+    elif hasattr(ctx.raw_event, "message") and hasattr(ctx.raw_event.message, "message_id"):
+        trigger_message_id = str(ctx.raw_event.message.message_id or "")
+    if not trigger_message_id:
+        trigger_message_id = f"plan-{int(time.time() * 1000)}"
+
+    result = await deps.create_planning_task(
+        text=request_text,
+        project_key=project_key,
+        message_id=trigger_message_id,
+        requester_context=requester_context,
     )
-
-    try:
-        plugin = _resolve_direct_issue_plugin(
-            deps,
-            repo,
-            _resolve_requester_nexus_id(ctx, deps),
-        )
-        if not plugin:
-            await ctx.edit_message_text(
-                message_id=msg_id,
-                text="❌ Failed to initialize Git issue plugin",
-            )
-            return
-
-        plugin.ensure_label(
-            "agent:plan-requested",
-            "B4A7E5",
-            "Requested Agent Planning",
-        )
-        if not plugin.add_label(issue_number, "agent:plan-requested"):
-            await ctx.edit_message_text(
-                message_id=msg_id,
-                text=f"❌ Failed to request plan for issue #{issue_number}.",
-            )
-            return
-
-        comment = (
-            "🤖 **Plan Request** — A technical plan has been requested via chat command.\n\n"
-            f"Issue: {issue_url}"
-        )
-
-        if not plugin.add_comment(issue_number, comment):
-            await ctx.edit_message_text(
-                message_id=msg_id,
-                text=f"❌ Failed to request plan for issue #{issue_number}.",
-            )
-            return
-
-        await ctx.edit_message_text(
-            message_id=msg_id,
-            text=(
-                f"✅ Requested technical plan for issue #{issue_number}. "
-                f"The planning agent will process this shortly.\n\n{issue_url}"
-            ),
-        )
-    except Exception as exc:
-        await ctx.edit_message_text(
-            message_id=msg_id,
-            text=f"❌ Failed to request plan for issue #{issue_number}.\n\nError: {exc}",
-        )
+    await ctx.reply_text(result.get("message", "⚠️ Failed to queue planning task."))
 
 
 async def prepare_handler(ctx: InteractiveContext, deps: IssueHandlerDeps) -> None:

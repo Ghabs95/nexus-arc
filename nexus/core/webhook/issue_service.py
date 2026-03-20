@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from nexus.core.execution_mode import infer_execution_mode_from_labels
+
 
 def _notify_lifecycle_dedup(
     notify_lifecycle,
@@ -83,6 +85,7 @@ def handle_issue_opened_event(
         }
 
     plan_requested = "agent:plan-requested" in issue_labels
+    execution_mode = infer_execution_mode_from_labels(issue_labels)
     if action not in {"opened", "labeled"}:
         return {"status": "ignored", "reason": f"action is {action}, not opened/labeled"}
     if action == "labeled" and not plan_requested:
@@ -244,7 +247,7 @@ def handle_issue_opened_event(
 **URL:** {issue_url}  
 **Repository:** {repo_name}  
 **Agent Type:** {agent_type}
-**Source:** webhook
+{f"**Execution Mode:** {execution_mode}\n" if execution_mode else ""}**Source:** webhook
 **Issue Number:** {issue_number}
 
 ## Description

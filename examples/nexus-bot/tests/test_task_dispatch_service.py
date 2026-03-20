@@ -297,3 +297,69 @@ def test_handle_new_task_passes_requester_context_to_refiner(tmp_path):
     assert captured["content"] == "Implement feature"
     assert captured["project_name"] == "proj-a"
     assert captured["requester_context"] == {"nexus_id": "nexus-42", "platform": "telegram"}
+
+
+def test_handle_new_task_honors_planning_metadata(tmp_path):
+    inbox_file = tmp_path / "feature_123.md"
+    inbox_file.write_text("placeholder")
+    active_dir = tmp_path / "active"
+    active_dir.mkdir()
+
+    captured: dict[str, Any] = {}
+
+    async def _create_workflow_for_issue(**_kwargs):
+        return "wf-1"
+
+    workflow_plugin = types.SimpleNamespace(create_workflow_for_issue=_create_workflow_for_issue)
+
+    async def _start_workflow(_workflow_id: str, _issue_number: str):
+        return True
+
+    def _create_issue(**kwargs):
+        captured["create_issue_kwargs"] = kwargs
+        return "https://github.com/acme/repo/issues/88"
+
+    def _invoke_ai_agent(**kwargs):
+        captured["invoke_ai_agent_kwargs"] = kwargs
+        return 1234, "copilot"
+
+    handle_new_task(
+        filepath=str(inbox_file),
+        content=(
+            "Plan the social workflow\n"
+            "**Task Name:** Nice feature\n"
+            "**Agent Type:** designer\n"
+            "**Execution Mode:** planning\n"
+            "**Issue Labels:** agent:plan-requested, custom:planning\n"
+        ),
+        task_type="feature",
+        project_name="proj-a",
+        project_root=str(tmp_path),
+        config={"workspace": "ws", "agents_dir": "agents"},
+        base_dir=str(tmp_path),
+        logger=MagicMock(),
+        emit_alert=MagicMock(),
+        get_repo_for_project=lambda _p: "acme/repo",
+        get_tasks_active_dir=lambda _root, _proj: str(active_dir),
+        refine_issue_content=lambda content, _p: content,
+        extract_inline_task_name=lambda _c: "Nice feature",
+        slugify=lambda _s: "nice-feature",
+        generate_issue_name=lambda _c, _p: "fallback-name",
+        get_sop_tier=lambda **kwargs: ("full", "SOP", "workflow:full"),
+        render_checklist_from_workflow=lambda _p, _t: "",
+        render_fallback_checklist=lambda _t: "- [ ] do thing",
+        create_issue=_create_issue,
+        rename_task_file_and_sync_issue_body=lambda **kwargs: kwargs["task_file_path"],
+        get_workflow_state_plugin=lambda **_kwargs: workflow_plugin,
+        workflow_state_plugin_kwargs={},
+        start_workflow=_start_workflow,
+        get_initial_agent_from_workflow=lambda _p: "triage",
+        invoke_ai_agent=_invoke_ai_agent,
+    )
+
+    assert captured["create_issue_kwargs"]["extra_labels"] == [
+        "agent:plan-requested",
+        "custom:planning",
+    ]
+    assert captured["invoke_ai_agent_kwargs"]["agent_type"] == "designer"
+    assert captured["invoke_ai_agent_kwargs"]["execution_mode"] == "planning"

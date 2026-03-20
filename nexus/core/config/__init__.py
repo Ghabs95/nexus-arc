@@ -298,6 +298,21 @@ def get_copilot_permissions(project: str = "nexus") -> dict:
     return {}
 
 
+def get_execution_mode_cli_config(project: str = "nexus") -> dict:
+    """Get execution-mode CLI overrides for a project."""
+    config = _get_project_config()
+
+    if project in config:
+        proj_config = config[project]
+        if isinstance(proj_config, dict) and "execution_mode_cli_config" in proj_config:
+            return proj_config["execution_mode_cli_config"]
+
+    if "execution_mode_cli_config" in config:
+        return config["execution_mode_cli_config"]
+
+    return {}
+
+
 def get_chat_agent_types(project: str = "nexus") -> list[str]:
     """Get ordered chat agent types for a project.
 
@@ -417,6 +432,7 @@ _model_profiles_cache = {}
 _profile_provider_priority_cache = {}
 _system_operations_cache = {}
 _copilot_permissions_cache = {}
+_execution_mode_cli_config_cache = {}
 
 
 class _LazyConfigWrapper:
@@ -478,6 +494,11 @@ COPILOT_PERMISSIONS = _LazyConfigWrapper(
     _copilot_permissions_cache,
     "nexus",
 )
+EXECUTION_MODE_CLI_CONFIG = _LazyConfigWrapper(
+    get_execution_mode_cli_config,
+    _execution_mode_cli_config_cache,
+    "nexus",
+)
 
 # Orchestrator configuration (lazy-loaded)
 _orchestrator_config_cache = {}
@@ -511,6 +532,8 @@ def _get_orchestrator_config():
             "system_operations_resolver": get_system_operations,
             "copilot_permissions": COPILOT_PERMISSIONS._ensure_loaded(),
             "copilot_permissions_resolver": get_copilot_permissions,
+            "execution_mode_cli_config": EXECUTION_MODE_CLI_CONFIG._ensure_loaded(),
+            "execution_mode_cli_config_resolver": get_execution_mode_cli_config,
             "chat_agent_types_resolver": get_chat_agent_types,
             "fallback_enabled": os.getenv("AI_FALLBACK_ENABLED", "true").lower() == "true",
             "rate_limit_ttl": int(os.getenv("AI_RATE_LIMIT_TTL", "3600")),
@@ -867,6 +890,7 @@ def validate_configuration():
                 "task_types",
                 "ai_tool_preferences",
                 "copilot_permissions",
+                "execution_mode_cli_config",
                 "system_operations",
                 "merge_queue",
                 "workflow_chains",

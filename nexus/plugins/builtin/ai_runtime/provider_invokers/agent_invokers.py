@@ -16,6 +16,46 @@ _PROVIDER_API_KEY_ENV: dict[str, tuple[str, ...]] = {
 }
 
 
+def merge_execution_mode_env(
+    *,
+    provider: str,
+    env: dict[str, str] | None = None,
+    execution_mode: str | None = None,
+    execution_mode_config: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    merged_env = dict(env or {})
+    normalized_mode = str(execution_mode or "").strip().lower()
+    if normalized_mode:
+        merged_env["NEXUS_EXECUTION_MODE"] = normalized_mode
+        merged_env[f"NEXUS_{str(provider or '').strip().upper()}_EXECUTION_MODE"] = normalized_mode
+
+    if isinstance(execution_mode_config, Mapping):
+        env_overrides = execution_mode_config.get("env")
+        if isinstance(env_overrides, Mapping):
+            for key, value in env_overrides.items():
+                key_text = str(key or "").strip()
+                if not key_text:
+                    continue
+                merged_env[key_text] = str(value or "")
+    return merged_env
+
+
+def resolve_execution_mode_cli_args(
+    execution_mode_config: Mapping[str, Any] | None,
+) -> list[str]:
+    if not isinstance(execution_mode_config, Mapping):
+        return []
+    raw_args = execution_mode_config.get("args")
+    if not isinstance(raw_args, list):
+        return []
+    args: list[str] = []
+    for value in raw_args:
+        text = str(value or "").strip()
+        if text:
+            args.append(text)
+    return args
+
+
 def resolve_cli_auth_mode(env: Mapping[str, Any] | None = None) -> str:
     raw = str((env or {}).get("NEXUS_CLI_AUTH_MODE") or os.getenv("NEXUS_CLI_AUTH_MODE", "account"))
     normalized = raw.strip().lower()
@@ -305,6 +345,8 @@ def invoke_copilot_agent_cli(
     issue_num: str | None = None,
     log_subdir: str | None = None,
     env: dict[str, str] | None = None,
+    execution_mode: str | None = None,
+    execution_mode_config: Mapping[str, Any] | None = None,
 ) -> int | None:
     if not check_tool_available(copilot_provider):
         raise tool_unavailable_error("Copilot not available")
@@ -331,12 +373,20 @@ def invoke_copilot_agent_cli(
         cmd.append("--allow-all-paths")
     if copilot_model and copilot_supports_model:
         cmd.extend(["--model", copilot_model])
+    cmd.extend(resolve_execution_mode_cli_args(execution_mode_config))
     log_path = _prepare_log_path(
         prefix="copilot",
         workspace_dir=workspace_dir,
         issue_num=issue_num,
         log_subdir=log_subdir,
         get_tasks_logs_dir=get_tasks_logs_dir,
+    )
+
+    merged_env = merge_execution_mode_env(
+        provider="copilot",
+        env=env,
+        execution_mode=execution_mode,
+        execution_mode_config=execution_mode_config,
     )
 
     logger.info("🤖 Launching Copilot CLI agent")
@@ -347,7 +397,7 @@ def invoke_copilot_agent_cli(
         process = _launch_process_with_log(
             cmd=cmd,
             workspace_dir=workspace_dir,
-            env=env,
+            env=merged_env,
             log_path=log_path,
             logger=logger,
             launched_message="🚀 Copilot launched (PID: %s)",
@@ -409,13 +459,20 @@ def invoke_gemini_agent_cli(
     issue_num: str | None = None,
     log_subdir: str | None = None,
     env: dict[str, str] | None = None,
+    execution_mode: str | None = None,
+    execution_mode_config: Mapping[str, Any] | None = None,
 ) -> int | None:
     if not check_tool_available(gemini_provider):
         raise tool_unavailable_error("Gemini CLI not available")
 
     provider_env, auth_mode = prepare_provider_cli_env(
         provider="gemini",
-        env=env,
+        env=merge_execution_mode_env(
+            provider="gemini",
+            env=env,
+            execution_mode=execution_mode,
+            execution_mode_config=execution_mode_config,
+        ),
         logger=logger,
     )
 
@@ -429,6 +486,7 @@ def invoke_gemini_agent_cli(
     ]
     if gemini_model:
         cmd.extend(["--model", gemini_model])
+    cmd.extend(resolve_execution_mode_cli_args(execution_mode_config))
 
     log_path = _prepare_log_path(
         prefix="gemini",

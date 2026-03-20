@@ -10,6 +10,7 @@ from nexus.core.config import (
     get_task_types,
     normalize_project_key,
 )
+from nexus.core.execution_mode import normalize_execution_mode
 from nexus.core.handlers.common_routing import extract_json_dict
 from nexus.core.inbox.inbox_routing_service import (
     process_inbox_task_request,
@@ -34,6 +35,9 @@ def _render_task_markdown(
     raw_text: str,
     requester_context: dict[str, Any] | None = None,
     attachments: list[Any] | None = None,
+    agent_type: str | None = None,
+    issue_labels: list[str] | None = None,
+    execution_mode: str | None = None,
 ) -> str:
     context = requester_context if isinstance(requester_context, dict) else {}
     requester_nexus_id = str(context.get("nexus_id") or "").strip()
@@ -50,6 +54,15 @@ def _render_task_markdown(
             filename = getattr(att, "filename", None) or f"image_{i + 1}"
             lines.append(f"- `{filename}` (file_id: `{file_id}`)")
         attachments_block = "\n## Attachments\n" + "\n".join(lines) + "\n"
+    agent_type_block = f"**Agent Type:** {agent_type}\n" if str(agent_type or "").strip() else ""
+    normalized_execution_mode = normalize_execution_mode(execution_mode)
+    execution_mode_block = (
+        f"**Execution Mode:** {normalized_execution_mode}\n" if normalized_execution_mode else ""
+    )
+    issue_labels_block = ""
+    normalized_issue_labels = [str(label).strip() for label in issue_labels or [] if str(label).strip()]
+    if normalized_issue_labels:
+        issue_labels_block = f"**Issue Labels:** {', '.join(normalized_issue_labels)}\n"
     return (
         f"# {TYPES.get(task_type, 'Task')}\n"
         f"**Project:** {PROJECTS.get(project, project)}\n"
@@ -59,6 +72,9 @@ def _render_task_markdown(
         f"{content}\n\n"
         f"{attachments_block}"
         f"---\n"
+        f"{agent_type_block}"
+        f"{execution_mode_block}"
+        f"{issue_labels_block}"
         f"**Source:** inbox\n"
         f"{requester_block}"
         f"---\n"
@@ -106,6 +122,9 @@ async def process_inbox_task(
     requester_context: dict[str, Any] | None = None,
     authorize_project=None,
     attachments: list[Any] | None = None,
+    agent_type: str | None = None,
+    issue_labels: list[str] | None = None,
+    execution_mode: str | None = None,
 ) -> dict[str, Any]:
     """
     Core logic for processing a task from natural language text.
@@ -140,6 +159,9 @@ async def process_inbox_task(
         requester_context=requester_context,
         authorize_project=authorize_project,
         attachments=attachments,
+        agent_type=agent_type,
+        issue_labels=issue_labels,
+        execution_mode=execution_mode,
     )
 
 

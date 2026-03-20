@@ -13,6 +13,7 @@ class _AIProviderEnum(Enum):
     GEMINI = "gemini"
     CODEX = "codex"
     CLAUDE = "claude"
+    OLLAMA = "ollama"
 
 
 def _known_provider_names() -> set[str]:
@@ -157,6 +158,76 @@ def _configured_project_repos(proj_config: dict[str, Any]) -> set[str]:
     return repos
 
 
+def _validate_execution_mode_cli_config_block(payload: Any, *, label: str) -> None:
+    if payload is None:
+        return
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must be a mapping")
+
+    supported_provider_names = _known_provider_names()
+    supported_mode_keys = {"planning"}
+    supported_setting_keys = {"profile", "args", "env"}
+
+    for provider_name, provider_modes in payload.items():
+        normalized_provider = str(provider_name or "").strip().lower()
+        if normalized_provider not in supported_provider_names:
+            raise ValueError(f"{label}.{provider_name} has unsupported provider")
+        if not isinstance(provider_modes, dict):
+            raise ValueError(f"{label}.{normalized_provider} must be a mapping")
+
+        for mode_name, settings in provider_modes.items():
+            normalized_mode = str(mode_name or "").strip().lower()
+            if normalized_mode not in supported_mode_keys:
+                raise ValueError(
+                    f"{label}.{normalized_provider}.{mode_name} has unsupported execution mode"
+                )
+            if not isinstance(settings, dict):
+                raise ValueError(f"{label}.{normalized_provider}.{normalized_mode} must be a mapping")
+
+            unknown_keys = [key for key in settings if key not in supported_setting_keys]
+            if unknown_keys:
+                raise ValueError(
+                    f"{label}.{normalized_provider}.{normalized_mode} contains unsupported keys: "
+                    + ", ".join(sorted(str(key) for key in unknown_keys))
+                )
+
+            profile_name = settings.get("profile")
+            if profile_name is not None and (
+                not isinstance(profile_name, str) or not profile_name.strip()
+            ):
+                raise ValueError(
+                    f"{label}.{normalized_provider}.{normalized_mode}.profile must be a non-empty string"
+                )
+
+            args = settings.get("args")
+            if args is not None:
+                if not isinstance(args, list):
+                    raise ValueError(
+                        f"{label}.{normalized_provider}.{normalized_mode}.args must be a list"
+                    )
+                for idx, value in enumerate(args):
+                    if not isinstance(value, str) or not value.strip():
+                        raise ValueError(
+                            f"{label}.{normalized_provider}.{normalized_mode}.args[{idx}] must be a non-empty string"
+                        )
+
+            env = settings.get("env")
+            if env is not None:
+                if not isinstance(env, dict):
+                    raise ValueError(
+                        f"{label}.{normalized_provider}.{normalized_mode}.env must be a mapping"
+                    )
+                for key, value in env.items():
+                    if not isinstance(key, str) or not key.strip():
+                        raise ValueError(
+                            f"{label}.{normalized_provider}.{normalized_mode}.env contains an empty key"
+                        )
+                    if not isinstance(value, str):
+                        raise ValueError(
+                            f"{label}.{normalized_provider}.{normalized_mode}.env['{key}'] must be a string"
+                        )
+
+
 def validate_project_config(config: dict[str, Any]) -> None:
     """Validate project configuration dict."""
     if not config:
@@ -175,6 +246,10 @@ def validate_project_config(config: dict[str, Any]) -> None:
         config.get("copilot_permissions"),
         label="PROJECT_CONFIG['copilot_permissions']",
     )
+    _validate_execution_mode_cli_config_block(
+        config.get("execution_mode_cli_config"),
+        label="PROJECT_CONFIG['execution_mode_cli_config']",
+    )
 
     global_keys = {
         "nexus_dir",
@@ -185,6 +260,7 @@ def validate_project_config(config: dict[str, Any]) -> None:
         "profile_provider_priority",
         "ai_tool_preferences",
         "copilot_permissions",
+        "execution_mode_cli_config",
         "system_operations",
         "merge_queue",
         "workflow_chains",
@@ -362,6 +438,10 @@ def validate_project_config(config: dict[str, Any]) -> None:
         _validate_copilot_permissions_block(
             proj_config.get("copilot_permissions"),
             label=f"PROJECT_CONFIG['{project}']['copilot_permissions']",
+        )
+        _validate_execution_mode_cli_config_block(
+            proj_config.get("execution_mode_cli_config"),
+            label=f"PROJECT_CONFIG['{project}']['execution_mode_cli_config']",
         )
         _validate_tool_preferences_block(
             proj_config.get("ai_tool_preferences"),

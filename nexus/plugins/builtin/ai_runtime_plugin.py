@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from enum import Enum
 from typing import Any
 
+from nexus.core.execution_mode import normalize_execution_mode
 from nexus.core.prompt_budget import prompt_prefix_fingerprint
 from nexus.plugins.builtin.ai_runtime.agent_invoke_service import (
     invoke_agent_with_fallback as invoke_agent_with_fallback_impl,
@@ -143,6 +144,10 @@ class AIOrchestrator:
         self.copilot_permissions_resolver: Callable[[str], dict[str, Any] | None] | None = (
             self.config.get("copilot_permissions_resolver")
         )
+        self.execution_mode_cli_config = self.config.get("execution_mode_cli_config", {})
+        self.execution_mode_cli_config_resolver: Callable[
+            [str], dict[str, Any] | None
+        ] | None = self.config.get("execution_mode_cli_config_resolver")
         self.chat_agent_types_resolver: Callable[[str], list[str] | None] | None = self.config.get(
             "chat_agent_types_resolver",
         )
@@ -293,6 +298,60 @@ class AIOrchestrator:
                     exc,
                 )
         return self.copilot_permissions if isinstance(self.copilot_permissions, dict) else {}
+
+    def _resolved_execution_mode_cli_config(self, project_name: str | None = None) -> dict[str, Any]:
+        if project_name and callable(self.execution_mode_cli_config_resolver):
+            try:
+                resolved = self.execution_mode_cli_config_resolver(str(project_name))
+                if isinstance(resolved, dict):
+                    return resolved
+            except Exception as exc:
+                logger.warning(
+                    "Could not resolve execution-mode CLI config for project %s: %s",
+                    project_name,
+                    exc,
+                )
+        return (
+            self.execution_mode_cli_config
+            if isinstance(self.execution_mode_cli_config, dict)
+            else {}
+        )
+
+    def _resolve_execution_mode_provider_config(
+        self,
+        tool: AIProvider,
+        execution_mode: str | None,
+        *,
+        project_name: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_mode = normalize_execution_mode(execution_mode)
+        if not normalized_mode:
+            return {}
+
+        provider_config = self._resolved_execution_mode_cli_config(project_name).get(tool.value)
+        if not isinstance(provider_config, Mapping):
+            provider_config = {}
+        mode_config = provider_config.get(normalized_mode)
+        if not isinstance(mode_config, Mapping):
+            mode_config = {}
+
+        resolved: dict[str, Any] = {}
+        profile_name = str(mode_config.get("profile") or "").strip()
+        if profile_name:
+            resolved["profile"] = profile_name
+
+        raw_args = mode_config.get("args")
+        if isinstance(raw_args, list):
+            resolved["args"] = [str(value).strip() for value in raw_args if str(value).strip()]
+
+        raw_env = mode_config.get("env")
+        if isinstance(raw_env, Mapping):
+            resolved["env"] = {
+                str(key).strip(): str(value or "")
+                for key, value in raw_env.items()
+                if str(key).strip()
+            }
+        return resolved
 
     def _resolve_copilot_permissions_for_agent(
         self,
@@ -783,11 +842,17 @@ class AIOrchestrator:
         issue_num: str | None = None,
         log_subdir: str | None = None,
         env: dict[str, str] | None = None,
+        execution_mode: str | None = None,
     ) -> int | None:
         """Dispatch to the correct CLI for *tool*. Extend here when adding new providers."""
         model_override = self._resolve_model_for_tool(
             tool=tool,
             agent_name=agent_name,
+            project_name=project_name,
+        )
+        execution_mode_config = self._resolve_execution_mode_provider_config(
+            tool,
+            execution_mode,
             project_name=project_name,
         )
         if tool == AIProvider.COPILOT:
@@ -802,6 +867,8 @@ class AIOrchestrator:
                 issue_num=issue_num,
                 log_subdir=log_subdir,
                 env=env,
+                execution_mode=execution_mode,
+                execution_mode_config=execution_mode_config,
             )
         if tool == AIProvider.GEMINI:
             return self._invoke_gemini_agent(
@@ -813,6 +880,8 @@ class AIOrchestrator:
                 issue_num=issue_num,
                 log_subdir=log_subdir,
                 env=env,
+                execution_mode=execution_mode,
+                execution_mode_config=execution_mode_config,
             )
         if tool == AIProvider.CODEX:
             return self._invoke_codex(
@@ -824,6 +893,8 @@ class AIOrchestrator:
                 issue_num=issue_num,
                 log_subdir=log_subdir,
                 env=env,
+                execution_mode=execution_mode,
+                execution_mode_config=execution_mode_config,
             )
         if tool == AIProvider.CLAUDE:
             return self._invoke_claude(
@@ -835,6 +906,8 @@ class AIOrchestrator:
                 issue_num=issue_num,
                 log_subdir=log_subdir,
                 env=env,
+                execution_mode=execution_mode,
+                execution_mode_config=execution_mode_config,
             )
         if tool == AIProvider.OLLAMA:
             return self._invoke_ollama(
@@ -846,6 +919,7 @@ class AIOrchestrator:
                 issue_num=issue_num,
                 log_subdir=log_subdir,
                 env=env,
+                execution_mode=execution_mode,
             )
         raise ToolUnavailableError(f"No invoker implemented for tool: {tool.value}")
 
@@ -901,6 +975,7 @@ class AIOrchestrator:
         exclude_tools: list | None = None,
         log_subdir: str | None = None,
         env: dict[str, str] | None = None,
+        execution_mode: str | None = None,
     ) -> tuple[int | None, AIProvider]:
         """Try each available tool in priority order, skipping any in *exclude_tools*.
 
@@ -935,6 +1010,7 @@ class AIOrchestrator:
                 issue_num=issue_num,
                 log_subdir=log_subdir,
                 env=env,
+                execution_mode=execution_mode,
             ),
             record_rate_limit_with_context=lambda tool, exc, context: self._record_rate_limit_with_context(
                 tool,
@@ -972,6 +1048,8 @@ class AIOrchestrator:
         issue_num: str | None = None,
         log_subdir: str | None = None,
         env: dict[str, str] | None = None,
+        execution_mode: str | None = None,
+        execution_mode_config: Mapping[str, Any] | None = None,
     ) -> int | None:
         return invoke_copilot_agent_cli_impl(
             check_tool_available=self.check_tool_available,
@@ -994,6 +1072,8 @@ class AIOrchestrator:
             issue_num=issue_num,
             log_subdir=log_subdir,
             env=env,
+            execution_mode=execution_mode,
+            execution_mode_config=execution_mode_config,
         )
 
     def _invoke_gemini_agent(
@@ -1006,6 +1086,8 @@ class AIOrchestrator:
         issue_num: str | None = None,
         log_subdir: str | None = None,
         env: dict[str, str] | None = None,
+        execution_mode: str | None = None,
+        execution_mode_config: Mapping[str, Any] | None = None,
     ) -> int | None:
         return invoke_gemini_agent_cli_impl(
             check_tool_available=self.check_tool_available,
@@ -1022,6 +1104,8 @@ class AIOrchestrator:
             issue_num=issue_num,
             log_subdir=log_subdir,
             env=env,
+            execution_mode=execution_mode,
+            execution_mode_config=execution_mode_config,
         )
 
     def _invoke_codex(
@@ -1034,6 +1118,8 @@ class AIOrchestrator:
         issue_num: str | None = None,
         log_subdir: str | None = None,
         env: dict[str, str] | None = None,
+        execution_mode: str | None = None,
+        execution_mode_config: Mapping[str, Any] | None = None,
     ) -> int | None:
         return invoke_codex_cli_impl(
             check_tool_available=self.check_tool_available,
@@ -1048,6 +1134,8 @@ class AIOrchestrator:
             issue_num=issue_num,
             log_subdir=log_subdir,
             env=env,
+            execution_mode=execution_mode,
+            execution_mode_config=execution_mode_config,
         )
 
     def _invoke_claude(
@@ -1060,6 +1148,8 @@ class AIOrchestrator:
         issue_num: str | None = None,
         log_subdir: str | None = None,
         env: dict[str, str] | None = None,
+        execution_mode: str | None = None,
+        execution_mode_config: Mapping[str, Any] | None = None,
     ) -> int | None:
         return invoke_claude_cli_impl(
             check_tool_available=self.check_tool_available,
@@ -1076,6 +1166,8 @@ class AIOrchestrator:
             issue_num=issue_num,
             log_subdir=log_subdir,
             env=env,
+            execution_mode=execution_mode,
+            execution_mode_config=execution_mode_config,
         )
 
     def _invoke_ollama(
@@ -1088,6 +1180,7 @@ class AIOrchestrator:
         issue_num: str | None = None,
         log_subdir: str | None = None,
         env: dict[str, str] | None = None,
+        execution_mode: str | None = None,
     ) -> int | None:
         return invoke_ollama_agent_cli_impl(
             check_tool_available=self.check_tool_available,

@@ -64,6 +64,20 @@ def test_validate_project_config_accepts_copilot_permissions():
     validate_project_config(payload)
 
 
+def test_validate_project_config_accepts_execution_mode_cli_config():
+    payload = {
+        "execution_mode_cli_config": {
+            "codex": {
+                "planning": {
+                    "args": ["-c", 'model_reasoning_effort="high"'],
+                }
+            }
+        },
+        "nexus": {"workspace": "x", "agents_dir": "a", "git_platform": "github"},
+    }
+    validate_project_config(payload)
+
+
 def test_validate_project_config_rejects_invalid_copilot_permissions_shape():
     payload = {
         "copilot_permissions": {"allow_urls": "http://webhook:8081"},

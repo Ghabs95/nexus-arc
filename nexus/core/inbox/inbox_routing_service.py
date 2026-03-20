@@ -48,6 +48,9 @@ def process_inbox_task_request(
     requester_context: dict[str, Any] | None = None,
     authorize_project: AuthorizeProjectFn | None = None,
     attachments: list[Any] | None = None,
+    agent_type: str | None = None,
+    issue_labels: list[str] | None = None,
+    execution_mode: str | None = None,
 ) -> dict[str, Any]:
     normalized_project_hint = (
         normalize_project_key(str(project_hint or "")) or str(project_hint or "").strip().lower()
@@ -106,6 +109,9 @@ def process_inbox_task_request(
                 "task_name": result.get("task_name", ""),
                 "requester_context": requester_context if isinstance(requester_context, dict) else {},
                 "attachments": attachments or None,
+                "agent_type": agent_type,
+                "issue_labels": issue_labels or None,
+                "execution_mode": execution_mode,
             }
             options = ", ".join(sorted(projects.keys()))
             logger.error(
@@ -163,6 +169,9 @@ def process_inbox_task_request(
             raw_text=str(text),
             requester_context=requester_context,
             attachments=attachments,
+            agent_type=agent_type,
+            issue_labels=issue_labels,
+            execution_mode=execution_mode,
         )
     except TypeError:
         markdown_content = render_task_markdown(
@@ -255,6 +264,10 @@ def save_resolved_inbox_task_request(
     )
     if not isinstance(resolved_requester_context, dict):
         resolved_requester_context = {}
+    resolved_agent_type = str(pending_project.get("agent_type") or "").strip() or None
+    pending_issue_labels = pending_project.get("issue_labels")
+    resolved_issue_labels = pending_issue_labels if isinstance(pending_issue_labels, list) else None
+    resolved_execution_mode = str(pending_project.get("execution_mode") or "").strip() or None
     try:
         content = refine_task_description(
             str(pending_project.get("content", text)).strip(),
@@ -298,6 +311,9 @@ def save_resolved_inbox_task_request(
             raw_text=str(text),
             requester_context=resolved_requester_context,
             attachments=resolved_attachments,
+            agent_type=resolved_agent_type,
+            issue_labels=resolved_issue_labels,
+            execution_mode=resolved_execution_mode,
         )
     except TypeError:
         markdown_content = render_task_markdown(

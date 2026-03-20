@@ -7,6 +7,7 @@ import shutil
 from collections.abc import Callable
 from typing import Any
 
+from nexus.core.execution_mode import parse_execution_mode_from_text
 from nexus.core.git_sync.workflow_start_sync_service import sync_project_repos_on_workflow_start
 from nexus.core.storage.capabilities import get_storage_capabilities
 
@@ -54,6 +55,7 @@ def handle_webhook_task(
     issue_num_match = re.search(r"\*\*Issue Number:\*\*\s*(.+)", content)
     issue_url_match = re.search(r"\*\*URL:\*\*\s*(.+)", content)
     agent_type_match = re.search(r"\*\*Agent Type:\*\*\s*(.+)", content)
+    execution_mode = parse_execution_mode_from_text(content)
 
     issue_number = issue_num_match.group(1).strip() if issue_num_match else None
     issue_url = issue_url_match.group(1).strip() if issue_url_match else None
@@ -213,6 +215,7 @@ def handle_webhook_task(
             agent_type=agent_type,
             project_name=project_name,
             requester_nexus_id=requester_nexus_id,
+            execution_mode=execution_mode,
         )
 
         if pid and new_filepath:
@@ -269,6 +272,18 @@ def handle_new_task(
     ensure_project_and_repo_access: Callable[[str, str, str], tuple[bool, str]] | None = None,
 ) -> None:
     """Handle standard (non-webhook) inbox task end-to-end."""
+    agent_type_match = re.search(r"\*\*Agent Type:\*\*\s*(.+)", content)
+    explicit_agent_type = agent_type_match.group(1).strip() if agent_type_match else ""
+    issue_labels_match = re.search(r"\*\*Issue Labels:\*\*\s*(.+)", content)
+    execution_mode = parse_execution_mode_from_text(content)
+    extra_issue_labels = []
+    if issue_labels_match:
+        extra_issue_labels = [
+            str(label).strip()
+            for label in str(issue_labels_match.group(1) or "").split(",")
+            if str(label).strip()
+        ]
+
     try:
         content = refine_issue_content(
             content,
@@ -382,6 +397,7 @@ def handle_new_task(
         repo_key=repo_key,
         dedupe_key=dedupe_key,
         requester_nexus_id=requester_nexus_id,
+        extra_labels=extra_issue_labels,
     )
 
     issue_num = ""
@@ -507,7 +523,7 @@ def handle_new_task(
     if agents_dir_val is not None and issue_url:
         agents_abs = os.path.join(base_dir, agents_dir_val)
         workspace_abs = os.path.join(base_dir, str(config["workspace"]))
-        initial_agent = get_initial_agent_from_workflow(project_name)
+        initial_agent = explicit_agent_type or get_initial_agent_from_workflow(project_name)
         if not initial_agent:
             logger.error("Stopping launch: missing workflow definition for %s", project_name)
             emit_alert(
@@ -690,6 +706,7 @@ def handle_new_task(
             agent_type=initial_agent,
             project_name=project_name,
             requester_nexus_id=requester_nexus_id,
+            execution_mode=execution_mode,
         )
 
         if pid and new_filepath:
