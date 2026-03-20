@@ -425,6 +425,48 @@ def test_gemini_agent_launch_uses_configured_model(monkeypatch, tmp_path):
     assert "gemini-3-pro" in captured["cmd"]
 
 
+def test_invoke_tool_passes_execution_mode_to_provider(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(**kwargs):
+        captured.update(kwargs)
+        return 456
+
+    monkeypatch.setattr(
+        "nexus.plugins.builtin.ai_runtime_plugin.invoke_codex_cli_impl",
+        _fake_invoke,
+    )
+
+    orchestrator = AIOrchestrator(
+        {
+            "execution_mode_cli_config": {
+                "codex": {
+                    "planning": {
+                        "args": ["-c", 'model_reasoning_effort="high"'],
+                    }
+                }
+            }
+        }
+    )
+
+    pid = orchestrator._invoke_tool(
+        tool=AIProvider.CODEX,
+        agent_prompt="go",
+        workspace_dir=str(tmp_path),
+        agents_dir=str(tmp_path),
+        base_dir=str(tmp_path),
+        agent_name="developer",
+        project_name="nexus",
+        execution_mode="planning",
+    )
+
+    assert pid == 456
+    assert captured["execution_mode"] == "planning"
+    assert captured["execution_mode_config"] == {
+        "args": ["-c", 'model_reasoning_effort="high"']
+    }
+
+
 class TestStripCliToolOutput:
     """Tests for _strip_cli_tool_output."""
 

@@ -1,13 +1,16 @@
 import os
 import subprocess
 import time
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from .agent_invokers import _monitor_process_lifecycle, _redact_command_for_logs
 from .agent_invokers import (
+    merge_execution_mode_env,
     _start_output_tee,
     apply_git_transport_env_policy,
     prepare_provider_cli_env,
+    resolve_execution_mode_cli_args,
 )
 
 
@@ -39,6 +42,8 @@ def _build_codex_exec_cmd(
     codex_model: str,
     agent_prompt: str,
     sandbox_mode: str | None = None,
+    execution_mode: str | None = None,
+    execution_mode_config: Mapping[str, Any] | None = None,
 ) -> list[str]:
     cmd = [
         codex_cli_path,
@@ -47,6 +52,10 @@ def _build_codex_exec_cmd(
     ]
     if sandbox_mode:
         cmd.extend(["--sandbox", sandbox_mode])
+    if isinstance(execution_mode_config, Mapping):
+        profile_name = str(execution_mode_config.get("profile") or "").strip()
+        if profile_name:
+            cmd.extend(["--profile", profile_name])
     if sandbox_mode == "workspace-write":
         cmd.extend(
             [
@@ -54,6 +63,10 @@ def _build_codex_exec_cmd(
                 'sandbox_permissions=["network-access"]',
             ]
         )
+    mode_specific_args = resolve_execution_mode_cli_args(execution_mode_config)
+    if not mode_specific_args and str(execution_mode or "").strip().lower() == "planning":
+        mode_specific_args = ["-c", 'model_reasoning_effort="high"']
+    cmd.extend(mode_specific_args)
     if codex_model:
         cmd.extend(["--model", codex_model])
     cmd.append(agent_prompt)
@@ -139,13 +152,20 @@ def invoke_codex_cli(
     issue_num: str | None = None,
     log_subdir: str | None = None,
     env: dict[str, str] | None = None,
+    execution_mode: str | None = None,
+    execution_mode_config: Mapping[str, Any] | None = None,
 ) -> int | None:
     if not check_tool_available(codex_provider):
         raise tool_unavailable_error("Codex CLI not available")
 
     provider_env, auth_mode = prepare_provider_cli_env(
         provider="codex",
-        env=env,
+        env=merge_execution_mode_env(
+            provider="codex",
+            env=env,
+            execution_mode=execution_mode,
+            execution_mode_config=execution_mode_config,
+        ),
         logger=logger,
     )
     effective_openai_key = str(provider_env.get("OPENAI_API_KEY") or "").strip()
@@ -215,6 +235,8 @@ def invoke_codex_cli(
                 codex_model=codex_model,
                 agent_prompt=agent_prompt,
                 sandbox_mode=sandbox_mode,
+                execution_mode=execution_mode,
+                execution_mode_config=execution_mode_config,
             )
             process = subprocess.Popen(
                 cmd,

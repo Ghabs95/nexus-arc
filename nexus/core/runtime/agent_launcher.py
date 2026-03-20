@@ -44,6 +44,11 @@ from nexus.core.config import (
     get_project_platform,
     get_tasks_logs_dir,
 )
+from nexus.core.execution_mode import (
+    infer_execution_mode_from_labels,
+    normalize_execution_mode,
+    parse_execution_mode_from_text,
+)
 # Nexus Core framework imports
 from nexus.core.guards import LaunchGuard
 from nexus.core.inbox.inbox_repo_path_service import (
@@ -900,6 +905,7 @@ def _start_agent_quota_watchdog(
     exclude_tools: list[str] | None,
     tier_name: str,
     mode: str,
+    execution_mode: str | None,
     workflow_name: str,
     tool_name: str,
 ) -> None:
@@ -972,6 +978,7 @@ def _start_agent_quota_watchdog(
                     exclude_tools=merged_exclusions,
                     log_subdir=log_subdir,
                     env=agent_env,
+                    execution_mode=execution_mode,
                 )
                 if pid_new:
                     new_tool = str(getattr(tool_new, "value", tool_new))
@@ -989,6 +996,7 @@ def _start_agent_quota_watchdog(
                         "mode": mode,
                         "tool": new_tool,
                         "agent_type": agent_type,
+                        "execution_mode": resolved_execution_mode,
                         "exclude_tools": _merge_excluded_tools(
                             prev.get("exclude_tools", []), merged_exclusions
                         ),
@@ -1023,6 +1031,7 @@ def _start_agent_quota_watchdog(
                         exclude_tools=merged_exclusions,
                         tier_name=tier_name,
                         mode=mode,
+                        execution_mode=execution_mode,
                         workflow_name=workflow_name,
                     )
                 else:
@@ -1117,6 +1126,7 @@ def _attach_post_launch_watchdog(
     exclude_tools: list[str] | None,
     tier_name: str,
     mode: str,
+    execution_mode: str | None,
     workflow_name: str,
     issue_url: str,
 ) -> None:
@@ -1136,6 +1146,7 @@ def _attach_post_launch_watchdog(
         exclude_tools=exclude_tools,
         tier_name=tier_name,
         mode=mode,
+        execution_mode=execution_mode,
         workflow_name=workflow_name,
     )
     _start_completion_recovery_watchdog(
@@ -1772,6 +1783,35 @@ def get_sop_tier_from_issue(issue_number, project="nexus", repo_override: str | 
         return None
 
 
+def get_execution_mode_from_issue(issue_number, project="nexus", repo_override: str | None = None):
+    """Resolve persistent execution mode from issue labels."""
+    from nexus.core.orchestration.nexus_core_helpers import get_git_platform
+
+    repo = str(repo_override or "")
+    try:
+        repo = repo or get_repo(project)
+        token_override = _resolve_requester_token_for_issue(
+            str(issue_number),
+            repo,
+            project,
+        )
+        issue = _run_coro_sync(
+            lambda: get_git_platform(
+                repo,
+                project_name=project,
+                token_override=token_override,
+            ).get_issue(str(issue_number))
+        )
+        if not issue:
+            return None
+        return infer_execution_mode_from_labels(getattr(issue, "labels", None) or [])
+    except Exception as e:
+        logger.error(
+            f"Failed to get execution mode from issue #{issue_number} in {project} ({repo}): {e}"
+        )
+        return None
+
+
 def get_workflow_name(tier_name):
     """Returns the workflow slash-command name for the tier."""
     policy = _get_launch_policy_plugin()
@@ -1828,6 +1868,7 @@ def invoke_ai_agent(
     agent_type="triage",
     project_name=None,
     requester_nexus_id=None,
+    execution_mode=None,
 ):
     """Invokes an AI agent on the agents directory to process the task.
 
@@ -1851,6 +1892,9 @@ def invoke_ai_agent(
     """
     pid = None
     tool_name: str | None = None
+    resolved_execution_mode = normalize_execution_mode(execution_mode) or parse_execution_mode_from_text(
+        str(task_content or "")
+    )
     workflow_name = get_workflow_name(tier_name)
     workflow_path = _resolve_workflow_path(project_name)
     step_id, step_num = _resolve_issue_step_context(issue_url)
@@ -1896,7 +1940,13 @@ def invoke_ai_agent(
         )
 
     mode = "continuation" if continuation else "initial"
-    logger.info(f"🤖 Launching {agent_type} agent in {agents_dir} (mode: {mode})")
+    logger.info(
+        "🤖 Launching %s agent in %s (mode: %s%s)",
+        agent_type,
+        agents_dir,
+        mode,
+        f", execution_mode: {resolved_execution_mode}" if resolved_execution_mode else "",
+    )
     logger.info(f"   Workspace: {workspace_dir}")
     logger.info(f"   Workflow: /{workflow_name} (tier: {tier_name})")
 
@@ -2188,6 +2238,7 @@ def invoke_ai_agent(
             exclude_tools=exclude_tools,
             log_subdir=log_subdir,
             env=agent_env,
+            execution_mode=resolved_execution_mode,
         )
 
         tool_name = str(getattr(tool_used, "value", tool_used))
@@ -2221,6 +2272,7 @@ def invoke_ai_agent(
                         "mode": mode,
                         "tool": tool_name,
                         "agent_type": agent_type,
+                        "execution_mode": resolved_execution_mode,
                         "exclude_tools": _merge_excluded_tools(
                             previous_entry.get("exclude_tools", []),
                             list(exclude_tools) if exclude_tools else [],
@@ -2256,6 +2308,7 @@ def invoke_ai_agent(
                     exclude_tools=list(exclude_tools) if exclude_tools else [],
                     tier_name=str(tier_name),
                     mode=str(mode),
+                    execution_mode=resolved_execution_mode,
                     workflow_name=str(workflow_name),
                     issue_url=str(issue_url or ""),
                 )
@@ -2456,6 +2509,19 @@ def launch_next_agent(
 
     # Merge caller-provided exclude_tools with any persisted ones from previous runs.
     launched_agents = HostStateManager.load_launched_agents(recent_only=False)
+    persisted_execution_mode = normalize_execution_mode(
+        str(launched_agents.get(str(issue_number), {}).get("execution_mode") or "")
+    )
+    label_execution_mode = get_execution_mode_from_issue(
+        issue_number,
+        project_root,
+        repo_override=repo,
+    )
+    execution_mode = (
+        parse_execution_mode_from_text(body)
+        or persisted_execution_mode
+        or label_execution_mode
+    )
     persisted = launched_agents.get(str(issue_number), {}).get("exclude_tools", [])
     merged_exclusions = _merge_excluded_tools(persisted, exclude_tools or [])
     if merged_exclusions:
@@ -2547,6 +2613,7 @@ def launch_next_agent(
         agent_type=next_agent,
         project_name=project_root,
         requester_nexus_id=requester_nexus_id,
+        execution_mode=execution_mode,
     )
 
     if pid:

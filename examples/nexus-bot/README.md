@@ -24,7 +24,7 @@ The bot supports the following key commands across Telegram/Discord:
 - `/assign <project> <issue#>` - Assign an issue to yourself
 - `/implement <project> <issue#>` - Request AI Agent implementation
 - `/prepare <project> <issue#>` - Add AI Agent instructions
-- `/plan <project> <issue#>` - Request a technical implementation plan
+- `/plan <project> <request>` - Create a new planning task
 
 **Workflow & Monitoring:**
 

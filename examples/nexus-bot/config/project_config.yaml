@@ -77,6 +77,16 @@ ai_tool_preferences:
   writer: { profile: fast, provider: gemini }
   finalizer: { profile: fast, provider: gemini }
 
+# Optional: execution-mode specific CLI overrides.
+# /plan-created issues carry execution_mode=planning through the full workflow,
+# so later steps like develop can alter the real provider CLI command too.
+execution_mode_cli_config:
+  codex:
+    planning:
+      args:
+        - -c
+        - model_reasoning_effort="high"
+
 # Copilot CLI permission flags for non-interactive background agent runs.
 copilot_permissions:
   allow_urls:

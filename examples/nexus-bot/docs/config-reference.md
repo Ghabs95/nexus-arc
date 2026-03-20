@@ -64,6 +64,7 @@ This applies to:
 - `model_profiles.<profile>.<provider>`
 - `profile_provider_priority.<profile>[]`
 - `ai_tool_preferences.<agent>.provider`
+- `execution_mode_cli_config.<provider>.<mode>`
 
 ```yaml
 # Each key is a project identifier (used in inbox routing)
@@ -104,6 +105,12 @@ ai_tool_preferences:
   writer:
     provider: "claude"
     profile: "balanced"
+execution_mode_cli_config:
+  codex:
+    planning:
+      args:
+        - -c
+        - model_reasoning_effort="high"
 ```
 
 `git_branches` applies to both startup sync and PR/MR base branch selection.

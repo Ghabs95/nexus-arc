@@ -34,12 +34,13 @@ from nexus.core.config import (
     get_track_short_projects,
 )
 from nexus.core.error_handling import format_error_for_user
+from nexus.core.execution_mode import PLANNING_EXECUTION_MODE
 from nexus.core.feature_registry_service import FeatureRegistryService
 from nexus.core.git.direct_issue_plugin_service import (
     get_direct_issue_plugin as _svc_get_direct_issue_plugin,
 )
 from nexus.core.handlers.feature_registry_command_handlers import FeatureRegistryCommandDeps
-from nexus.core.handlers.inbox_routing_handler import TYPES
+from nexus.core.handlers.inbox_routing_handler import TYPES, process_inbox_task
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
 from nexus.core.memory import append_message, create_chat, get_chat_history
 from nexus.core.orchestration.ai_orchestrator import get_orchestrator
@@ -486,6 +487,26 @@ def ops_bridge_deps(*, allowed_user_ids, prompt_project_selection, ensure_projec
 
 
 def issue_bridge_deps(*, allowed_user_ids, prompt_project_selection, ensure_project_issue):
+    async def _create_planning_task(
+        *,
+        text: str,
+        project_key: str,
+        message_id: str,
+        requester_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        system_ops = PROJECT_CONFIG.get("system_operations", {})
+        plan_agent = str(system_ops.get("plan") or system_ops.get("default") or "").strip()
+        return await process_inbox_task(
+            text=text,
+            orchestrator=_get_orchestrator(),
+            message_id_or_unique_id=message_id,
+            project_hint=project_key,
+            requester_context=requester_context,
+            agent_type=plan_agent or None,
+            issue_labels=["agent:plan-requested"],
+            execution_mode=PLANNING_EXECUTION_MODE,
+        )
+
     return _svc_build_issue_handler_deps(
         logger=logger,
         allowed_user_ids=allowed_user_ids,
@@ -510,6 +531,12 @@ def issue_bridge_deps(*, allowed_user_ids, prompt_project_selection, ensure_proj
         default_issue_url=_default_issue_url,
         get_project_label=_get_project_label,
         track_short_projects=get_track_short_projects(),
+        create_planning_task=_create_planning_task,
+        requester_context_builder=lambda user_id: {
+            "platform": "discord",
+            "platform_user_id": str(user_id),
+            "nexus_id": str(_get_user_manager().resolve_nexus_id("discord", str(user_id)) or ""),
+        },
     )
 
 

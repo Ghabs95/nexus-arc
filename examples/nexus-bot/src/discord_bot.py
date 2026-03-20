@@ -3083,12 +3083,11 @@ async def prepare_command(
     )
 
 
-@bot.tree.command(name="plan", description="Request an implementation plan")
-@app_commands.describe(project="Project key", issue="Issue number")
+@bot.tree.command(name="plan", description="Create a new planning task")
+@app_commands.describe(project="Project key")
 async def plan_command(
     interaction: discord.Interaction,
     project: str | None = None,
-    issue: str | None = None,
 ):
     await _run_bridge_with_picker(
         interaction,
@@ -3096,7 +3095,14 @@ async def plan_command(
         handler=issue_plan_handler,
         deps_factory=_issue_bridge_deps,
         project=project,
-        issue=issue,
+        require_issue=False,
+        text_modal={
+            "title": "Create Planning Task",
+            "label": "Planning request",
+            "placeholder": "Describe what you want planned",
+            "multiline": True,
+            "parse_mode": "append",
+        },
     )
 
 

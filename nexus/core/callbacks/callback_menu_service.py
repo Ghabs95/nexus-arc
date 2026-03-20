@@ -81,7 +81,7 @@ def menu_section_text(menu_key: str) -> str:
             "- /assign <project> <issue#> — Assign issue to yourself\n"
             "- /implement <project> <issue#> — Request AI Agent implementation\n"
             "- /prepare <project> <issue#> — Add AI Agent-friendly instructions\n"
-            "- /plan <project> <issue#> — Request a technical implementation plan"
+            "- /plan <project> <request> — Create a new planning task"
         ),
         "help": "ℹ️ Use /help for the full command list.",
     }

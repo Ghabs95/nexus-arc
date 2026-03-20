@@ -114,11 +114,16 @@ def create_issue(
     repo_key: str,
     dedupe_key: str | None = None,
     requester_nexus_id: str | None = None,
+    extra_labels: list[str] | None = None,
 ) -> str:
     """Create a provider-backed issue and apply labels with fallback behavior."""
     type_label = f"type:{task_type}"
     project_label = f"project:{project}"
     labels = [project_label, type_label, workflow_label]
+    for label in extra_labels or []:
+        normalized = str(label or "").strip()
+        if normalized and normalized not in labels:
+            labels.append(normalized)
     normalized_dedupe_key = _normalize_dedupe_key(dedupe_key)
     issue_body = str(body or "")
     if normalized_dedupe_key:
@@ -189,6 +194,8 @@ def create_issue(
                 label_specs.append((label, "0E8A16", "Workflow tier"))
             elif label.startswith("type:"):
                 label_specs.append((label, "1D76DB", "Task type"))
+            elif label == "agent:plan-requested":
+                label_specs.append((label, "B4A7E5", "Requested Agent Planning"))
             else:
                 label_specs.append((label, "5319E7", "Project key"))
 

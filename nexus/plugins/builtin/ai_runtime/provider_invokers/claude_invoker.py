@@ -1,11 +1,14 @@
 import subprocess
 import time
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from nexus.plugins.builtin.ai_runtime.provider_invokers.agent_invokers import (
     _prepare_log_path,
     _launch_process_with_log,
+    merge_execution_mode_env,
     prepare_provider_cli_env,
+    resolve_execution_mode_cli_args,
 )
 from nexus.plugins.builtin.ai_runtime.provider_invokers.subprocess_utils import (
     run_cli_prompt,
@@ -29,17 +32,25 @@ def invoke_claude_cli(
     issue_num: str | None = None,
     log_subdir: str | None = None,
     env: dict[str, str] | None = None,
+    execution_mode: str | None = None,
+    execution_mode_config: Mapping[str, Any] | None = None,
 ) -> int | None:
     if not check_tool_available(claude_provider):
         raise tool_unavailable_error("Claude CLI not available")
 
     provider_env, auth_mode = prepare_provider_cli_env(
         provider="claude",
-        env=env,
+        env=merge_execution_mode_env(
+            provider="claude",
+            env=env,
+            execution_mode=execution_mode,
+            execution_mode_config=execution_mode_config,
+        ),
         logger=logger,
     )
 
     cmd = [claude_cli_path, "-p", agent_prompt]
+    cmd.extend(resolve_execution_mode_cli_args(execution_mode_config))
     # Note: Anthropic CLI might have specific flags for models if needed.
     # Currently omitting --model as Claude Code doesn't typically require it in simple prompt mode.
 

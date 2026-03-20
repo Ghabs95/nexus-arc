@@ -66,6 +66,7 @@ from nexus.core.config import (
 from nexus.adapters.git.utils import build_issue_url, resolve_repo
 from nexus.core.analytics.reporting import get_stats_report
 from nexus.core.audit_store import AuditStore
+from nexus.core.execution_mode import PLANNING_EXECUTION_MODE
 from nexus.core.auth import (
     check_project_access as _svc_check_project_access,
 )
@@ -816,6 +817,27 @@ def _monitoring_handler_deps() -> MonitoringHandlersDeps:
 
 
 def _issue_handler_deps() -> IssueHandlerDeps:
+    async def _create_planning_task(
+        *,
+        text: str,
+        project_key: str,
+        message_id: str,
+        requester_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        system_ops = PROJECT_CONFIG.get("system_operations", {})
+        plan_agent = str(system_ops.get("plan") or system_ops.get("default") or "").strip()
+        return await process_inbox_task(
+            text=text,
+            orchestrator=orchestrator,
+            message_id_or_unique_id=message_id,
+            project_hint=project_key,
+            requester_context=requester_context,
+            authorize_project=_authorize_project_for_requester,
+            agent_type=plan_agent or None,
+            issue_labels=["agent:plan-requested"],
+            execution_mode=PLANNING_EXECUTION_MODE,
+        )
+
     return _svc_build_issue_handler_deps(
         logger=logger,
         allowed_user_ids=TELEGRAM_ALLOWED_USER_IDS,
@@ -840,6 +862,12 @@ def _issue_handler_deps() -> IssueHandlerDeps:
         default_issue_url=_default_issue_url,
         get_project_label=_get_project_label,
         track_short_projects=get_track_short_projects(),
+        create_planning_task=_create_planning_task,
+        requester_context_builder=lambda user_id: {
+            "platform": "telegram",
+            "platform_user_id": str(user_id),
+            "nexus_id": str(user_manager.resolve_nexus_id("telegram", str(user_id)) or ""),
+        },
     )
 
 
@@ -2116,10 +2144,7 @@ async def prepare_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @rate_limited("plan")
 async def plan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Requests AI agent to formulate a plan for an issue.
-
-    Adds an `agent:plan-requested` label.
-    """
+    """Creates a new planning task and routes it to the planning agent."""
     await issue_plan_handler(
         _build_telegram_interactive_ctx(update, context), _issue_handler_deps()
     )
