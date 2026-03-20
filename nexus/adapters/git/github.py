@@ -138,12 +138,14 @@ class GitHubPlatform(GitPlatform):
                     linked_prs.append(self._to_pr(item, linked_issues=[issue_token]))
             return linked_prs
 
-        # Prefer direct PR scans over Search API to avoid index lag.
+        # Prefer direct PR scans over Search API to avoid index lag. Scan open
+        # first, then closed, then fall back to Search API only if neither list
+        # has a direct match.
         for state in ("open", "closed"):
             try:
                 linked_prs = await _scan_pulls(state)
             except RuntimeError:
-                continue
+                linked_prs = []
             if linked_prs:
                 return linked_prs
 

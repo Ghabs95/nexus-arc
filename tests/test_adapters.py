@@ -367,19 +367,21 @@ class TestGitHubPlatform:
         with patch.object(
             platform,
             "_get",
-            new=AsyncMock(side_effect=[open_pulls, search_results, pr_detail]),
+            new=AsyncMock(side_effect=[open_pulls, [], search_results, pr_detail]),
         ) as mock_get:
             prs = asyncio.run(platform.search_linked_prs("113"))
 
         assert len(prs) == 1
         assert prs[0].number == 77
-        assert mock_get.await_count == 3
+        assert mock_get.await_count == 4
         first_call = mock_get.await_args_list[0].args[0]
         second_call = mock_get.await_args_list[1].args[0]
         third_call = mock_get.await_args_list[2].args[0]
+        fourth_call = mock_get.await_args_list[3].args[0]
         assert first_call == "repos/owner/repo/pulls?state=open&per_page=100"
-        assert second_call.startswith("search/issues?q=")
-        assert third_call == "repos/owner/repo/pulls/77"
+        assert second_call == "repos/owner/repo/pulls?state=closed&per_page=100"
+        assert third_call.startswith("search/issues?q=")
+        assert fourth_call == "repos/owner/repo/pulls/77"
 
     def test_search_linked_prs_finds_closed_pull_before_search_api(self):
         platform = self._make_platform()

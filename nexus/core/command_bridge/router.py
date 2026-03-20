@@ -12,6 +12,20 @@ from typing import Any
 
 from nexus.adapters.notifications.base import Button, Message
 from nexus.adapters.notifications.interactive import InteractiveClientPlugin
+from nexus.core.command_bridge.models import (
+    AuditPayload,
+    CommandRequest,
+    CommandResult,
+    RequesterContext,
+    SessionContext,
+    UiField,
+    UiPayload,
+    WorkflowRef,
+)
+from nexus.core.command_bridge.usage import (
+    collect_bridge_usage_payload,
+    usage_payload_from_bridge_event,
+)
 from nexus.core.command_contract import OPENCLAW_BRIDGE_COMMANDS
 from nexus.core.command_visibility import is_command_visible
 from nexus.core.config import PROJECT_CONFIG, get_project_display_names
@@ -60,21 +74,6 @@ from nexus.core.integrations.workflow_state_factory import get_workflow_state
 from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 from nexus.core.project.catalog import get_project_label, iter_project_keys, single_key
 from nexus.core.telegram.telegram_issue_selection_service import parse_project_issue_args
-
-from nexus.core.command_bridge.models import (
-    AuditPayload,
-    CommandRequest,
-    CommandResult,
-    RequesterContext,
-    SessionContext,
-    UiField,
-    UiPayload,
-    WorkflowRef,
-)
-from nexus.core.command_bridge.usage import (
-    collect_bridge_usage_payload,
-    usage_payload_from_bridge_event,
-)
 
 logger = logging.getLogger(__name__)
 
