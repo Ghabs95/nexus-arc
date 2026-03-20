@@ -61,7 +61,20 @@ from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 from nexus.core.project.catalog import get_project_label, iter_project_keys, single_key
 from nexus.core.telegram.telegram_issue_selection_service import parse_project_issue_args
 
-from nexus.core.command_bridge.models import CommandRequest, CommandResult, RequesterContext
+from nexus.core.command_bridge.models import (
+    AuditPayload,
+    CommandRequest,
+    CommandResult,
+    RequesterContext,
+    SessionContext,
+    UiField,
+    UiPayload,
+    WorkflowRef,
+)
+from nexus.core.command_bridge.usage import (
+    collect_bridge_usage_payload,
+    usage_payload_from_bridge_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -314,12 +327,14 @@ class CommandRouter:
         plugin.register_command("comments", self._plugin_callback(plugin, "comments"))
         plugin.register_command("implement", self._plugin_callback(plugin, "implement"))
         plugin.register_command("myissues", self._plugin_callback(plugin, "myissues"))
+        plugin.register_command("new", self._plugin_callback(plugin, "new"))
         plugin.register_command("plan", self._plugin_callback(plugin, "plan"))
         plugin.register_command("prepare", self._plugin_callback(plugin, "prepare"))
         plugin.register_command("respond", self._plugin_callback(plugin, "respond"))
         plugin.register_command("track", self._plugin_callback(plugin, "track"))
         plugin.register_command("tracked", self._plugin_callback(plugin, "tracked"))
         plugin.register_command("untrack", self._plugin_callback(plugin, "untrack"))
+        plugin.register_command("usage", self._plugin_callback(plugin, "usage"))
         if is_command_visible("active"):
             plugin.register_command("active", self._plugin_callback(plugin, "active"))
         plugin.register_command("fuse", self._plugin_callback(plugin, "fuse"))
@@ -361,6 +376,7 @@ class CommandRouter:
             )
 
         requester = request.requester if isinstance(request.requester, RequesterContext) else RequesterContext()
+        context = request.context if isinstance(request.context, SessionContext) else SessionContext()
         client = _CapturingInteractiveClient(
             requester.source_platform or self.default_source_platform
         )
@@ -368,7 +384,8 @@ class CommandRouter:
         text = request.raw_text or " ".join([command_name, *args]).strip()
         raw_event = {
             "requester": requester.to_dict(),
-            "context": dict(request.context or {}),
+            "context": context.to_dict(),
+            "client": request.client.to_dict(),
             "correlation_id": request.correlation_id,
         }
         await spec.callback(
@@ -381,25 +398,59 @@ class CommandRouter:
         )
         project_key, issue_number = self._extract_project_and_issue(command_name, args)
         workflow_id = self._lookup_workflow_id(issue_number)
-        status = "accepted" if workflow_id and command_name in _LONG_RUNNING_COMMANDS else "success"
-        return CommandResult(
-            status=status,
-            message=client.final_text() or f"Executed {command_name}.",
-            workflow_id=workflow_id,
-            issue_number=issue_number,
-            project_key=project_key,
-            data={
-                "messages": client.export_messages(),
-                "requester": requester.to_dict(),
-                "command": command_name,
-                "args": args,
-            },
-            suggested_next_commands=self._suggested_next_commands(
-                command_name=command_name,
+        usage = usage_payload_from_bridge_event(raw_event)
+        if usage is None:
+            usage = await collect_bridge_usage_payload(
                 project_key=project_key,
                 issue_number=issue_number,
                 workflow_id=workflow_id,
+            )
+        status = "accepted" if workflow_id and command_name in _LONG_RUNNING_COMMANDS else "success"
+        suggested_next_commands = self._suggested_next_commands(
+            command_name=command_name,
+            project_key=project_key,
+            issue_number=issue_number,
+            workflow_id=workflow_id,
+        )
+        message = client.final_text() or f"Executed {command_name}."
+        return CommandResult(
+            status=status,
+            message=message,
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            project_key=project_key,
+            workflow=WorkflowRef(
+                id=workflow_id,
+                issue_number=issue_number,
+                project_key=project_key,
             ),
+            ui=UiPayload(
+                title=_command_title(command_name),
+                summary=message,
+                fields=_build_ui_fields(
+                    command_name=command_name,
+                    project_key=project_key,
+                    issue_number=issue_number,
+                    workflow_id=workflow_id,
+                    context=context,
+                ),
+                actions=suggested_next_commands,
+            ),
+            usage=usage,
+            audit=AuditPayload(
+                request_id=request.correlation_id,
+                actor=requester.operator_id or requester.sender_id or requester.sender_name,
+                session_id=requester.session_id,
+            ),
+            data={
+                "messages": client.export_messages(),
+                "requester": requester.to_dict(),
+                "context": context.to_dict(),
+                "client": request.client.to_dict(),
+                "command": command_name,
+                "args": args,
+            },
+            suggested_next_commands=suggested_next_commands,
         )
 
     async def route(self, request: CommandRequest) -> CommandResult:
@@ -407,13 +458,18 @@ class CommandRouter:
             request.raw_text or " ".join(request.args or [])
         )
         if clarification:
-            return CommandResult(status="clarification", message=clarification)
+            return CommandResult(
+                status="clarification",
+                message=clarification,
+                ui=UiPayload(title="Clarification Needed", summary=clarification),
+            )
         forwarded = CommandRequest(
             command=routed_command,
             args=routed_args,
             raw_text=request.raw_text,
             requester=request.requester,
             context=request.context,
+            client=request.client,
             attachments=request.attachments,
             correlation_id=request.correlation_id,
         )
@@ -432,12 +488,18 @@ class CommandRouter:
         )
         status = await _maybe_await(workflow_plugin.get_workflow_status(issue_number))
         project_key = self._project_key_from_workflow_id(workflow_id)
+        usage = await collect_bridge_usage_payload(
+            project_key=project_key,
+            issue_number=issue_number,
+            workflow_id=workflow_id,
+        )
         payload = {
             "ok": True,
             "workflow_id": workflow_id,
             "issue_number": issue_number,
             "project_key": project_key,
             "status": status if isinstance(status, dict) else {"raw": status},
+            "usage": usage.to_dict() if usage is not None else {},
         }
         return payload
 
@@ -470,13 +532,15 @@ class CommandRouter:
         self.register_command("assign", self._wrap_command_handler(assign_handler, self.issue_deps), bridge_enabled=False)
         self.register_command("comments", self._wrap_command_handler(comments_handler, self.issue_deps), bridge_enabled=False)
         self.register_command("implement", self._wrap_command_handler(implement_handler, self.issue_deps))
-        self.register_command("myissues", self._wrap_command_handler(myissues_handler, self.issue_deps), bridge_enabled=False)
+        self.register_command("myissues", self._wrap_command_handler(myissues_handler, self.issue_deps))
+        self.register_command("new", self._wrap_command_handler(plan_handler, self.issue_deps))
         self.register_command("plan", self._wrap_command_handler(plan_handler, self.issue_deps))
         self.register_command("prepare", self._wrap_command_handler(prepare_handler, self.issue_deps))
         self.register_command("respond", self._wrap_command_handler(respond_handler, self.issue_deps))
-        self.register_command("track", self._wrap_command_handler(track_handler, self.issue_deps), bridge_enabled=False)
-        self.register_command("tracked", self._wrap_command_handler(tracked_handler, self.issue_deps), bridge_enabled=False)
-        self.register_command("untrack", self._wrap_command_handler(untrack_handler, self.issue_deps), bridge_enabled=False)
+        self.register_command("track", self._wrap_command_handler(track_handler, self.issue_deps))
+        self.register_command("tracked", self._wrap_command_handler(tracked_handler, self.issue_deps))
+        self.register_command("untrack", self._wrap_command_handler(untrack_handler, self.issue_deps))
+        self.register_command("usage", self._usage_callback())
         self.register_command("active", self._wrap_command_handler(active_handler, self.monitoring_deps))
         self.register_command("fuse", self._wrap_command_handler(fuse_handler, self.monitoring_deps), bridge_enabled=False)
         self.register_command("logs", self._wrap_command_handler(logs_handler, self.monitoring_deps))
@@ -526,6 +590,39 @@ class CommandRouter:
                 await handler(ctx)
                 return
             await handler(ctx, deps)
+
+        return _callback
+
+    def _usage_callback(self) -> Callable[..., Awaitable[None]]:
+        async def _callback(
+            *,
+            client: InteractiveClientPlugin,
+            user_id: str,
+            text: str,
+            args: list[str] | None = None,
+            raw_event: Any = None,
+            attachments: list[Any] | None = None,
+            user_state: dict[str, Any] | None = None,
+        ) -> None:
+            del text, attachments, user_state
+            ctx = self.build_context(
+                client=client,
+                user_id=user_id,
+                text="usage",
+                args=args,
+                raw_event=raw_event,
+            )
+            usage, summary = await self._resolve_usage_for_context(ctx)
+            if usage is None:
+                await ctx.reply_text(
+                    summary
+                    or "No Nexus ARC usage details are available for that command or workflow yet.",
+                    parse_mode=None,
+                )
+                return
+            if isinstance(raw_event, dict):
+                raw_event["bridge_usage"] = usage.to_dict()
+            await ctx.reply_text(summary, parse_mode=None)
 
         return _callback
 
@@ -603,6 +700,69 @@ class CommandRouter:
         await self._prompt_project_selection(ctx, command)
         return None, None, []
 
+    async def _resolve_usage_for_context(
+        self, ctx: CommandExecutionContext
+    ) -> tuple[Any | None, str]:
+        args = self._normalize_arg_tokens(ctx.args or [])
+        project_key, issue_number = self._extract_project_and_issue("usage", args)
+
+        raw_event = ctx.raw_event if isinstance(ctx.raw_event, dict) else {}
+        context_payload = raw_event.get("context") if isinstance(raw_event.get("context"), dict) else {}
+        context = SessionContext.from_dict(context_payload if isinstance(context_payload, dict) else {})
+
+        workflow_id = context.current_workflow_id or ""
+        if not issue_number and context.current_issue_ref:
+            issue_match = _ISSUE_REF_RE.fullmatch(str(context.current_issue_ref).strip())
+            if issue_match:
+                project_key = project_key or issue_match.group("project")
+                issue_number = issue_match.group("issue")
+
+        if not workflow_id and len(args) == 1:
+            single = str(args[0] or "").strip()
+            if single and not _ISSUE_REF_RE.fullmatch(single) and not _ISSUE_TOKEN_RE.fullmatch(single):
+                workflow_id = single
+
+        if not workflow_id and issue_number:
+            workflow_id = self._lookup_workflow_id(issue_number) or ""
+
+        usage = await collect_bridge_usage_payload(
+            project_key=project_key,
+            issue_number=issue_number,
+            workflow_id=workflow_id or None,
+        )
+        if usage is None:
+            if not issue_number and not workflow_id:
+                return None, (
+                    "Usage: /nexus usage <project> <issue#>\n"
+                    "Or run it after selecting a project/issue with /nexus use, /nexus plan, or /nexus current."
+                )
+            target = workflow_id or (f"{project_key}#{issue_number}" if project_key and issue_number else issue_number or "")
+            return None, f"No recent Nexus ARC usage details were found for {target}."
+
+        summary_lines = ["Nexus ARC usage summary:"]
+        if project_key:
+            summary_lines.append(f"Project: {project_key}")
+        if issue_number:
+            summary_lines.append(f"Issue: {issue_number}")
+        if workflow_id:
+            summary_lines.append(f"Workflow: {workflow_id}")
+        if usage.provider:
+            summary_lines.append(f"Provider: {usage.provider}")
+        if usage.model:
+            summary_lines.append(f"Model: {usage.model}")
+        if usage.input_tokens is not None:
+            summary_lines.append(f"Input Tokens: {usage.input_tokens}")
+        if usage.output_tokens is not None:
+            summary_lines.append(f"Output Tokens: {usage.output_tokens}")
+        if usage.metadata.get("total_tokens") is not None:
+            summary_lines.append(f"Total Tokens: {usage.metadata.get('total_tokens')}")
+        if usage.estimated_cost_usd is not None:
+            summary_lines.append(f"Estimated Cost USD: {usage.estimated_cost_usd:.4f}")
+        source = str(usage.metadata.get("source") or "").strip()
+        if source:
+            summary_lines.append(f"Source: {source}")
+        return usage, "\n".join(summary_lines)
+
     def _normalize_arg_tokens(self, args: list[str]) -> list[str]:
         normalized: list[str] = []
         for raw in args:
@@ -651,12 +811,22 @@ class CommandRouter:
             command = "continue"
         elif re.search(r"\bplan\b|\bplanning\b", lowered):
             command = "plan"
+        elif re.search(r"\bnew\b|\bcreate\b.*\btask\b", lowered):
+            command = "new"
         elif re.search(r"\bprepare\b", lowered):
             command = "prepare"
         elif re.search(r"\bimplement\b|\bimplementation\b", lowered):
             command = "implement"
         elif re.search(r"\brespond\b|\breply\b", lowered):
             command = "respond"
+        elif re.search(r"\btracked\b", lowered):
+            command = "tracked"
+        elif re.search(r"\btrack\b", lowered):
+            command = "track"
+        elif re.search(r"\bmy issues\b|\bmyissues\b", lowered):
+            command = "myissues"
+        elif re.search(r"\busage\b|\bspend(?:ing)?\b|\bcost\b", lowered):
+            command = "usage"
 
         if not command:
             return "", [], self._clarification_message()
@@ -750,3 +920,32 @@ class CommandRouter:
         if value is None:
             return None
         return _normalize_project_key(str(value))
+
+
+def _command_title(command_name: str) -> str:
+    text = str(command_name or "").strip().replace("_", " ")
+    return " ".join(part.capitalize() for part in text.split()) or "Nexus ARC"
+
+
+def _build_ui_fields(
+    *,
+    command_name: str,
+    project_key: str | None,
+    issue_number: str | None,
+    workflow_id: str | None,
+    context: SessionContext,
+) -> list[UiField]:
+    fields = [UiField("Command", command_name)]
+    current_project = project_key or context.current_project
+    current_issue_ref = context.current_issue_ref or (
+        f"{project_key}#{issue_number}" if project_key and issue_number else None
+    )
+    if current_project:
+        fields.append(UiField("Project", current_project))
+    if current_issue_ref:
+        fields.append(UiField("Issue", current_issue_ref))
+    if workflow_id:
+        fields.append(UiField("Workflow", workflow_id))
+    if context.current_workflow_id and context.current_workflow_id != workflow_id:
+        fields.append(UiField("Session Workflow", context.current_workflow_id))
+    return fields

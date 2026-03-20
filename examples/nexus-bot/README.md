@@ -92,6 +92,7 @@ sudo cp nexus-telegram.service /etc/systemd/system/
 sudo cp nexus-discord.service /etc/systemd/system/
 sudo cp nexus-processor.service /etc/systemd/system/
 sudo cp nexus-webhook.service /etc/systemd/system/
+sudo cp nexus-bridge.service /etc/systemd/system/
 sudo cp nexus-health.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
@@ -103,17 +104,32 @@ This example includes a dedicated application compose stack:
 - `docker-compose.yml`
 - `Dockerfile`
 
-It runs five services:
+It runs six services:
 
 - `telegram`
 - `discord`
 - `processor`
 - `webhook`
+- `bridge`
 - `health`
 
 All services read environment variables from:
 
 - `./.env`
+
+Set `NEXUS_COMMAND_BRIDGE_AUTH_TOKEN` in `.env` before starting the bridge service.
+
+OpenClaw bridge callers can now send richer requester/session metadata through
+this example bridge service, including `requester.operator_id`,
+`requester.session_id`, `context.current_project`, and `client.render_mode`.
+The OpenClaw plugin can also maintain per-session local context with
+`/nexus use <project>`, `/nexus current`, `/nexus usage`, and `/nexus refresh`.
+It also supports bridge-safe issue commands like `/nexus new`, `/nexus track`,
+`/nexus tracked`, `/nexus untrack`, and `/nexus myissues`, plus local
+confirmation for risky commands such as `/nexus implement` and `/nexus stop`.
+Bridge responses also expose best-effort `usage` metadata for issue/workflow
+commands, sourced from recent completion storage or the newest agent log so the
+OpenClaw plugin can show Nexus ARC spend details inline.
 
 All services read project config from the `nexus` repository folder:
 
@@ -144,7 +160,7 @@ docker compose down
 Logs:
 
 ```bash
-docker compose logs -f telegram discord processor webhook health
+docker compose logs -f telegram discord processor webhook bridge health
 ```
 
 ### Config-driven deploy mode

@@ -109,6 +109,19 @@ REQUIRED_PARITY_COMMANDS: set[str] = {
 }
 
 
+BRIDGE_RENDER_MODES: set[str] = {
+    "text",
+    "rich",
+}
+
+
+BRIDGE_SESSION_CONTEXT_FIELDS: set[str] = {
+    "current_project",
+    "current_workflow_id",
+    "current_issue_ref",
+}
+
+
 OPENCLAW_BRIDGE_COMMANDS: set[str] = {
     "active",
     "agents",
@@ -116,6 +129,8 @@ OPENCLAW_BRIDGE_COMMANDS: set[str] = {
     "continue",
     "implement",
     "logs",
+    "myissues",
+    "new",
     "pause",
     "plan",
     "prepare",
@@ -124,6 +139,10 @@ OPENCLAW_BRIDGE_COMMANDS: set[str] = {
     "stats",
     "status",
     "stop",
+    "track",
+    "tracked",
+    "untrack",
+    "usage",
     "wfstate",
 }
 

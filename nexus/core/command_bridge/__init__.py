@@ -7,8 +7,30 @@ from nexus.core.command_bridge.http import (
 )
 from nexus.core.command_bridge.models import CommandRequest, CommandResult, RequesterContext
 from nexus.core.command_bridge.router import CommandRouter
+from nexus.core.command_bridge.schemas import (
+    BridgeAuditPayload,
+    BridgeClientPayload,
+    BridgeCommandResultPayload,
+    BridgeExecuteRequestPayload,
+    BridgeRequesterPayload,
+    BridgeSessionContextPayload,
+    BridgeUiFieldPayload,
+    BridgeUiPayload,
+    BridgeUsagePayload,
+    BridgeWorkflowPayload,
+)
 
 __all__ = [
+    "BridgeAuditPayload",
+    "BridgeClientPayload",
+    "BridgeCommandResultPayload",
+    "BridgeExecuteRequestPayload",
+    "BridgeRequesterPayload",
+    "BridgeSessionContextPayload",
+    "BridgeUiFieldPayload",
+    "BridgeUiPayload",
+    "BridgeUsagePayload",
+    "BridgeWorkflowPayload",
     "CommandBridgeConfig",
     "CommandRequest",
     "CommandResult",

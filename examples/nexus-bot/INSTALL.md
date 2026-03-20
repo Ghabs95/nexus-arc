@@ -211,7 +211,8 @@ cd examples/nexus-bot
 docker compose up -d
 ```
 
-This starts five services (`telegram`, `discord`, `processor`, `webhook`, `health`) as containers.
+This starts six services (`telegram`, `discord`, `processor`, `webhook`, `bridge`, `health`) as containers.
+Set `NEXUS_COMMAND_BRIDGE_AUTH_TOKEN` in `.env` before starting the bridge container or systemd unit.
 
 ### Run with systemd (Production)
 
@@ -220,8 +221,8 @@ This starts five services (`telegram`, `discord`, `processor`, `webhook`, `healt
 cd examples/nexus-bot
 sudo cp nexus-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health
-sudo systemctl start nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-health
+sudo systemctl enable nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-bridge nexus-health
+sudo systemctl start nexus-telegram nexus-discord nexus-processor nexus-webhook nexus-bridge nexus-health
 ```
 
 ---

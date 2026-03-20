@@ -1,13 +1,7 @@
 import argparse
 
-from nexus.core.command_bridge import (
-    CommandBridgeConfig,
-    CommandRouter,
-    run_command_bridge_server,
-)
+from nexus.command_bridge_service import run_command_bridge
 from nexus.core.config import (
-    NEXUS_COMMAND_BRIDGE_ALLOWED_SENDER_IDS,
-    NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES,
     NEXUS_COMMAND_BRIDGE_AUTH_TOKEN,
     NEXUS_COMMAND_BRIDGE_HOST,
     NEXUS_COMMAND_BRIDGE_PORT,
@@ -58,16 +52,10 @@ def main():
         elif args.subcommand == "to-python":
             print(translate_agent_to_python(args.file))
     elif args.command == "command-bridge":
-        router = CommandRouter(allowed_user_ids=[])
-        run_command_bridge_server(
-            router,
-            config=CommandBridgeConfig(
-                host=args.host,
-                port=args.port,
-                auth_token=args.auth_token,
-                allowed_sources=NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES,
-                allowed_sender_ids=NEXUS_COMMAND_BRIDGE_ALLOWED_SENDER_IDS,
-            ),
+        run_command_bridge(
+            host=args.host,
+            port=args.port,
+            auth_token=args.auth_token,
         )
     else:
         parser.print_help()

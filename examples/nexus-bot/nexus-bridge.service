@@ -1,0 +1,21 @@
+[Unit]
+Description=Nexus Command Bridge
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/nexus-arc/examples/nexus-bot
+EnvironmentFile=/opt/nexus/.env
+Environment="PYTHONUNBUFFERED=1"
+Environment="HOME=/home/ubuntu"
+Environment="XDG_CACHE_HOME=/home/ubuntu/.cache"
+Environment="PATH=/opt/nexus-arc/examples/nexus-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/opt/nexus-arc/examples/nexus-bot/venv/bin/nexus-bridge
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/nexus-arc/examples/nexus-bot/logs/bridge.log
+StandardError=append:/opt/nexus-arc/examples/nexus-bot/logs/bridge_error.log
+
+[Install]
+WantedBy=multi-user.target

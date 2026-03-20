@@ -1,5 +1,5 @@
 {
-  "id": "nexus-arc-command",
+  "id": "nexus-arc",
   "name": "Nexus ARC Command Bridge",
   "description": "Adds a /nexus command that forwards requests to a Nexus ARC command bridge.",
   "version": "0.1.0",
