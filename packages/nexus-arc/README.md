@@ -2,6 +2,14 @@
 
 This package forwards `/nexus` commands from OpenClaw to the Nexus ARC HTTP command bridge.
 
+Published package target: `@nexus-arc/openclaw-plugin`
+
+Compatibility targets:
+
+- Nexus ARC bridge API: `v1`
+- Minimum OpenClaw plugin runtime: current manifest-based plugin runtime
+- Recommended Nexus ARC package: `nexus-arc>=0.1.1`
+
 It now matches OpenClaw's actual plugin contract:
 
 - `openclaw.plugin.json` manifest with inline JSON Schema
@@ -40,6 +48,14 @@ Install locally during development:
 
 ```bash
 openclaw plugins install ./packages/nexus-arc
+openclaw plugins enable nexus-arc
+openclaw config validate
+```
+
+Planned published install:
+
+```bash
+openclaw plugins install @nexus-arc/openclaw-plugin
 openclaw plugins enable nexus-arc
 openclaw config validate
 ```
@@ -94,3 +110,9 @@ Additional bridge-aware behavior:
 - `/nexus health` checks `/healthz` and reports config warnings
 - accepted long-running commands can poll the workflow status endpoint once before replying
 - bridge auth, allowlist, timeout, and connectivity failures render as distinct user-facing errors
+
+Release notes:
+
+- npm package name: `@nexus-arc/openclaw-plugin`
+- manifest id remains `nexus-arc` so existing OpenClaw config stays stable
+- pair this plugin with the Python bridge entrypoint `nexus-arc-bridge` or `nexus command-bridge`

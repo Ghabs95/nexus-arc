@@ -1,11 +1,5 @@
 import argparse
 
-from nexus.command_bridge_service import run_command_bridge
-from nexus.core.config import (
-    NEXUS_COMMAND_BRIDGE_AUTH_TOKEN,
-    NEXUS_COMMAND_BRIDGE_HOST,
-    NEXUS_COMMAND_BRIDGE_PORT,
-)
 from nexus.translators.to_copilot import translate_agent_to_copilot
 from nexus.translators.to_markdown import translate_agent_to_markdown
 from nexus.translators.to_python import translate_agent_to_python
@@ -34,11 +28,11 @@ def main():
     python_parser.add_argument("file", help="YAML file to translate")
 
     bridge_parser = subparsers.add_parser("command-bridge", help="Run the Nexus command bridge")
-    bridge_parser.add_argument("--host", default=NEXUS_COMMAND_BRIDGE_HOST, help="Bridge host")
-    bridge_parser.add_argument("--port", type=int, default=NEXUS_COMMAND_BRIDGE_PORT, help="Bridge port")
+    bridge_parser.add_argument("--host", default=None, help="Bridge host")
+    bridge_parser.add_argument("--port", type=int, default=None, help="Bridge port")
     bridge_parser.add_argument(
         "--auth-token",
-        default=NEXUS_COMMAND_BRIDGE_AUTH_TOKEN,
+        default=None,
         help="Shared bearer token used by bridge clients",
     )
 
@@ -52,6 +46,8 @@ def main():
         elif args.subcommand == "to-python":
             print(translate_agent_to_python(args.file))
     elif args.command == "command-bridge":
+        from nexus.command_bridge_service import run_command_bridge
+
         run_command_bridge(
             host=args.host,
             port=args.port,

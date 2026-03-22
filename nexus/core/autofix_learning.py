@@ -19,7 +19,14 @@ _AUTOFIX_KEYWORDS = (
     "hotfix",
 )
 
-_PATH_PATTERN = re.compile(r"(?:[a-zA-Z]:)?[/~]?[\w.\-/]+(?:\.[A-Za-z0-9_]+)?")
+_PATH_PATTERN = re.compile(
+    r"("
+    r"[a-zA-Z]:[\\/][^\s:]+"
+    r"|~?/[^\s:]+"
+    r"|\.\.?[\\/][^\s:]+"
+    r"|[\w.-]+(?:[\\/][\w.-]+)+"
+    r")"
+)
 _NUMBER_PATTERN = re.compile(r"\b\d+\b")
 _HEX_PATTERN = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 _SPACE_PATTERN = re.compile(r"\s+")
@@ -60,10 +67,6 @@ def is_autofix_candidate(
         key_blob = " ".join(str(k).lower() for k in outputs.keys())
         if "fix" in key_blob or "patch" in key_blob:
             return True
-
-    # Developer/debug steps that surfaced an error are strong candidates.
-    if error and agent in {"developer", "debug"}:
-        return True
 
     return False
 

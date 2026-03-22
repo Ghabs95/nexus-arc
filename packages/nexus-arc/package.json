@@ -1,19 +1,45 @@
 {
-  "name": "nexus-arc",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@nexus-arc/openclaw-plugin",
+  "version": "0.2.0",
   "type": "module",
   "description": "OpenClaw plugin that forwards /nexus commands to the Nexus ARC command bridge.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ghabs95/nexus-arc.git",
+    "directory": "packages/nexus-arc"
+  },
+  "homepage": "https://github.com/Ghabs95/nexus-arc/tree/main/packages/nexus-arc",
+  "bugs": {
+    "url": "https://github.com/Ghabs95/nexus-arc/issues"
+  },
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "nexus-arc",
+    "agent",
+    "workflow",
+    "orchestration"
+  ],
   "openclaw": {
     "extensions": [
       "./src/index.ts"
     ]
+  },
+  "files": [
+    "README.md",
+    "openclaw.plugin.json",
+    "src",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test src/index.test.ts"
   },
   "devDependencies": {
-    "typescript": "^5.8.2"
+    "typescript": "^5.9.3"
   }
 }

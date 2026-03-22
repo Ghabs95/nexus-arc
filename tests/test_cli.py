@@ -1,6 +1,8 @@
+import sys
 import tempfile
 from pathlib import Path
 
+from nexus import cli as nexus_cli
 from nexus.translators.to_markdown import translate_agent_to_markdown
 
 
@@ -23,3 +25,16 @@ spec:
         assert "# Translating Agent" in md_output
         assert "The purpose content" in md_output
         assert "**Agent Type:** `translator`" in md_output
+
+
+def test_cli_help_does_not_require_project_config(monkeypatch, capsys):
+    monkeypatch.delenv("PROJECT_CONFIG_PATH", raising=False)
+    monkeypatch.setattr(sys, "argv", ["nexus", "--help"])
+
+    try:
+        nexus_cli.main()
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    captured = capsys.readouterr()
+    assert "Nexus ARC CLI" in captured.out

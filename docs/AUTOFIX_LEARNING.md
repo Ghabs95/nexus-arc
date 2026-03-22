@@ -70,18 +70,22 @@ When blocked, the runtime emits `AUTOFIX_RETRY_GUARD_BLOCKED` for traceability.
 ## Rollout Plan
 
 1. Observe-only
+
 - Enable event emission and retrieval in dashboards/reports.
 - Do not alter retry policy.
 
 2. Soft guard
+
 - Enable guard with warning/alert only.
 - Monitor false positives.
 
 3. Enforced guard
+
 - Block retries for clear repeated-failure patterns.
 - Keep manual override paths (`/reprocess`, `/resume`).
 
 4. Continuous tuning
+
 - Tune streak/window thresholds from real incident data.
 - Promote stable patterns into project memory/instructions.
 
