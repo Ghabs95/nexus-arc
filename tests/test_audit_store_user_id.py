@@ -41,3 +41,56 @@ def test_audit_log_forwards_user_id_to_storage(monkeypatch):
     assert captured["workflow_id"] == "wf-42"
     assert captured["event_type"] == "AGENT_LAUNCHED"
     assert captured["user_id"] == "nexus-user-42"
+
+
+def test_get_autofix_events_filters_by_agent_and_type(monkeypatch):
+    sample = [
+        {
+            "workflow_id": "wf-42",
+            "timestamp": "2026-03-22T10:00:00+00:00",
+            "event_type": "AUTOFIX_ATTEMPTED",
+            "data": {"agent_type": "developer", "error_fingerprint": "fp-a"},
+            "user_id": None,
+        },
+        {
+            "workflow_id": "wf-42",
+            "timestamp": "2026-03-22T10:01:00+00:00",
+            "event_type": "AUTOFIX_FAILED",
+            "data": {"agent_type": "developer", "error_fingerprint": "fp-a"},
+            "user_id": None,
+        },
+        {
+            "workflow_id": "wf-42",
+            "timestamp": "2026-03-22T10:02:00+00:00",
+            "event_type": "STEP_RETRY",
+            "data": {"agent_type": "developer"},
+            "user_id": None,
+        },
+    ]
+
+    monkeypatch.setattr(AuditStore, "get_audit_history", staticmethod(lambda _i, limit=50: sample))
+
+    matches = AuditStore.get_autofix_events(
+        42,
+        agent_type="developer",
+        error_fingerprint="fp-a",
+        limit=2,
+    )
+
+    assert len(matches) == 2
+    assert all(str(item["event_type"]).startswith("AUTOFIX_") for item in matches)
+
+
+def test_get_autofix_events_uses_bounded_fetch_limit(monkeypatch):
+    captured: dict[str, int] = {"limit": 0}
+
+    def _history(_issue: int, limit: int = 50):
+        captured["limit"] = int(limit)
+        return []
+
+    monkeypatch.setattr(AuditStore, "get_audit_history", staticmethod(_history))
+
+    _ = AuditStore.get_autofix_events(7, limit=9)
+
+    assert captured["limit"] >= 45
+    assert captured["limit"] <= 500

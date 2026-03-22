@@ -1,4 +1,9 @@
 from nexus.core.models import Agent, StepStatus, Workflow, WorkflowState, WorkflowStep
+from nexus.core.autofix_learning import (
+    build_error_fingerprint,
+    find_similar_autofix_attempts,
+    is_autofix_candidate,
+)
 from nexus.core.workflow_engine.completion_service import (
     apply_step_completion_result,
     apply_retry_transition,
@@ -176,6 +181,128 @@ async def test_apply_step_completion_result_retry_persists_and_audits():
     assert saved == ["wf-1"]
     assert audits and audits[0][1] == "STEP_RETRY"
     assert emitted == []
+
+
+async def test_apply_step_completion_result_autofix_retry_emits_learning_events():
+    step = _make_step()
+    step.name = "autofix_patch"
+    workflow = _make_workflow(step)
+    step.retry = 2
+    step.retry_count = 0
+    step.status = StepStatus.RUNNING
+    audits: list[tuple[str, str, dict]] = []
+
+    result = await apply_step_completion_result(
+        workflow=workflow,
+        workflow_id="wf-1",
+        step=step,
+        step_num=1,
+        outputs={"fix_strategy": "update import path"},
+        error="ImportError: cannot import name Foo from /tmp/project/app.py",
+        default_backoff_base=1.0,
+        save_workflow=lambda wf: (__import__("asyncio").sleep(0)),
+        audit=lambda wid, et, payload: (
+            audits.append((wid, et, payload)),
+            __import__("asyncio").sleep(0),
+        )[1],
+        emit=lambda event: (__import__("asyncio").sleep(0)),
+    )
+
+    assert result.retry_handled is True
+    event_types = [entry[1] for entry in audits]
+    assert event_types == ["AUTOFIX_ATTEMPTED", "STEP_RETRY", "AUTOFIX_FAILED"]
+    autofix_payload = audits[0][2]
+    assert autofix_payload["agent_type"] == "developer"
+    assert autofix_payload["error_fingerprint"]
+
+
+async def test_apply_step_completion_result_autofix_success_emits_validated_event():
+    step = _make_step()
+    workflow = _make_workflow(step)
+    audits: list[tuple[str, str, dict]] = []
+
+    result = await apply_step_completion_result(
+        workflow=workflow,
+        workflow_id="wf-1",
+        step=step,
+        step_num=1,
+        outputs={"fix_summary": "Added guard and updated tests"},
+        error=None,
+        default_backoff_base=1.0,
+        save_workflow=lambda wf: (__import__("asyncio").sleep(0)),
+        audit=lambda wid, et, payload: (
+            audits.append((wid, et, payload)),
+            __import__("asyncio").sleep(0),
+        )[1],
+        emit=lambda event: (__import__("asyncio").sleep(0)),
+    )
+
+    assert result.has_error is False
+    assert [entry[1] for entry in audits] == ["AUTOFIX_VALIDATED"]
+
+
+def test_build_error_fingerprint_normalizes_volatile_tokens():
+    fingerprint = build_error_fingerprint(
+        "ImportError: cannot import name Foo from /home/ubuntu/app/module.py at line 987"
+    )
+    assert "foo" in fingerprint
+    assert "<path>" in fingerprint
+    assert "<num>" in fingerprint
+
+
+def test_is_autofix_candidate_detection_paths():
+    assert (
+        is_autofix_candidate(
+            step_name="autofix_patch",
+            agent_type="developer",
+            outputs={},
+            error=None,
+        )
+        is True
+    )
+    assert (
+        is_autofix_candidate(
+            step_name="develop",
+            agent_type="developer",
+            outputs={"fix_summary": "updated"},
+            error=None,
+        )
+        is True
+    )
+    assert (
+        is_autofix_candidate(
+            step_name="design",
+            agent_type="designer",
+            outputs={},
+            error=None,
+        )
+        is False
+    )
+
+
+def test_find_similar_autofix_attempts_filters_and_limits():
+    events = [
+        {
+            "event_type": "AUTOFIX_ATTEMPTED",
+            "data": {"agent_type": "developer", "error_fingerprint": "a"},
+        },
+        {
+            "event_type": "AUTOFIX_FAILED",
+            "data": {"agent_type": "developer", "error_fingerprint": "a"},
+        },
+        {
+            "event_type": "AUTOFIX_VALIDATED",
+            "data": {"agent_type": "developer", "error_fingerprint": "b"},
+        },
+    ]
+    matches = find_similar_autofix_attempts(
+        events,
+        agent_type="developer",
+        error_fingerprint="a",
+        limit=1,
+    )
+    assert len(matches) == 1
+    assert matches[0]["event_type"] in {"AUTOFIX_ATTEMPTED", "AUTOFIX_FAILED"}
 
 
 def test_reset_step_for_goto_resets_state():

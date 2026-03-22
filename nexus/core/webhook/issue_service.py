@@ -247,7 +247,7 @@ def handle_issue_opened_event(
 **URL:** {issue_url}  
 **Repository:** {repo_name}  
 **Agent Type:** {agent_type}
-{f"**Execution Mode:** {execution_mode}\n" if execution_mode else ""}**Source:** webhook
+{"**Execution Mode:** " + execution_mode + chr(10) if execution_mode else ""}**Source:** webhook
 **Issue Number:** {issue_number}
 
 ## Description

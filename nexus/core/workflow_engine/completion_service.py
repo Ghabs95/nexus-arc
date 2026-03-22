@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus.core.autofix_learning import build_autofix_payload, is_autofix_candidate
 from nexus.core.events import NexusEvent, StepCompleted, StepFailed
 from nexus.core.models import StepStatus, Workflow, WorkflowStep
 
@@ -80,6 +81,12 @@ async def apply_step_completion_result(
     step.completed_at = datetime.now(UTC)
     step.outputs = outputs
     step.error = error
+    candidate = is_autofix_candidate(
+        step_name=step.name,
+        agent_type=step.agent.name,
+        outputs=outputs,
+        error=error,
+    )
 
     if error:
         will_retry, backoff, max_retries = apply_retry_transition(
@@ -88,6 +95,20 @@ async def apply_step_completion_result(
             error=error,
             default_backoff_base=default_backoff_base,
         )
+        if candidate:
+            await audit(
+                workflow_id,
+                "AUTOFIX_ATTEMPTED",
+                build_autofix_payload(
+                    step_num=step_num,
+                    step_name=step.name,
+                    agent_type=step.agent.name,
+                    error=error,
+                    retry_count=step.retry_count,
+                    retry_planned=will_retry,
+                    outputs=outputs,
+                ),
+            )
         if will_retry:
             workflow.updated_at = datetime.now(UTC)
             await save_workflow(workflow)
@@ -102,6 +123,20 @@ async def apply_step_completion_result(
                     "error": error,
                 },
             )
+            if candidate:
+                await audit(
+                    workflow_id,
+                    "AUTOFIX_FAILED",
+                    build_autofix_payload(
+                        step_num=step_num,
+                        step_name=step.name,
+                        agent_type=step.agent.name,
+                        error=error,
+                        retry_count=step.retry_count,
+                        retry_planned=True,
+                        outputs=outputs,
+                    ),
+                )
             logger.info(
                 "Retrying step %s in workflow %s (attempt %s/%s, backoff %ss)",
                 step_num,
@@ -121,9 +156,37 @@ async def apply_step_completion_result(
                 error=error,
             )
         )
+        if candidate:
+            await audit(
+                workflow_id,
+                "AUTOFIX_FAILED",
+                build_autofix_payload(
+                    step_num=step_num,
+                    step_name=step.name,
+                    agent_type=step.agent.name,
+                    error=error,
+                    retry_count=step.retry_count,
+                    retry_planned=False,
+                    outputs=outputs,
+                ),
+            )
         return StepCompletionApplyResult(retry_handled=False, has_error=True)
 
     step.status = StepStatus.COMPLETED
+    if candidate:
+        await audit(
+            workflow_id,
+            "AUTOFIX_VALIDATED",
+            build_autofix_payload(
+                step_num=step_num,
+                step_name=step.name,
+                agent_type=step.agent.name,
+                error=None,
+                retry_count=step.retry_count,
+                retry_planned=False,
+                outputs=outputs,
+            ),
+        )
     await emit(
         StepCompleted(
             workflow_id=workflow_id,

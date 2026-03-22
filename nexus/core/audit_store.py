@@ -146,3 +146,48 @@ class AuditStore:
         except Exception as e:
             logger.error(f"Failed to read audit log: {e}")
             return []
+
+    @staticmethod
+    def get_autofix_events(
+        issue_num: int,
+        *,
+        agent_type: str | None = None,
+        error_fingerprint: str | None = None,
+        event_types: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Get recent autofix audit events with lightweight filtering.
+
+        This helper avoids full-history scans by fetching a bounded recent window
+        from storage and filtering in-memory.
+        """
+        from nexus.core.autofix_learning import find_similar_autofix_attempts
+
+        normalized_limit = max(1, int(limit))
+        normalized_event_types = {
+            str(item).strip().upper()
+            for item in (event_types or ["AUTOFIX_ATTEMPTED", "AUTOFIX_FAILED", "AUTOFIX_VALIDATED"])
+            if str(item).strip()
+        }
+
+        # Fetch a bounded window from storage to keep lookups cheap.
+        fetch_limit = min(max(normalized_limit * 5, 50), 500)
+        history = AuditStore.get_audit_history(issue_num, limit=fetch_limit)
+        if not history:
+            return []
+
+        filtered = [
+            event
+            for event in history
+            if str(event.get("event_type") or "").strip().upper() in normalized_event_types
+        ]
+        if not filtered:
+            return []
+
+        # Reuse shared matching logic for agent/fingerprint filters and recent slicing.
+        return find_similar_autofix_attempts(
+            filtered,
+            agent_type=agent_type,
+            error_fingerprint=error_fingerprint,
+            limit=normalized_limit,
+        )

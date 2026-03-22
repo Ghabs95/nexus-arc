@@ -410,6 +410,9 @@ class NexusAgentRuntime(AgentRuntime):
         except Exception:
             pass
 
+        if not self._autofix_retry_allowed(issue_key, normalized_agent):
+            return False
+
         try:
             from nexus.core.state_manager import HostStateManager
 
@@ -589,6 +592,66 @@ class NexusAgentRuntime(AgentRuntime):
         # Fuse didn't trip — allow the retry.
         # (The actual retry-budget decision lives in the fuse logic above.)
         return True
+
+    def _autofix_retry_allowed(self, issue_number: str, agent_type: str) -> bool:
+        """Guard retries when recent autofix history shows repeated failures."""
+        try:
+            from nexus.core.audit_store import AuditStore
+
+            issue_int = int(str(issue_number))
+        except Exception:
+            return True
+
+        try:
+            events = AuditStore.get_autofix_events(
+                issue_int,
+                agent_type=agent_type,
+                limit=12,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Autofix retry-guard lookup failed for issue #%s agent %s: %s",
+                issue_number,
+                agent_type,
+                exc,
+            )
+            return True
+
+        if not events:
+            return True
+
+        recent_types = [str(item.get("event_type") or "").strip().upper() for item in events]
+        if any(event_type == "AUTOFIX_VALIDATED" for event_type in recent_types[:4]):
+            return True
+
+        failure_streak = 0
+        for event_type in recent_types:
+            if event_type == "AUTOFIX_FAILED":
+                failure_streak += 1
+                continue
+            break
+
+        recent_window = recent_types[:6]
+        repeated_recent_failures = recent_window.count("AUTOFIX_FAILED") >= 4 and (
+            "AUTOFIX_VALIDATED" not in recent_window
+        )
+        if failure_streak < 3 and not repeated_recent_failures:
+            return True
+
+        reason = (
+            f"Blocked retry for issue #{issue_number} agent {agent_type}: "
+            f"autofix failure streak={failure_streak}, recent={recent_window}"
+        )
+        logger.warning(reason)
+        try:
+            AuditStore.audit_log(
+                issue_int,
+                "AUTOFIX_RETRY_GUARD_BLOCKED",
+                reason,
+            )
+        except Exception:
+            pass
+        return False
 
     def _is_issue_open_for_retry(self, issue_number: str) -> bool | None:
         """Best-effort issue status check used by retry gating."""

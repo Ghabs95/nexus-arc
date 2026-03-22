@@ -36,6 +36,7 @@ Every agent action becomes part of your development history:
 > - [Usage Guide & Examples](docs/USAGE.md) - How to use nexus-arc in your project
 > - [Plugin Architecture](docs/PLUGINS.md) - Build and load Telegram/GitHub/AI integrations as plugins
 > - [Config Bootstrap Lifecycle](docs/CONFIG_BOOTSTRAP_LIFECYCLE.md) - Explicit runtime startup order and singleton-test hooks
+> - [Autofix Learning Contract](docs/AUTOFIX_LEARNING.md) - Event schema, retry-guard behavior, and rollout
 > - [Comparison with Google ADK, LangChain, and others](docs/COMPARISON.md)
 > - [Positioning & Messaging](docs/POSITIONING.md)
 
