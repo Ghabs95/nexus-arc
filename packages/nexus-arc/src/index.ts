@@ -78,6 +78,8 @@ type NexusCommandResult = {
 
 type RequesterPayload = {
     source_platform: string;
+    nexus_id?: string;
+    auth_authority?: string;
     operator_id: string;
     sender_id: string;
     sender_name: string;
@@ -158,6 +160,8 @@ export class BridgeRequestError extends Error {
 }
 
 const STATIC_SUPPORTED_COMMANDS = [
+    "chat",
+    "chatagents",
     "status",
     "active",
     "logs",
@@ -176,6 +180,9 @@ const STATIC_SUPPORTED_COMMANDS = [
     "resume",
     "stop",
     "continue",
+    "reconcile",
+    "reprocess",
+    "kill",
     "agents",
     "audit",
     "stats"
@@ -198,7 +205,10 @@ const ISSUE_SCOPED_COMMANDS = new Set([
     "pause",
     "resume",
     "stop",
-    "continue"
+    "continue",
+    "reconcile",
+    "reprocess",
+    "kill"
 ]);
 const CONFIRMATION_TTL_MS = 2 * 60 * 1000;
 const warnedConfigKeys = new Set<string>();
@@ -228,7 +238,7 @@ function resolvePluginConfig(ctx: CommandHandlerContext): Required<PluginConfig>
         requireConfirmFor:
             stringArrayValue(pluginConfig.requireConfirmFor).length > 0
                 ? stringArrayValue(pluginConfig.requireConfirmFor)
-                : ["implement", "respond", "stop"],
+                : ["implement", "respond", "stop", "kill", "reprocess"],
         autoPollAccepted: booleanValue(pluginConfig.autoPollAccepted) ?? true,
         acceptedPollDelayMs: numberValue(pluginConfig.acceptedPollDelayMs) ?? 1500,
         acceptedPollAttempts: numberValue(pluginConfig.acceptedPollAttempts) ?? 1
@@ -451,7 +461,7 @@ function normalizeAttachment(value: unknown): Record<string, unknown> {
     return {value: String(value ?? "")};
 }
 
-function getRequesterContext(
+export function getRequesterContext(
     ctx: CommandHandlerContext,
     config: Required<PluginConfig>
 ): RequesterPayload {
@@ -463,20 +473,29 @@ function getRequesterContext(
         [config.sourcePlatform, channelName || "unknown", senderId || channelId],
         `${config.sourcePlatform}:operator`
     );
+    const authorizedSender =
+        typeof ctx.isAuthorizedSender === "boolean" ? ctx.isAuthorizedSender : undefined;
+    const requesterNexusId = authorizedSender
+        ? buildScopedIdentity(
+            [config.sourcePlatform, "user", senderId || operatorId],
+            `${config.sourcePlatform}:nexus`
+        )
+        : "";
     const sessionId = buildScopedIdentity(
         [config.sourcePlatform, channelName || "unknown", channelId || senderId],
         operatorId
     );
     return {
         source_platform: config.sourcePlatform,
+        nexus_id: requesterNexusId || undefined,
+        auth_authority: authorizedSender ? config.sourcePlatform : undefined,
         operator_id: operatorId,
         sender_id: senderId,
         sender_name: String(ctx.senderName ?? ""),
         channel_id: channelId,
         channel_name: channelName,
         session_id: sessionId,
-        is_authorized_sender:
-            typeof ctx.isAuthorizedSender === "boolean" ? ctx.isAuthorizedSender : undefined,
+        is_authorized_sender: authorizedSender,
         roles: ["operator"],
         access_groups: [],
         metadata: {
@@ -659,6 +678,9 @@ function renderHelpText(capabilities?: BridgeCapabilitiesPayload): string {
         "Examples:",
         "/nexus current",
         "/nexus use demo",
+        "/nexus chat",
+        '/nexus chat "Review the current workspace architecture and call out risks."',
+        "/nexus chatagents demo",
         "/nexus usage demo#42",
         "/nexus usage #42",
         "/nexus health",
@@ -667,6 +689,9 @@ function renderHelpText(capabilities?: BridgeCapabilitiesPayload): string {
         '/nexus new demo "investigate agent launch retries"',
         "/nexus plan demo 42",
         "/nexus implement demo#42",
+        "/nexus reconcile demo#42",
+        "/nexus reprocess demo#42",
+        "/nexus kill demo#42 --yes",
         "/nexus wfstate demo-42-full",
         "/nexus show me the workflow state for demo#42",
         "",
@@ -1183,6 +1208,51 @@ async function handleNexusCommand(ctx: CommandHandlerContext): Promise<CommandRe
     }
 }
 
+function buildExplicitInvocation(command: string, rawArgs: string | undefined): ParsedInvocation {
+    const args = tokenizeInput(rawArgs);
+    return {
+        command,
+        args,
+        freeform: [command, ...args].filter(Boolean).join(" "),
+        explicitCommand: true
+    };
+}
+
+async function handleExplicitBridgeCommand(
+    ctx: CommandHandlerContext,
+    command: "chat" | "chatagents"
+): Promise<CommandResponse> {
+    const config = resolvePluginConfig(ctx);
+    maybeWarnConfig(config);
+    const capabilities = await getBridgeCapabilities(config);
+    const requester = getRequesterContext(ctx, config);
+    const sessionState = getSessionState(requester.session_id);
+    const parsed = normalizeInvocationArgs(buildExplicitInvocation(command, ctx.args), sessionState, config);
+    const context = inferCommandContext(parsed, sessionState, config);
+    const client = {
+        plugin_version: PLUGIN_VERSION,
+        render_mode: config.renderMode,
+        metadata: {
+            source_plugin: PLUGIN_ID
+        }
+    };
+    const request = buildBridgeRequest(
+        parsed,
+        requester,
+        context,
+        client,
+        Array.isArray(ctx.attachments) ? ctx.attachments : [],
+        capabilities ?? undefined
+    );
+    try {
+        const result = await callBridge(request.path, request.payload, config);
+        updateSessionStateFromResult(requester.session_id, sessionState, context, result, config);
+        return {text: await maybePollAcceptedWorkflow(result, config)};
+    } catch (error) {
+        return {text: formatBridgeError(error)};
+    }
+}
+
 const plugin = {
     id: PLUGIN_ID,
     name: "Nexus ARC Command Bridge",
@@ -1213,6 +1283,20 @@ const plugin = {
             acceptsArgs: true,
             requireAuth: true,
             handler: handleNexusCommand
+        });
+        api.registerCommand({
+            name: "chat",
+            description: "Run a Nexus ARC workspace-aware chat turn",
+            acceptsArgs: true,
+            requireAuth: true,
+            handler: (ctx) => handleExplicitBridgeCommand(ctx, "chat")
+        });
+        api.registerCommand({
+            name: "chatagents",
+            description: "List Nexus ARC workspace chat agents",
+            acceptsArgs: true,
+            requireAuth: true,
+            handler: (ctx) => handleExplicitBridgeCommand(ctx, "chatagents")
         });
     }
 };

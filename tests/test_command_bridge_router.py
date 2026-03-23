@@ -31,6 +31,13 @@ def router(monkeypatch) -> CommandRouter:
         lambda **_kwargs: SimpleNamespace(),
     )
     monkeypatch.setattr(
+        "nexus.core.command_bridge.router.hands_free_bridge_deps",
+        lambda **_kwargs: SimpleNamespace(
+            requester_context_builder=None,
+            feature_ideation_deps=SimpleNamespace(requester_context_builder=None),
+        ),
+    )
+    monkeypatch.setattr(
         "nexus.core.command_bridge.router.get_workflow_state",
         lambda: SimpleNamespace(
             get_workflow_id=lambda issue_num: "demo-42-full" if str(issue_num) == "42" else None,
@@ -173,6 +180,68 @@ async def test_execute_prefers_handler_supplied_bridge_usage(
 
 
 @pytest.mark.asyncio
+async def test_execute_binds_bridge_requester_identity(
+    router: CommandRouter, monkeypatch: pytest.MonkeyPatch
+):
+    captured: dict[str, object] = {}
+
+    class _FakeUser:
+        nexus_id = "generated-user"
+
+    class _FakeUserManager:
+        def get_or_create_user_by_identity(self, *, platform, platform_user_id, username=None, first_name=None):
+            captured["created"] = {
+                "platform": platform,
+                "platform_user_id": platform_user_id,
+                "username": username,
+                "first_name": first_name,
+            }
+            return _FakeUser()
+
+        def merge_users(self, target_nexus_id, source_nexus_id):
+            captured["merged"] = {
+                "target_nexus_id": target_nexus_id,
+                "source_nexus_id": source_nexus_id,
+            }
+            return target_nexus_id
+
+    monkeypatch.setattr("nexus.core.command_bridge.router.get_user_manager", lambda: _FakeUserManager())
+
+    async def _status_handler(*, client, user_id, text, args, raw_event=None, attachments=None):
+        del user_id, text, args, raw_event, attachments
+        ctx = router.build_context(client=client, user_id="alice", text="status demo", args=["demo"])
+        await ctx.reply_text("Status ready")
+
+    router.register_command("status", _status_handler)
+
+    await router.execute(
+        CommandRequest(
+            command="status",
+            args=["demo"],
+            requester=RequesterContext(
+                source_platform="openclaw",
+                sender_id="alice",
+                sender_name="Alice",
+                nexus_id="openclaw:user:alice",
+                auth_authority="openclaw",
+                is_authorized_sender=True,
+            ),
+        )
+    )
+
+    assert captured["created"] == {
+        "platform": "openclaw",
+        "platform_user_id": "alice",
+        "username": "Alice",
+        "first_name": "Alice",
+    }
+    assert captured["merged"] == {
+        "target_nexus_id": "openclaw:user:alice",
+        "source_nexus_id": "generated-user",
+    }
+
+
+@pytest.mark.asyncio
 async def test_get_workflow_status_includes_usage(
     router: CommandRouter, monkeypatch: pytest.MonkeyPatch
 ):
@@ -214,9 +283,43 @@ def test_get_capabilities_reports_bridge_enabled_commands(router: CommandRouter)
 
     assert capabilities["ok"] is True
     assert capabilities["route_enabled"] is True
+    assert "chat" in capabilities["supported_commands"]
+    assert "chatagents" in capabilities["supported_commands"]
+    assert "kill" in capabilities["supported_commands"]
     assert "plan" in capabilities["supported_commands"]
+    assert "reconcile" in capabilities["supported_commands"]
+    assert "reprocess" in capabilities["supported_commands"]
     assert "wfstate" in capabilities["supported_commands"]
     assert "plan" in capabilities["long_running_commands"]
+    assert "reprocess" in capabilities["long_running_commands"]
+
+
+@pytest.mark.asyncio
+async def test_execute_chat_with_args_routes_through_hands_free_text(
+    router: CommandRouter, monkeypatch: pytest.MonkeyPatch
+):
+    captured: dict[str, object] = {}
+
+    async def _fake_route_hands_free_text(ctx, deps):
+        del deps
+        captured["text"] = ctx.text
+        captured["chat_session_active"] = ctx.user_state.get("chat_session_active")
+        await ctx.reply_text("Workspace chat reply")
+
+    monkeypatch.setattr("nexus.core.command_bridge.router.route_hands_free_text", _fake_route_hands_free_text)
+
+    result = await router.execute(
+        CommandRequest(
+            command="chat",
+            args=["Review", "the", "workspace"],
+            requester=RequesterContext(source_platform="openclaw", sender_id="alice"),
+        )
+    )
+
+    assert captured["text"] == "Review the workspace"
+    assert captured["chat_session_active"] is True
+    assert result.status == "success"
+    assert result.message == "Workspace chat reply"
 
 
 @pytest.mark.asyncio

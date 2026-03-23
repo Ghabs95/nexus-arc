@@ -78,6 +78,9 @@ from nexus.core.auth import (
     get_latest_login_session_status as _svc_get_latest_login_session_status,
 )
 from nexus.core.auth import (
+    import_openclaw_local_provider_credentials as _svc_import_openclaw_local_provider_credentials,
+)
+from nexus.core.auth import (
     get_setup_status as _svc_get_setup_status,
 )
 from nexus.core.auth import register_onboarding_message as _svc_register_onboarding_message
@@ -1608,11 +1611,6 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not NEXUS_AUTH_ENABLED:
         await update.effective_message.reply_text("ℹ️ Auth onboarding is disabled in this environment.")
         return
-    if not NEXUS_PUBLIC_BASE_URL:
-        await update.effective_message.reply_text(
-            "⚠️ NEXUS_PUBLIC_BASE_URL is not configured. Ask an admin to configure auth."
-        )
-        return
 
     requested_provider = str((context.args[0] if context.args else "") or "").strip().lower()
     provider_aliases = {
@@ -1627,6 +1625,38 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if requested_provider in {"codex", "gemini", "claude", "copilot"}
         else ""
     )
+    user = _get_or_create_telegram_user(update.effective_user)
+
+    if account_provider_target in {"codex", "gemini", "claude", "copilot"}:
+        imported = _svc_import_openclaw_local_provider_credentials(
+            nexus_id=str(user.nexus_id),
+            provider=account_provider_target,
+        )
+        import_state = str(imported.get("state") or "").strip().lower()
+        if bool(imported.get("imported")):
+            await update.effective_message.reply_text(
+                "\n".join(
+                    [
+                        f"✅ {imported.get('message') or f'Imported saved {account_provider_target.title()} credentials.'}",
+                        "Run `/setup_status` to verify setup readiness.",
+                    ]
+                ),
+                disable_web_page_preview=True,
+            )
+            return
+        if import_state in {"invalid", "error"}:
+            await update.effective_message.reply_text(
+                f"⚠️ {imported.get('message') or 'Saved provider credentials could not be imported.'}",
+                disable_web_page_preview=True,
+            )
+            return
+
+    if not NEXUS_PUBLIC_BASE_URL:
+        await update.effective_message.reply_text(
+            "⚠️ NEXUS_PUBLIC_BASE_URL is not configured. Ask an admin to configure auth."
+        )
+        return
+
     github_oauth_ready = bool(NEXUS_GITHUB_CLIENT_ID and NEXUS_GITHUB_CLIENT_SECRET)
     gitlab_oauth_ready = bool(NEXUS_GITLAB_CLIENT_ID and NEXUS_GITLAB_CLIENT_SECRET)
     if requested_provider == "github" and not github_oauth_ready:
@@ -1642,7 +1672,6 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    user = _get_or_create_telegram_user(update.effective_user)
     available_providers: list[str] = []
     if github_oauth_ready:
         available_providers.append("github")

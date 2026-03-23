@@ -162,6 +162,32 @@ def test_execute_rejects_sender_allowlist_with_structured_error():
     assert payload["error_code"] == "sender_not_allowed"
 
 
+def test_execute_requires_authenticated_requester_when_configured():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(
+            auth_token="secret",
+            allowed_sources=["openclaw"],
+            require_authorized_sender=True,
+        ),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/commands/execute",
+        auth="Bearer secret",
+        payload={
+            "command": "plan",
+            "args": ["demo", "42"],
+            "requester": {"source_platform": "openclaw", "sender_id": "alice"},
+        },
+    )
+
+    assert status.startswith("403")
+    assert payload["error_code"] == "requester_not_authorized"
+
+
 def test_workflow_status_endpoint_returns_payload():
     app = create_command_bridge_app(
         _FakeRouter(),

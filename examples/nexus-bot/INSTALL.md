@@ -1,21 +1,21 @@
 # Nexus Chat Bot — Installation Guide
 
-This guide covers two deployment scenarios for the Nexus Telegram/Discord bot runtimes:
+This guide covers three runtime modes for Nexus ARC installations:
 
-| Scenario       | External Deps      | Best For                                           |
-|----------------|--------------------|----------------------------------------------------|
-| **Lite**       | None               | Solo developer, quick start, local experimentation |
-| **Enterprise** | PostgreSQL + Redis | Production, multi-project, persistent chat memory  |
+| Runtime Mode   | Native Nexus Bots | Typical External Deps      | Best For                                                     |
+|----------------|-------------------|----------------------------|--------------------------------------------------------------|
+| **Standalone** | Yes               | None or PostgreSQL + Redis | Nexus-owned Telegram/Discord chat surfaces                   |
+| **OpenClaw**   | No                | None or PostgreSQL         | OpenClaw-owned chat UX with Nexus as workflow/bridge backend |
+| **Advanced**   | Optional          | Depends on selected mix    | Mixed OpenClaw + native Nexus surfaces                       |
 
 ---
 
-## Prerequisites (Both Scenarios)
+## Prerequisites
 
 - Python 3.11+
-- A Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
-- Your Telegram User ID (from [@userinfobot](https://t.me/userinfobot))
+- A Telegram Bot Token and User ID only if you plan to enable Telegram
 - A GitHub **or** GitLab Personal Access Token (for issue integration)
-- A Discord Bot Token (optional, if you want to use the Discord UI)
+- A Discord Bot Token only if you plan to enable Discord
 - At least one AI provider CLI installed (`copilot`, `gemini`, `codex`, or `claude`)
 
 > **Note:** Nexus supports both **GitHub** and **GitLab** as first-class VCS platforms.
@@ -34,15 +34,14 @@ cd nexus-arc
 python3 -m venv venv
 source venv/bin/activate
 
-# Install nexus-arc with all bot dependencies
+# Standalone / advanced with native bots:
 pip install -e ".[nexus-bot]"
 
-# Install the Nexus bot console scripts
-cd examples/nexus-bot
-pip install -e .
+# OpenClaw-only runtime:
+# pip install -e .
 ```
 
-After installation, six commands become available:
+If you install the native bot package, six commands become available:
 
 | Command              | Service                                |
 |----------------------|----------------------------------------|
@@ -71,8 +70,8 @@ etc.) is to use our interactive setup wizard:
 > ```
 > *(A Python version `install.py` is also available if preferred).*
 
-The wizard will ask you for your Storage preferences (Lite vs Enterprise), ask to setup Postgres/Redis for you, and
-securely configure your Tokens.
+The wizard now asks for `runtime mode` first, then only shows the questions that apply to that mode. In
+`runtime=openclaw`, it skips Telegram/Discord bot installation prompts and does not ask for Redis by default.
 
 Alternatively, you can configure it manually by copying the `.env`:
 
@@ -85,7 +84,7 @@ Edit `.env` with your credentials. The sections below show the key variables for
 
 ---
 
-## Scenario A — Lite (Filesystem, No External Deps)
+## Scenario A — Standalone Lite (Filesystem, No External Deps)
 
 Everything runs on the local filesystem. No database, no Redis.
 
@@ -151,7 +150,7 @@ nexus-health       # optional health endpoint
 
 ---
 
-## Scenario B — Enterprise (PostgreSQL + Redis)
+## Scenario B — Standalone Enterprise (PostgreSQL + Redis)
 
 Full-featured deployment with persistent queue, chat memory, and deduplication.
 
@@ -164,6 +163,91 @@ Full-featured deployment with persistent queue, chat memory, and deduplication.
 | Inbox deduplication (replay protection)              | ✅      |
 | Concurrent inbox processing                          | ✅      |
 | Production-grade persistence                         | ✅      |
+
+---
+
+## Scenario C — OpenClaw Runtime
+
+Use this when OpenClaw is the primary operator/chat surface and Nexus runs as the bridge, workflow runtime, audit, and
+recovery backend.
+
+In this mode, OpenClaw owns the user-facing transcript/session history. Nexus keeps the active chat context,
+workspace/agent bindings, and other operational metadata it needs to route work safely.
+
+### What the Installer Changes
+
+| Behavior                      | OpenClaw Mode |
+|-------------------------------|---------------|
+| Installs Telegram bot         | ❌             |
+| Installs Discord bot          | ❌             |
+| Prompts for Redis             | ❌ by default  |
+| Prompts for bridge auth token | ✅             |
+| Recommends `nexus-bridge`     | ✅             |
+
+### Typical Install
+
+```bash
+pip install -e .
+```
+
+### Typical `.env` Keys
+
+```bash
+NEXUS_RUNTIME_MODE=openclaw
+NEXUS_AUTH_AUTHORITY=openclaw
+NEXUS_EXECUTION_CREDENTIAL_SOURCE=openclaw-broker
+NEXUS_CHAT_TRANSCRIPT_OWNER=openclaw
+NEXUS_COMMAND_BRIDGE_ENABLED=true
+NEXUS_COMMAND_BRIDGE_AUTH_TOKEN=replace_with_a_long_random_secret
+NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=openclaw
+NEXUS_OPENCLAW_BROKER_URL=http://127.0.0.1:8092/api/v1/nexus/credentials/lease
+NEXUS_OPENCLAW_BROKER_TOKEN=replace_with_a_shared_broker_secret
+NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS=15
+
+# Choose one:
+NEXUS_STORAGE_BACKEND=filesystem
+# or
+NEXUS_STORAGE_BACKEND=postgres
+NEXUS_STORAGE_DSN=postgresql://nexus:your_password@127.0.0.1:5432/nexus
+
+# Redis usually omitted in OpenClaw mode because Nexus is not the transcript owner
+# REDIS_URL=
+
+# Typically disabled because OpenClaw owns end-user auth flows
+NEXUS_AUTH_ENABLED=false
+```
+
+The broker endpoint should return a short-lived JSON lease like:
+
+```json
+{
+  "env": {
+    "GITHUB_TOKEN": "ghu_...",
+    "OPENAI_API_KEY": "sk-..."
+  },
+  "expires_at": "2026-03-23T14:05:00Z"
+}
+```
+
+### Run
+
+```bash
+nexus-bridge
+```
+
+Then install and configure the OpenClaw plugin from [`packages/nexus-arc`](../../packages/nexus-arc/README.md).
+
+---
+
+## Scenario D — Advanced Runtime
+
+Advanced mode lets you mix OpenClaw with optional native Nexus surfaces. The installer asks which surfaces to enable
+and who owns transcript memory:
+
+- `openclaw`
+- `telegram`
+- `discord`
+- transcript owner: `openclaw`, `nexus`, or `split`
 
 ### Infrastructure Setup
 

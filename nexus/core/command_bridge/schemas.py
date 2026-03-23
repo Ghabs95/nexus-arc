@@ -9,6 +9,8 @@ class BridgeRequesterPayload(TypedDict, total=False):
     """Normalized caller identity forwarded by a bridge client."""
 
     source_platform: str
+    nexus_id: str
+    auth_authority: str
     operator_id: str
     sender_id: str
     sender_name: str

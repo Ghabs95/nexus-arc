@@ -1,7 +1,7 @@
 {
   "id": "nexus-arc",
   "name": "Nexus ARC Command Bridge",
-  "description": "Adds a /nexus command that forwards requests to a Nexus ARC command bridge.",
+  "description": "Adds /nexus, /chat, and /chatagents commands that forward requests to a Nexus ARC command bridge.",
   "version": "0.2.0",
   "configSchema": {
     "type": "object",

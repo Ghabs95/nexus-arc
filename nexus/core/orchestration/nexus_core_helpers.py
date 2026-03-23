@@ -309,8 +309,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _allow_env_token_fallback_default() -> bool:
-    """Allow global env-token fallback only when auth is disabled."""
-    return not _env_bool("NEXUS_AUTH_ENABLED", False)
+    """Allow global env-token fallback only when requester-scoped auth is inactive."""
+    auth_enabled = _env_bool("NEXUS_AUTH_ENABLED", False)
+    runtime_mode = str(os.getenv("NEXUS_RUNTIME_MODE", "")).strip().lower()
+    execution_source = str(os.getenv("NEXUS_EXECUTION_CREDENTIAL_SOURCE", "")).strip().lower()
+    try:
+        from nexus.core.config.runtime import normalize_execution_credential_source
+
+        normalized_source = normalize_execution_credential_source(execution_source, runtime_mode)
+    except Exception:
+        normalized_source = execution_source or "nexus-store"
+    return (not auth_enabled) and normalized_source != "openclaw-broker"
 
 
 def get_git_platform(
@@ -331,9 +340,12 @@ def get_git_platform(
     default_token_var = "GITLAB_TOKEN" if platform_type == "gitlab" else "GITHUB_TOKEN"
     token_var = project_config.get("git_token_var_name", default_token_var)
     auth_is_enabled = _env_bool("NEXUS_AUTH_ENABLED", False)
-    allow_service_token_fallback = str(
-        os.getenv("NEXUS_ALLOW_SERVICE_GIT_TOKEN_FALLBACK", "true")
-    ).strip().lower() in {"1", "true", "yes", "on"}
+    raw_allow_service_token_fallback = os.getenv("NEXUS_ALLOW_SERVICE_GIT_TOKEN_FALLBACK")
+    allow_service_token_fallback = (
+        _allow_env_token_fallback_default()
+        if raw_allow_service_token_fallback is None
+        else str(raw_allow_service_token_fallback).strip().lower() in {"1", "true", "yes", "on"}
+    )
     override_token = str(token_override or "").strip()
     token = override_token
     if not token and not auth_is_enabled:

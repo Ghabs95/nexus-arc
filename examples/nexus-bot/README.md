@@ -124,12 +124,24 @@ this example bridge service, including `requester.operator_id`,
 `requester.session_id`, `context.current_project`, and `client.render_mode`.
 The OpenClaw plugin can also maintain per-session local context with
 `/nexus use <project>`, `/nexus current`, `/nexus usage`, and `/nexus refresh`.
+It also keeps the Nexus workspace chat concept available in OpenClaw through
+`/chat <message>` and `/chatagents [project]`, so operators can talk directly
+to the active workspace-aware agent while still using `/nexus` as the workflow
+control plane.
 It also supports bridge-safe issue commands like `/nexus new`, `/nexus track`,
-`/nexus tracked`, `/nexus untrack`, and `/nexus myissues`, plus local
-confirmation for risky commands such as `/nexus implement` and `/nexus stop`.
+`/nexus tracked`, `/nexus untrack`, and `/nexus myissues`, plus workflow
+recovery commands like `/nexus reconcile`, `/nexus reprocess`, and
+`/nexus kill`. Local confirmation covers risky commands such as
+`/nexus implement`, `/nexus stop`, `/nexus kill`, and `/nexus reprocess`.
 Bridge responses also expose best-effort `usage` metadata for issue/workflow
 commands, sourced from recent completion storage or the newest agent log so the
 OpenClaw plugin can show Nexus ARC spend details inline.
+
+When you operate multiple projects through separate OpenClaw profiles, give each
+profile its own plugin config with a project-specific `defaultProject` and
+bridge token. For example, keep distinct `ghabs`, `wallible`, and `biome`
+profiles so bare commands like `/nexus reprocess #42` and `/nexus wfstate #42`
+resolve against the correct project context without retyping it every time.
 
 All services read project config from the `nexus` repository folder:
 

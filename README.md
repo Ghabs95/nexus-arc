@@ -9,11 +9,14 @@
 
 ## What is Nexus ARC?
 
-Nexus ARC (Agentic Runtime Core) is the **Git-native AI orchestration framework**. Unlike other frameworks that log agent actions to ephemeral files, Nexus creates permanent, traceable artifacts in your Git platform (GitHub, GitLab, Bitbucket).
+Nexus ARC (Agentic Runtime Core) is the **Git-native AI orchestration framework**. Unlike other frameworks that log
+agent actions to ephemeral files, Nexus creates permanent, traceable artifacts in your Git platform (GitHub, GitLab,
+Bitbucket).
 
 ### Why Git-Native?
 
 Every agent action becomes part of your development history:
+
 - 🎯 **Issues** track what was requested and decided
 - 💬 **Comments** preserve agent reasoning and handoffs
 - 🔀 **Pull Requests** contain actual code changes
@@ -30,13 +33,15 @@ Every agent action becomes part of your development history:
 - ✅ **Fallback Support**: Automatic failover when tools are rate-limited or unavailable
 - ✅ **Pluggable Architecture**: Bring your own storage, git platform, notification system
 
-**Think of it as Temporal meets GitHub Actions for AI agents** — workflows that integrate seamlessly with your development process.
+**Think of it as Temporal meets GitHub Actions for AI agents** — workflows that integrate seamlessly with your
+development process.
 
 > 📖 **Documentation:**
 > - [Usage Guide & Examples](docs/USAGE.md) - How to use nexus-arc in your project
 > - [Plugin Architecture](docs/PLUGINS.md) - Build and load Telegram/GitHub/AI integrations as plugins
 > - [OpenClaw Release Guide](docs/OPENCLAW_RELEASE.md) - Package Nexus ARC with the OpenClaw plugin
-> - [Config Bootstrap Lifecycle](docs/CONFIG_BOOTSTRAP_LIFECYCLE.md) - Explicit runtime startup order and singleton-test hooks
+> - [Config Bootstrap Lifecycle](docs/CONFIG_BOOTSTRAP_LIFECYCLE.md) - Explicit runtime startup order and singleton-test
+    hooks
 > - [Autofix Learning Contract](docs/AUTOFIX_LEARNING.md) - Event schema, retry-guard behavior, and rollout
 > - [Comparison with Google ADK, LangChain, and others](docs/COMPARISON.md)
 > - [Positioning & Messaging](docs/POSITIONING.md)
@@ -59,7 +64,9 @@ pip install "nexus-arc[nexus-bot]"
 # pip install "nexus-arc[nexus-discord-bot]"
 ```
 
-For setting up the fully-featured interactive bot, see the [nexus-bot example](examples/nexus-bot/README.md) or run the installer:
+For setting up the fully-featured interactive bot, see the [nexus-bot example](examples/nexus-bot/README.md) or run the
+installer:
+
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/Ghabs95/nexus-arc/main/examples/nexus-bot/install.sh)
 ```
@@ -153,23 +160,27 @@ result = await orchestrator.execute(agent="Architect", context=ctx)
 Swap any component via configuration:
 
 **Storage Backends**:
+
 - `FileStorage` - JSON files (great for dev)
 - `PostgreSQLStorage` - Production database
 - `RedisStorage` - Fast, ephemeral workflows
 - `S3Storage` - Serverless deployments
 
 **Git Platforms**:
+
 - `GitHubPlatform` - Issues, PRs, comments
 - `GitLabPlatform` - Issues, MRs, notes
 - `BitbucketPlatform` - Issues, PRs
 
 **Notification Channels**:
+
 - `TelegramNotifier` - Push notifications to chats
 - `SlackNotifier` - Thread-based updates
 - `EmailNotifier` - Digest & alerts
 - `WebhookNotifier` - Custom integrations
 
 **Interactive Clients**:
+
 - `TelegramInteractivePlugin` - Two-way chat bot polling apps
 - `DiscordInteractivePlugin` - Two-way chat bot via HTTP app commands
 
@@ -243,7 +254,9 @@ engine.add_observer(exporter)
 ## Use Cases
 
 ### Feature Development Workflow
+
 Multi-agent workflow that creates traceable artifacts at each step:
+
 ```yaml
 workflow: feature_development
 trigger: issue_created (label: feature)
@@ -259,10 +272,13 @@ steps:
   - docs: Documentation update
     → Updates docs based on changes
 ```
+
 **All agent decisions preserved in GitHub for future reference.**
 
 ### Code Review Automation
+
 AI-powered review with full traceability:
+
 ```yaml
 workflow: automated_review
 trigger: pull_request_opened
@@ -274,10 +290,13 @@ steps:
   - StyleAgent: Enforce standards
     → Requests changes with explanations
 ```
+
 **Every suggestion is a PR comment, not lost in logs.**
 
 ### Bug Fix Pipeline
+
 End-to-end bug resolution with audit trail:
+
 ```yaml
 workflow: bug_fix
 trigger: issue_created (label: bug)
@@ -291,10 +310,13 @@ steps:
   - VerificationAgent: Test fix
     → Validates and approves PR
 ```
+
 **Complete history from bug report to fix, all in GitHub.**
 
 ### Social Media Marketing Workflow
+
 Automated content planning, review, and multi-platform publishing:
+
 ```yaml
 workflow: social_media_marketing
 trigger: campaign_brief (label: marketing)
@@ -312,6 +334,7 @@ steps:
   - deployer: Multi-platform publish
     → Publishes or schedules approved content
 ```
+
 **Dry-run-first rollout with shared campaign context and platform-agnostic adapters.**
 
 ---
@@ -400,6 +423,7 @@ mypy nexus/     # Type check
 ## Roadmap
 
 ### v0.1 (Current)
+
 - [x] Core workflow engine
 - [x] File, Postgres, Redis storage
 - [x] GitHub, GitLab git platforms
@@ -407,6 +431,7 @@ mypy nexus/     # Type check
 - [x] Telegram, Slack notifiers
 
 ### v0.2 (Next)
+
 - [ ] GraphQL API for workflow management
 - [ ] Web dashboard for monitoring
 - [ ] Workflow versioning & rollback
@@ -414,6 +439,7 @@ mypy nexus/     # Type check
 - [ ] Workflow marketplace
 
 ### v1.0
+
 - [ ] SLA guarantees
 - [ ] Multi-tenancy
 - [ ] RBAC & audit compliance
@@ -426,6 +452,7 @@ mypy nexus/     # Type check
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Good first issues**:
+
 - Implement new adapters (Notion, Jira, Slack)
 - Add example workflows
 - Improve documentation
@@ -452,6 +479,7 @@ Apache License 2.0 - see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 Built with inspiration from:
+
 - **Temporal** - Workflow orchestration patterns
 - **Langchain** - AI tool composition
 - **Prefect** - Developer experience

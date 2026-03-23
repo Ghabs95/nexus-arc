@@ -80,6 +80,13 @@ def _cli_account_mode_enabled() -> bool:
     return _cli_auth_mode() in {"account", "auto"}
 
 
+def _normalize_execution_purpose(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"git", "issue_write"}:
+        return normalized
+    return "agent_run"
+
+
 def _ensure_private_runtime_dir(path: str) -> str | None:
     try:
         os.makedirs(path, mode=0o700, exist_ok=True)
@@ -1004,18 +1011,96 @@ def resolve_project_polling_git_token(project_key: str) -> tuple[str | None, str
     return None, None
 
 
-def build_execution_env(nexus_id: str) -> tuple[dict[str, str], str | None]:
+def prepare_execution_env(
+    nexus_id: str,
+    env: Mapping[str, Any] | None,
+    *,
+    purpose: str = "agent_run",
+) -> tuple[dict[str, str], str | None]:
+    normalized_purpose = _normalize_execution_purpose(purpose)
+    prepared_env = {
+        str(key).strip(): str(value)
+        for key, value in (env.items() if isinstance(env, Mapping) else [])
+        if str(key).strip() and value is not None
+    }
+
+    if "GITLAB_TOKEN" not in prepared_env and "GITHUB_TOKEN" in prepared_env:
+        prepared_env["GITLAB_TOKEN"] = prepared_env["GITHUB_TOKEN"]
+
+    if "GITHUB_TOKEN" not in prepared_env and "GITLAB_TOKEN" in prepared_env:
+        prepared_env["GITHUB_TOKEN"] = prepared_env["GITLAB_TOKEN"]
+
+    git_token_present = bool(
+        str(prepared_env.get("GITHUB_TOKEN") or "").strip()
+        or str(prepared_env.get("GH_TOKEN") or "").strip()
+        or str(prepared_env.get("GITLAB_TOKEN") or "").strip()
+        or str(prepared_env.get("GLAB_TOKEN") or "").strip()
+    )
+    if not git_token_present:
+        return {}, "Missing Git provider token."
+
+    account_auth_providers = [
+        item.strip()
+        for item in str(prepared_env.get("NEXUS_ACCOUNT_AUTH_PROVIDERS", "") or "").split(",")
+        if item.strip()
+    ]
+    ai_key_present = (
+        bool(str(prepared_env.get("OPENAI_API_KEY") or "").strip())
+        or bool(str(prepared_env.get("GEMINI_API_KEY") or "").strip())
+        or bool(str(prepared_env.get("ANTHROPIC_API_KEY") or "").strip())
+        or bool(str(prepared_env.get("CLAUDE_API_KEY") or "").strip())
+    )
+    if normalized_purpose == "agent_run" and not ai_key_present and not account_auth_providers:
+        return (
+            {},
+            "Missing AI provider credentials (Codex/OpenAI, Gemini, Claude, GitHub for Copilot, "
+            "or account-based provider login via `/login`).",
+        )
+
+    auth_root = os.path.join(NEXUS_RUNTIME_DIR, "auth")
+    user_home_root = os.path.join(auth_root, "home")
+    user_home = os.path.join(user_home_root, str(nexus_id))
+    codex_root = os.path.join(auth_root, "codex")
+    gemini_root = os.path.join(auth_root, "gemini")
+    claude_root = os.path.join(auth_root, "claude")
+    codex_home = os.path.join(codex_root, str(nexus_id))
+    gemini_home = os.path.join(gemini_root, str(nexus_id))
+    claude_home = os.path.join(claude_root, str(nexus_id))
+    for path in (
+        auth_root,
+        user_home_root,
+        user_home,
+        codex_root,
+        gemini_root,
+        claude_root,
+        codex_home,
+        gemini_home,
+        claude_home,
+    ):
+        dir_err = _ensure_private_runtime_dir(path)
+        if dir_err:
+            return {}, dir_err
+    prepared_env["HOME"] = user_home
+    prepared_env["CODEX_HOME"] = codex_home
+    prepared_env["GEMINI_HOME"] = gemini_home
+    prepared_env["CLAUDE_HOME"] = claude_home
+    return prepared_env, None
+
+
+def build_execution_env(
+    nexus_id: str,
+    *,
+    purpose: str = "agent_run",
+) -> tuple[dict[str, str], str | None]:
     record = get_user_credentials(str(nexus_id))
     if not record:
         return {}, "No credential record found."
 
     env: dict[str, str] = {}
-    github_token_present = False
 
     if record.github_token_enc:
         try:
             env["GITHUB_TOKEN"] = decrypt_secret(record.github_token_enc)
-            github_token_present = True
         except Exception:
             return {}, "Stored GitHub token could not be decrypted."
 
@@ -1077,48 +1162,7 @@ def build_execution_env(nexus_id: str) -> tuple[dict[str, str], str | None]:
             account_auth_providers.append("copilot")
     if account_auth_providers:
         env["NEXUS_ACCOUNT_AUTH_PROVIDERS"] = ",".join(account_auth_providers)
-
-    ai_key_present = (
-        "OPENAI_API_KEY" in env
-        or "GEMINI_API_KEY" in env
-        or "ANTHROPIC_API_KEY" in env
-        or "CLAUDE_API_KEY" in env
-    )
-    if not ai_key_present and not github_token_present and not account_auth_providers:
-        return (
-            {},
-            "Missing AI provider credentials (Codex/OpenAI, Gemini, Claude, GitHub for Copilot, "
-            "or account-based provider login via `/login`).",
-        )
-
-    auth_root = os.path.join(NEXUS_RUNTIME_DIR, "auth")
-    user_home_root = os.path.join(auth_root, "home")
-    user_home = os.path.join(user_home_root, str(nexus_id))
-    codex_root = os.path.join(auth_root, "codex")
-    gemini_root = os.path.join(auth_root, "gemini")
-    claude_root = os.path.join(auth_root, "claude")
-    codex_home = os.path.join(codex_root, str(nexus_id))
-    gemini_home = os.path.join(gemini_root, str(nexus_id))
-    claude_home = os.path.join(claude_root, str(nexus_id))
-    for path in (
-        auth_root,
-        user_home_root,
-        user_home,
-        codex_root,
-        gemini_root,
-        claude_root,
-        codex_home,
-        gemini_home,
-        claude_home,
-    ):
-        dir_err = _ensure_private_runtime_dir(path)
-        if dir_err:
-            return {}, dir_err
-    env["HOME"] = user_home
-    env["CODEX_HOME"] = codex_home
-    env["GEMINI_HOME"] = gemini_home
-    env["CLAUDE_HOME"] = claude_home
-    return env, None
+    return prepare_execution_env(nexus_id, env, purpose=purpose)
 
 
 def refresh_stale_access_grants(limit: int = 200) -> dict[str, int]:

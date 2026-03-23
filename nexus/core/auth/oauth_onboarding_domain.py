@@ -40,6 +40,7 @@ from nexus.core.auth.credential_store import (
     upsert_github_credentials,
     upsert_gitlab_credentials,
 )
+from nexus.core.config.runtime import normalize_runtime_mode
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +283,319 @@ def _prepare_provider_runtime_state(*, provider: str, user_home: str) -> None:
         settings_path,
         selected_auth,
         folder_trust_enabled,
+    )
+
+
+def _runtime_mode() -> str:
+    return normalize_runtime_mode(os.getenv("NEXUS_RUNTIME_MODE", "standalone"))
+
+
+def _openclaw_local_import_enabled() -> bool:
+    return _runtime_mode() == "openclaw"
+
+
+def _resolve_local_credential_path(*, env_name: str, default_path: str) -> str:
+    raw = str(os.getenv(env_name, default_path)).strip() or default_path
+    return os.path.expanduser(raw)
+
+
+def _copy_private_file(*, source_path: str, target_path: str) -> None:
+    parent = os.path.dirname(target_path)
+    if parent:
+        _ensure_private_dir(parent)
+    shutil.copyfile(source_path, target_path)
+    _ensure_private_file(target_path)
+
+
+def _imported_provider_response(
+    *,
+    provider: str,
+    state: str,
+    imported: bool,
+    message: str,
+    source_path: str = "",
+) -> dict[str, Any]:
+    response: dict[str, Any] = {
+        "provider": str(provider or "").strip().lower(),
+        "state": str(state or "").strip().lower(),
+        "imported": bool(imported),
+        "message": str(message or "").strip(),
+    }
+    if source_path:
+        response["source_path"] = source_path
+    return response
+
+
+def _import_local_codex_account(*, nexus_id: str) -> dict[str, Any]:
+    source_path = _resolve_local_credential_path(
+        env_name="NEXUS_OPENCLAW_CODEX_AUTH_PATH",
+        default_path="~/.codex/auth.json",
+    )
+    if not os.path.isfile(source_path):
+        return _imported_provider_response(
+            provider="codex",
+            state="not_found",
+            imported=False,
+            message=f"No saved Codex auth file was found at {source_path}.",
+            source_path=source_path,
+        )
+    payload = _read_json_file(source_path)
+    tokens = payload.get("tokens")
+    access_token = _get_nested_str(payload, ("tokens", "access_token"))
+    refresh_token = _get_nested_str(payload, ("tokens", "refresh_token"))
+    if not isinstance(tokens, dict) or not (access_token or refresh_token):
+        return _imported_provider_response(
+            provider="codex",
+            state="invalid",
+            imported=False,
+            message="Saved Codex auth file is present but does not contain reusable account tokens.",
+            source_path=source_path,
+        )
+
+    provider_home = _provider_runtime_home(provider="codex", nexus_id=nexus_id)
+    _ensure_private_dir(provider_home)
+    _copy_private_file(
+        source_path=source_path,
+        target_path=os.path.join(provider_home, "auth.json"),
+    )
+    upsert_ai_provider_keys(
+        nexus_id=str(nexus_id),
+        codex_account_enabled=True,
+        key_version=_key_version(),
+    )
+    return _imported_provider_response(
+        provider="codex",
+        state="imported",
+        imported=True,
+        message="Imported saved Codex account credentials into the Nexus runtime.",
+        source_path=source_path,
+    )
+
+
+def _import_local_gemini_account(*, nexus_id: str) -> dict[str, Any]:
+    source_path = _resolve_local_credential_path(
+        env_name="NEXUS_OPENCLAW_GEMINI_AUTH_PATH",
+        default_path="~/.gemini/oauth_creds.json",
+    )
+    if not os.path.isfile(source_path):
+        return _imported_provider_response(
+            provider="gemini",
+            state="not_found",
+            imported=False,
+            message=f"No saved Gemini auth file was found at {source_path}.",
+            source_path=source_path,
+        )
+    payload = _read_json_file(source_path)
+    access_token = _get_nested_str(payload, ("access_token",))
+    refresh_token = _get_nested_str(payload, ("refresh_token",))
+    if not (access_token or refresh_token):
+        return _imported_provider_response(
+            provider="gemini",
+            state="invalid",
+            imported=False,
+            message="Saved Gemini auth file is present but does not contain reusable OAuth tokens.",
+            source_path=source_path,
+        )
+
+    user_home = _provider_user_runtime_home(nexus_id=nexus_id)
+    provider_home = _provider_runtime_home(provider="gemini", nexus_id=nexus_id)
+    _ensure_private_dir(user_home)
+    _ensure_private_dir(provider_home)
+    _copy_private_file(
+        source_path=source_path,
+        target_path=os.path.join(user_home, ".gemini", "oauth_creds.json"),
+    )
+    _copy_private_file(
+        source_path=source_path,
+        target_path=os.path.join(provider_home, "oauth_creds.json"),
+    )
+    _prepare_provider_runtime_state(provider="gemini", user_home=user_home)
+    upsert_ai_provider_keys(
+        nexus_id=str(nexus_id),
+        gemini_account_enabled=True,
+        key_version=_key_version(),
+    )
+    return _imported_provider_response(
+        provider="gemini",
+        state="imported",
+        imported=True,
+        message="Imported saved Gemini account credentials into the Nexus runtime.",
+        source_path=source_path,
+    )
+
+
+def _extract_copilot_token(payload: dict[str, Any]) -> str:
+    candidate_paths = (
+        ("token",),
+        ("github_token",),
+        ("access_token",),
+        ("oauth", "token"),
+        ("oauth", "access_token"),
+        ("tokens", "access_token"),
+    )
+    for path in candidate_paths:
+        candidate = _get_nested_str(payload, path)
+        if len(candidate) >= 16:
+            return candidate
+    return ""
+
+
+def _extract_claude_account_secret(payload: dict[str, Any]) -> str:
+    candidate_paths = (
+        ("accessToken",),
+        ("refreshToken",),
+        ("access_token",),
+        ("refresh_token",),
+        ("oauth", "accessToken"),
+        ("oauth", "refreshToken"),
+        ("oauth", "access_token"),
+        ("oauth", "refresh_token"),
+        ("tokens", "accessToken"),
+        ("tokens", "refreshToken"),
+        ("tokens", "access_token"),
+        ("tokens", "refresh_token"),
+        ("claudeAiOauth", "accessToken"),
+        ("claudeAiOauth", "refreshToken"),
+        ("claudeAiOauth", "access_token"),
+        ("claudeAiOauth", "refresh_token"),
+    )
+    for path in candidate_paths:
+        candidate = _get_nested_str(payload, path)
+        if len(candidate) >= 16:
+            return candidate
+    return ""
+
+
+def _import_local_claude_account(*, nexus_id: str) -> dict[str, Any]:
+    source_path = _resolve_local_credential_path(
+        env_name="NEXUS_OPENCLAW_CLAUDE_CREDENTIALS_PATH",
+        default_path="~/.claude/credentials.json",
+    )
+    if not os.path.isfile(source_path):
+        return _imported_provider_response(
+            provider="claude",
+            state="not_found",
+            imported=False,
+            message=f"No saved Claude credentials file was found at {source_path}.",
+            source_path=source_path,
+        )
+    payload = _read_json_file(source_path)
+    if not _extract_claude_account_secret(payload):
+        return _imported_provider_response(
+            provider="claude",
+            state="invalid",
+            imported=False,
+            message="Saved Claude credentials file is present but does not contain reusable auth tokens.",
+            source_path=source_path,
+        )
+
+    user_home = _provider_user_runtime_home(nexus_id=nexus_id)
+    provider_home = _provider_runtime_home(provider="claude", nexus_id=nexus_id)
+    _ensure_private_dir(user_home)
+    _ensure_private_dir(provider_home)
+    _copy_private_file(
+        source_path=source_path,
+        target_path=os.path.join(user_home, ".claude", "credentials.json"),
+    )
+    _copy_private_file(
+        source_path=source_path,
+        target_path=os.path.join(provider_home, "credentials.json"),
+    )
+    upsert_ai_provider_keys(
+        nexus_id=str(nexus_id),
+        claude_account_enabled=True,
+        key_version=_key_version(),
+    )
+    return _imported_provider_response(
+        provider="claude",
+        state="imported",
+        imported=True,
+        message="Imported saved Claude account credentials into the Nexus runtime.",
+        source_path=source_path,
+    )
+
+
+def _import_local_copilot_token(*, nexus_id: str) -> dict[str, Any]:
+    source_path = _resolve_local_credential_path(
+        env_name="NEXUS_OPENCLAW_COPILOT_TOKEN_PATH",
+        default_path="~/.openclaw/credentials/github-copilot.token.json",
+    )
+    if not os.path.isfile(source_path):
+        return _imported_provider_response(
+            provider="copilot",
+            state="not_found",
+            imported=False,
+            message=f"No saved Copilot token file was found at {source_path}.",
+            source_path=source_path,
+        )
+    payload = _read_json_file(source_path)
+    token = _extract_copilot_token(payload)
+    if not token:
+        return _imported_provider_response(
+            provider="copilot",
+            state="invalid",
+            imported=False,
+            message="Saved Copilot token file is present but does not expose a reusable token field.",
+            source_path=source_path,
+        )
+
+    upsert_ai_provider_keys(
+        nexus_id=str(nexus_id),
+        copilot_github_token_enc=encrypt_secret(token, key_version=_key_version()),
+        key_version=_key_version(),
+    )
+    return _imported_provider_response(
+        provider="copilot",
+        state="imported",
+        imported=True,
+        message="Imported saved Copilot credentials into the Nexus credential store.",
+        source_path=source_path,
+    )
+
+
+def import_openclaw_local_provider_credentials(*, nexus_id: str, provider: str) -> dict[str, Any]:
+    provider_name = str(provider or "").strip().lower()
+    if not _openclaw_local_import_enabled():
+        return _imported_provider_response(
+            provider=provider_name,
+            state="disabled",
+            imported=False,
+            message="Local provider import is available only when NEXUS_RUNTIME_MODE=openclaw.",
+        )
+
+    if provider_name == "codex":
+        importer = _import_local_codex_account
+    elif provider_name == "gemini":
+        importer = _import_local_gemini_account
+    elif provider_name == "claude":
+        importer = _import_local_claude_account
+    elif provider_name == "copilot":
+        importer = _import_local_copilot_token
+    else:
+        importer = None
+
+    if importer is not None:
+        try:
+            return importer(nexus_id=nexus_id)
+        except Exception as exc:
+            logger.warning(
+                "[openclaw-auth-import] failed provider=%s nexus_id=%s: %s",
+                provider_name,
+                nexus_id,
+                exc,
+            )
+            return _imported_provider_response(
+                provider=provider_name,
+                state="error",
+                imported=False,
+                message=f"Unable to import saved {provider_name.title()} credentials: {exc}",
+            )
+
+    return _imported_provider_response(
+        provider=provider_name,
+        state="unsupported_provider",
+        imported=False,
+        message=f"Local provider import is not supported for {provider_name or 'this provider'}.",
     )
 
 

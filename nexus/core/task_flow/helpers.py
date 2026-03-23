@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from nexus.adapters.git.utils import build_issue_url
+from nexus.core.auth.execution_env_resolver import resolve_requester_git_token_for_issue
 from nexus.core.config import BASE_DIR, NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG, get_repo_branch
 from nexus.core.config import get_tasks_active_dir, get_tasks_closed_dir
 from nexus.core.inbox.inbox_repo_path_service import (
@@ -49,61 +50,17 @@ def _resolve_issue_requester_token(
     repo: str,
     issue_number: str,
 ) -> str | None:
-    try:
-        from nexus.core.auth.access_domain import auth_enabled, build_execution_env
-        from nexus.core.auth.credential_store import get_issue_requester, get_issue_requester_by_url
-        from nexus.core.config import get_project_platform
-    except Exception:
-        return None
-
-    if not auth_enabled():
-        return None
-
-    try:
-        requester_nexus_id = get_issue_requester(str(repo), str(issue_number))
-    except Exception:
-        requester_nexus_id = None
-    if not requester_nexus_id:
-        platform = str(get_project_platform(str(project_name)) or "github").strip().lower()
-        issue_url = build_issue_url(
+    return resolve_requester_git_token_for_issue(
+        repo_name=str(repo),
+        issue_number=str(issue_number),
+        project_name=project_name,
+        issue_url=build_issue_url(
             str(repo),
             str(issue_number),
-            {"git_platform": platform},
-        )
-        try:
-            requester_nexus_id = get_issue_requester_by_url(issue_url)
-        except Exception:
-            requester_nexus_id = None
-    if not requester_nexus_id:
-        return None
-
-    user_env, env_error = build_execution_env(str(requester_nexus_id))
-    if env_error:
-        logger.warning(
-            "Requester token unavailable for %s#%s requester=%s: %s",
-            repo,
-            issue_number,
-            requester_nexus_id,
-            env_error,
-        )
-        return None
-
-    platform = str(get_project_platform(str(project_name)) or "github").strip().lower()
-    if platform == "gitlab":
-        return str(
-            user_env.get("GITLAB_TOKEN")
-            or user_env.get("GLAB_TOKEN")
-            or user_env.get("GITHUB_TOKEN")
-            or user_env.get("GH_TOKEN")
-            or ""
-        ).strip() or None
-    return str(
-        user_env.get("GITHUB_TOKEN")
-        or user_env.get("GH_TOKEN")
-        or user_env.get("GITLAB_TOKEN")
-        or user_env.get("GLAB_TOKEN")
-        or ""
-    ).strip() or None
+            {"git_platform": "github"},
+        ),
+        purpose="git",
+    )
 
 
 def normalize_agent_reference(agent_ref: str | None) -> str | None:

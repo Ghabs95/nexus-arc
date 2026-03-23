@@ -16,6 +16,7 @@ python examples/basic_workflow.py
 ```
 
 This will:
+
 1. Create a 3-step workflow (Triage → Design → Implementation)
 2. Execute each step with simulated outputs
 3. Show audit log of all events
@@ -44,12 +45,15 @@ cat data/audit/demo-workflow-001.jsonl
 ## Key Concepts
 
 ### Workflow
+
 A multi-step process with state management, audit logging, and error handling.
 
 ### Agents
+
 AI-powered workers that execute tasks (Copilot, Gemini, soon Claude and Codex, etc.)
 
 ### Adapters
+
 - **Storage**: Where workflow state is stored (File, Postgres, Redis, S3)
 - **Git**: Issue tracking platform (GitHub, GitLab, Bitbucket)
 - **AI Providers**: Which AI tool executes agents (Copilot, OpenAI, Anthropic)
@@ -57,6 +61,7 @@ AI-powered workers that execute tasks (Copilot, Gemini, soon Claude and Codex, e
 - **Interactive Clients**: Platform polling for user chat commands (Telegram Bot, Discord Bot)
 
 ### Orchestrator
+
 Intelligently routes work to best AI provider with automatic fallback on failure.
 
 ## Architecture

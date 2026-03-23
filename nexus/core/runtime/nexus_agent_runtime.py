@@ -22,6 +22,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from nexus.adapters.git.utils import build_issue_url
+from nexus.core.auth.execution_env_resolver import resolve_requester_git_token_for_issue
 from nexus.core.completion import normalize_completion_comment_markdown
 from nexus.core.process_orchestrator import AgentRuntime
 
@@ -74,126 +75,29 @@ def _resolve_requester_token_override(
     repo: str,
     project_name: str | None = None,
 ) -> str | None:
-    env_token = _runtime_token_override()
-    try:
-        from nexus.core.auth.access_domain import auth_enabled, build_execution_env
-        from nexus.core.auth.credential_store import get_issue_requester, get_issue_requester_by_url
-    except Exception:
-        auth_flag = str(os.getenv("NEXUS_AUTH_ENABLED", "false")).strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        if auth_flag:
-            return None
-        return env_token
-
-    auth_is_enabled = bool(auth_enabled())
-    if not auth_is_enabled:
-        return env_token
-
     normalized_repo = str(repo or "").strip()
     normalized_issue = str(issue_number or "").strip()
     if not normalized_repo or not normalized_issue:
         return None
 
-    requester_nexus_id = None
-    try:
-        requester_nexus_id = get_issue_requester(normalized_repo, normalized_issue)
-    except Exception:
-        requester_nexus_id = None
-
-    if not requester_nexus_id:
-        candidates: list[str] = []
-        try:
-            project_cfg = {}
-            if project_name:
-                from nexus.core.config import PROJECT_CONFIG
-
-                raw_cfg = (PROJECT_CONFIG or {}).get(str(project_name), {})
-                if isinstance(raw_cfg, dict):
-                    project_cfg = raw_cfg
-            candidates.append(build_issue_url(normalized_repo, normalized_issue, project_cfg))
-        except Exception:
-            pass
-        # Legacy/default-host URL probes for bindings saved by URL.
-        candidates.append(
-            build_issue_url(
-                normalized_repo,
-                normalized_issue,
-                {"git_platform": "github"},
-            )
-        )
-        candidates.append(
-            build_issue_url(
-                normalized_repo,
-                normalized_issue,
-                {"git_platform": "gitlab", "gitlab_base_url": "https://gitlab.com"},
-            )
-        )
-
-        seen: set[str] = set()
-        for issue_url in candidates:
-            url = str(issue_url or "").strip()
-            if not url or url in seen:
-                continue
-            seen.add(url)
-            try:
-                requester_nexus_id = get_issue_requester_by_url(url)
-            except Exception:
-                requester_nexus_id = None
-            if requester_nexus_id:
-                break
-
-    if not requester_nexus_id:
-        logger.warning(
-            "Requester binding missing for issue #%s repo=%s project=%s; refusing service-token fallback.",
-            normalized_issue,
-            normalized_repo,
-            project_name,
-        )
-        return None
-
-    user_env, env_error = build_execution_env(str(requester_nexus_id))
-    if env_error:
-        logger.warning(
-            "Requester token unavailable for issue #%s repo=%s project=%s requester=%s: %s",
-            normalized_issue,
-            normalized_repo,
-            project_name,
-            requester_nexus_id,
-            env_error,
-        )
-        return None
-
-    platform = "github"
+    explicit_issue_url = None
     try:
         if project_name:
-            from nexus.core.config import get_project_platform
+            from nexus.core.config import PROJECT_CONFIG
 
-            platform = str(get_project_platform(str(project_name)) or "github").strip().lower()
+            project_cfg = (PROJECT_CONFIG or {}).get(str(project_name), {})
+            if isinstance(project_cfg, dict):
+                explicit_issue_url = build_issue_url(normalized_repo, normalized_issue, project_cfg)
     except Exception:
-        platform = "github"
+        explicit_issue_url = None
 
-    preferred_keys = (
-        ("GITLAB_TOKEN", "GLAB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN")
-        if platform == "gitlab"
-        else ("GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GLAB_TOKEN")
+    return resolve_requester_git_token_for_issue(
+        repo_name=normalized_repo,
+        issue_number=normalized_issue,
+        project_name=project_name,
+        issue_url=explicit_issue_url,
+        purpose="git",
     )
-    for key in preferred_keys:
-        token = str(user_env.get(key) or "").strip()
-        if token:
-            return token
-
-    logger.warning(
-        "Requester token missing for issue #%s repo=%s project=%s requester=%s after credential resolution.",
-        normalized_issue,
-        normalized_repo,
-        project_name,
-        requester_nexus_id,
-    )
-    return None
 
 
 def _extract_http_status_code(exc: Exception) -> int | None:

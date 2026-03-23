@@ -125,6 +125,21 @@ prompt_multi_choice() {
     done
 }
 
+prompt_multi_choice_required() {
+    local question="$1"
+    shift
+    local choices=("$@")
+    local selected=""
+    while true; do
+        selected=$(prompt_multi_choice "$question" "${choices[@]}")
+        if [ -n "$selected" ]; then
+            echo "$selected"
+            return
+        fi
+        echo "Please select at least one option." >&2
+    done
+}
+
 prompt_string() {
     local question="$1"
     local default="$2"
@@ -150,25 +165,87 @@ echo " 🚀 Welcome to Nexus ARC Installation (Bash) 🚀"
 echo "======================================="
 
 step_num=1
-echo -e "\n--- ${step_num}. Deployment Mode ---"
+echo -e "\n--- ${step_num}. Runtime Mode ---"
 ((step_num++))
-mode_choice=$(prompt_choice "Which storage mode do you want to use?" "Lite (Filesystem only)" "Enterprise (PostgreSQL + Redis)")
-is_enterprise=0
-if [ "$mode_choice" == "2" ]; then
-    is_enterprise=1
+runtime_choice=$(prompt_choice "Which runtime mode do you want to install?" "Standalone (Nexus manages Telegram/Discord chat surfaces)" "OpenClaw (OpenClaw owns chat UX/transcript; Nexus runs bridge + workflow runtime)" "Advanced (Mix OpenClaw with optional native Nexus bot surfaces)")
+runtime_mode="standalone"
+auth_authority="nexus"
+enable_openclaw=0
+install_telegram=1
+install_discord=1
+chat_transcript_owner="nexus"
+
+if [ "$runtime_choice" == "2" ]; then
+    runtime_mode="openclaw"
+    auth_authority="openclaw"
+    enable_openclaw=1
+    install_telegram=0
+    install_discord=0
+    chat_transcript_owner="openclaw"
+elif [ "$runtime_choice" == "3" ]; then
+    runtime_mode="advanced"
+    install_telegram=0
+    install_discord=0
+    echo -e "\n--- ${step_num}. Runtime Surfaces ---"
+    ((step_num++))
+    selected_surfaces=$(prompt_multi_choice_required "Which surfaces should this installation enable?" "OpenClaw bridge" "Telegram bot" "Discord bot")
+    for s in $selected_surfaces; do
+        case $s in
+            1) enable_openclaw=1 ;;
+            2) install_telegram=1 ;;
+            3) install_discord=1 ;;
+        esac
+    done
+    if [ "$enable_openclaw" -eq 1 ]; then
+        owner_choice=$(prompt_choice "Who should own chat transcript memory?" "OpenClaw (recommended)" "Nexus" "Split (OpenClaw transcript, Nexus summaries/facts)")
+        case "$owner_choice" in
+            1) chat_transcript_owner="openclaw" ;;
+            2) chat_transcript_owner="nexus" ;;
+            3) chat_transcript_owner="split" ;;
+        esac
+    fi
+fi
+
+execution_credential_source="nexus-store"
+openclaw_broker_url=""
+openclaw_broker_token=""
+
+echo -e "\n--- ${step_num}. Storage Mode ---"
+((step_num++))
+use_postgres=0
+use_redis=0
+if [ "$runtime_mode" == "openclaw" ]; then
+    storage_choice=$(prompt_choice "Which storage mode do you want to use?" "Lite (Filesystem only)" "Persistent (PostgreSQL only - recommended for durable workflow state and audit)")
+    [ "$storage_choice" == "2" ] && use_postgres=1
+elif [ "$runtime_mode" == "advanced" ] && [ "$chat_transcript_owner" == "openclaw" ]; then
+    storage_choice=$(prompt_choice "Which storage mode do you want to use?" "Lite (Filesystem only)" "Persistent (PostgreSQL only - OpenClaw owns transcript memory)")
+    [ "$storage_choice" == "2" ] && use_postgres=1
+else
+    storage_choice=$(prompt_choice "Which storage mode do you want to use?" "Lite (Filesystem only)" "Enterprise (PostgreSQL + Redis)")
+    if [ "$storage_choice" == "2" ]; then
+        use_postgres=1
+        use_redis=1
+    fi
 fi
 
 setup_db=0
 use_docker=0
-if [ "$is_enterprise" -eq 1 ]; then
+if [ "$use_postgres" -eq 1 ] || [ "$use_redis" -eq 1 ]; then
     echo -e "\n--- ${step_num}. Infrastructure Setup ---"
     ((step_num++))
-    infra_choice=$(prompt_choice "How do you want to run PostgreSQL and Redis?" "Docker Compose (Sandboxed)" "System packages (e.g. brew or apt)" "I already have them running")
-    if [ "$infra_choice" == "1" ]; then
-        use_docker=1
-        setup_db=1
-    elif [ "$infra_choice" == "2" ]; then
-        setup_db=1
+    if [ "$use_redis" -eq 1 ]; then
+        infra_choice=$(prompt_choice "How do you want to run PostgreSQL and Redis?" "Docker Compose (Sandboxed)" "System packages (e.g. brew or apt)" "I already have them running")
+        if [ "$infra_choice" == "1" ]; then
+            use_docker=1
+            setup_db=1
+        elif [ "$infra_choice" == "2" ]; then
+            setup_db=1
+        fi
+    else
+        infra_choice=$(prompt_choice "How do you want to run PostgreSQL?" "System packages (e.g. brew or apt)" "I already have it running")
+        if [ "$infra_choice" == "1" ]; then
+            setup_db=1
+        fi
     fi
 fi
 
@@ -220,9 +297,23 @@ fi
 if [ "$write_env" -eq 1 ]; then
     echo -e "\n--- ${step_num}. Credentials & Keys ---"
     ((step_num++))
-    telegram_token=$(prompt_string "Enter your Telegram Bot Token (leave empty to skip)" "")
-    telegram_users=$(prompt_string "Enter your Telegram User ID (comma-separated, leave empty to skip)" "")
-    discord_token=$(prompt_string "Enter your Discord Bot Token (leave empty to skip)" "")
+    telegram_token=""
+    telegram_users=""
+    discord_token=""
+    bridge_token=""
+    if [ "$install_telegram" -eq 1 ]; then
+        telegram_token=$(prompt_string "Enter your Telegram Bot Token" "")
+        telegram_users=$(prompt_string "Enter your Telegram User ID (comma-separated)" "")
+    fi
+    if [ "$install_discord" -eq 1 ]; then
+        discord_token=$(prompt_string "Enter your Discord Bot Token" "")
+    fi
+    if [ "$enable_openclaw" -eq 1 ]; then
+        bridge_token=$(prompt_string "Enter the Nexus command bridge auth token for OpenClaw" "replace_with_a_long_random_secret")
+        execution_credential_source="openclaw-broker"
+        openclaw_broker_url=$(prompt_string "Enter the OpenClaw credential broker URL" "http://127.0.0.1:8092/api/v1/nexus/credentials/lease")
+        openclaw_broker_token=$(prompt_string "Enter the OpenClaw credential broker bearer token" "${bridge_token:-replace_with_a_shared_broker_secret}")
+    fi
     
     vcs_choice=$(prompt_choice "Which VCS platform will you be using primarily?" "GitHub" "GitLab")
     github_token=""
@@ -246,6 +337,10 @@ TELEGRAM_TOKEN=${telegram_token}
 TELEGRAM_ALLOWED_USER_IDS=${telegram_users}
 DISCORD_TOKEN=${discord_token}
 TASK_CONFIRMATION_MODE=smart
+NEXUS_RUNTIME_MODE=${runtime_mode}
+NEXUS_CHAT_TRANSCRIPT_OWNER=${chat_transcript_owner}
+NEXUS_AUTH_AUTHORITY=${auth_authority}
+NEXUS_EXECUTION_CREDENTIAL_SOURCE=${execution_credential_source}
 
 # ================================
 # PROJECT & PATHS
@@ -268,22 +363,43 @@ EOF
     fi
 
     echo -e "\n# ================================" >> "$ENV_FILE"
+    echo "# OPENCLAW / COMMAND BRIDGE" >> "$ENV_FILE"
+    echo "# ================================" >> "$ENV_FILE"
+    if [ "$enable_openclaw" -eq 1 ]; then
+        echo "NEXUS_COMMAND_BRIDGE_ENABLED=true" >> "$ENV_FILE"
+        echo "NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=openclaw" >> "$ENV_FILE"
+    else
+        echo "NEXUS_COMMAND_BRIDGE_ENABLED=false" >> "$ENV_FILE"
+        echo "NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=" >> "$ENV_FILE"
+    fi
+    echo "NEXUS_COMMAND_BRIDGE_HOST=127.0.0.1" >> "$ENV_FILE"
+    echo "NEXUS_COMMAND_BRIDGE_PORT=8091" >> "$ENV_FILE"
+    echo "NEXUS_COMMAND_BRIDGE_AUTH_TOKEN=${bridge_token}" >> "$ENV_FILE"
+    echo "NEXUS_OPENCLAW_BROKER_URL=${openclaw_broker_url}" >> "$ENV_FILE"
+    echo "NEXUS_OPENCLAW_BROKER_TOKEN=${openclaw_broker_token}" >> "$ENV_FILE"
+    echo "NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS=15" >> "$ENV_FILE"
+
+    echo -e "\n# ================================" >> "$ENV_FILE"
     echo "# INFRASTRUCTURE / STORAGE" >> "$ENV_FILE"
     echo "# ================================" >> "$ENV_FILE"
 
-    if [ "$is_enterprise" -eq 1 ]; then
+    if [ "$use_postgres" -eq 1 ]; then
         echo "NEXUS_STORAGE_BACKEND=postgres" >> "$ENV_FILE"
         echo "NEXUS_HOST_STATE_BACKEND=postgres" >> "$ENV_FILE"
         if [ "$use_docker" -eq 1 ]; then
             echo "NEXUS_STORAGE_DSN=postgresql://nexus:nexus@127.0.0.1:5432/nexus" >> "$ENV_FILE"
-            echo "REDIS_URL=redis://localhost:6379/0" >> "$ENV_FILE"
+            if [ "$use_redis" -eq 1 ]; then
+                echo "REDIS_URL=redis://localhost:6379/0" >> "$ENV_FILE"
+            fi
             echo "DEPLOY_TYPE=compose" >> "$ENV_FILE"
             echo "COMPOSE_PROFILES=enterprise" >> "$ENV_FILE"
         else
             pg_dsn=$(prompt_string "Enter PostgreSQL DSN" "postgresql://nexus:nexus@127.0.0.1:5432/nexus")
-            redis_url=$(prompt_string "Enter Redis URL" "redis://localhost:6379/0")
             echo "NEXUS_STORAGE_DSN=${pg_dsn}" >> "$ENV_FILE"
-            echo "REDIS_URL=${redis_url}" >> "$ENV_FILE"
+            if [ "$use_redis" -eq 1 ]; then
+                redis_url=$(prompt_string "Enter Redis URL" "redis://localhost:6379/0")
+                echo "REDIS_URL=${redis_url}" >> "$ENV_FILE"
+            fi
             echo "DEPLOY_TYPE=systemd" >> "$ENV_FILE"
         fi
     else
@@ -453,18 +569,30 @@ if [ "$setup_db" -eq 1 ]; then
         OS=$(uname -s)
         if [ "$OS" == "Darwin" ]; then
             if command -v brew &> /dev/null; then
-                brew install postgresql@15 redis
+                brew_packages=(postgresql@15)
+                if [ "$use_redis" -eq 1 ]; then
+                    brew_packages+=(redis)
+                fi
+                brew install "${brew_packages[@]}"
                 brew services start postgresql@15
-                brew services start redis
-                echo "✅ DBs installed via Brew."
+                if [ "$use_redis" -eq 1 ]; then
+                    brew services start redis
+                fi
+                echo "✅ Infrastructure installed via Brew."
             fi
         elif [ "$OS" == "Linux" ]; then
             if command -v apt &> /dev/null; then
-                sudo apt update && sudo apt install -y postgresql redis-server
-                sudo systemctl enable --now redis-server
+                apt_packages=(postgresql)
+                if [ "$use_redis" -eq 1 ]; then
+                    apt_packages+=(redis-server)
+                fi
+                sudo apt update && sudo apt install -y "${apt_packages[@]}"
+                if [ "$use_redis" -eq 1 ]; then
+                    sudo systemctl enable --now redis-server
+                fi
                 sudo -u postgres createuser nexus --pwprompt
                 sudo -u postgres createdb nexus --owner=nexus
-                echo "✅ DBs installed via APT."
+                echo "✅ Infrastructure installed via APT."
             fi
         fi
     fi
@@ -476,5 +604,24 @@ echo "======================================="
 echo -e "\nNext steps:"
 echo " 1. Review the generated .env file"
 echo " 2. Review config/project_config.yaml"
-echo " 3. pip install -e ."
-echo " 4. Run nexus-telegram-bot and nexus-discord-bot"
+if [ "$runtime_mode" == "openclaw" ]; then
+    echo " 3. Install the core package if needed: pip install -e ."
+    echo " 4. Start the bridge/runtime with: nexus-bridge"
+    echo " 5. Install the OpenClaw plugin from packages/nexus-arc"
+elif [ "$runtime_mode" == "advanced" ]; then
+    echo " 3. Install the core package if needed: pip install -e ."
+    if [ "$install_telegram" -eq 1 ] || [ "$install_discord" -eq 1 ]; then
+        echo " 4. Install the bot package if needed: pip install -e .[nexus-bot]"
+    fi
+    if [ "$enable_openclaw" -eq 1 ]; then
+        echo " 5. Start the bridge/runtime with: nexus-bridge"
+    fi
+    if [ "$install_telegram" -eq 1 ] || [ "$install_discord" -eq 1 ]; then
+        echo " 6. Start the selected Nexus bot runtimes"
+    else
+        echo " 6. No native Nexus bots were selected for this install"
+    fi
+else
+    echo " 3. pip install -e .[nexus-bot]"
+    echo " 4. Run nexus-telegram-bot and nexus-discord-bot"
+fi

@@ -5,6 +5,7 @@ import re
 from typing import Any, cast
 
 from nexus.core.chat_agents_schema import get_project_chat_agent_types
+from nexus.core.command_bridge.models import requester_context_from_raw_event
 from nexus.core.handlers.agent_resolution_handler import resolve_agents_for_project
 from nexus.core.utils.log_utils import log_unauthorized_access
 
@@ -65,8 +66,8 @@ async def handle_direct_request(
         available_agent_types=project_chat_agent_types,
     )
 
-    requester_context = None
-    if callable(getattr(deps, "requester_context_builder", None)):
+    requester_context = requester_context_from_raw_event(getattr(ctx, "raw_event", None))
+    if not requester_context and callable(getattr(deps, "requester_context_builder", None)):
         try:
             requester_context = deps.requester_context_builder(int(str(ctx.user_id)))
         except Exception:

@@ -44,12 +44,17 @@ from nexus.core.config.repos import (
     get_repos as _svc_get_repos,
 )
 from nexus.core.config.runtime import (
+    default_rate_limit_backend as _default_rate_limit_backend,
     get_inbox_dir as _svc_get_inbox_dir,
     get_nexus_dir as _svc_get_nexus_dir,
     get_nexus_dir_name as _svc_get_nexus_dir_name,
     get_tasks_active_dir as _svc_get_tasks_active_dir,
     get_tasks_closed_dir as _svc_get_tasks_closed_dir,
     get_tasks_logs_dir as _svc_get_tasks_logs_dir,
+    normalize_auth_authority as _normalize_auth_authority,
+    normalize_chat_transcript_owner as _normalize_chat_transcript_owner,
+    normalize_execution_credential_source as _normalize_execution_credential_source,
+    normalize_runtime_mode as _normalize_runtime_mode,
 )
 from nexus.core.config.validators import validate_project_config as _svc_validate_project_config
 from nexus.core.project.registry import (
@@ -93,6 +98,24 @@ AI_PERSONA = os.getenv(
     "AI_PERSONA",
     "You are Nexus, a brilliant business advisor and technical architect (like Jarvis from Iron Man).\n\nAnswer the following question or brainstorm ideas directly and concisely. Keep your tone professional, highly capable, and slightly witty but always helpful.",
 )
+
+# --- RUNTIME MODE CONFIGURATION ---
+NEXUS_RUNTIME_MODE = _normalize_runtime_mode(os.getenv("NEXUS_RUNTIME_MODE", "standalone"))
+NEXUS_CHAT_TRANSCRIPT_OWNER = _normalize_chat_transcript_owner(
+    os.getenv("NEXUS_CHAT_TRANSCRIPT_OWNER", ""),
+    NEXUS_RUNTIME_MODE,
+)
+NEXUS_AUTH_AUTHORITY = _normalize_auth_authority(
+    os.getenv("NEXUS_AUTH_AUTHORITY", ""),
+    NEXUS_RUNTIME_MODE,
+)
+NEXUS_EXECUTION_CREDENTIAL_SOURCE = _normalize_execution_credential_source(
+    os.getenv("NEXUS_EXECUTION_CREDENTIAL_SOURCE", ""),
+    NEXUS_RUNTIME_MODE,
+)
+NEXUS_OPENCLAW_BROKER_URL = str(os.getenv("NEXUS_OPENCLAW_BROKER_URL", "")).strip()
+NEXUS_OPENCLAW_BROKER_TOKEN = str(os.getenv("NEXUS_OPENCLAW_BROKER_TOKEN", "")).strip()
+NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS = _get_int_env("NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS", 15)
 
 # --- REDIS CONFIGURATION ---
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -619,7 +642,11 @@ NEXUS_INBOX_BACKEND = _normalize_backend_enum(
 NEXUS_RATE_LIMIT_BACKEND = _normalize_backend_enum(
     os.getenv("NEXUS_RATE_LIMIT_BACKEND"),
     env_name="NEXUS_RATE_LIMIT_BACKEND",
-    default="redis",
+    default=_default_rate_limit_backend(
+        NEXUS_STORAGE_BACKEND,
+        runtime_mode=NEXUS_RUNTIME_MODE,
+        transcript_owner=NEXUS_CHAT_TRANSCRIPT_OWNER,
+    ),
     allowed=_VALID_RATE_LIMIT_BACKENDS,
     aliases=_RATE_LIMIT_BACKEND_ALIASES,
 )
@@ -646,6 +673,11 @@ class RuntimeSettings:
     nexus_state_dir: str
     nexus_storage_backend: str
     nexus_rate_limit_backend: str
+    nexus_runtime_mode: str
+    nexus_chat_transcript_owner: str
+    nexus_auth_authority: str
+    nexus_execution_credential_source: str
+    nexus_openclaw_broker_url: str
     redis_url: str
     nexus_core_storage_dir: str
 
@@ -656,6 +688,11 @@ def get_runtime_settings() -> RuntimeSettings:
         nexus_state_dir=NEXUS_STATE_DIR,
         nexus_storage_backend=NEXUS_STORAGE_BACKEND,
         nexus_rate_limit_backend=NEXUS_RATE_LIMIT_BACKEND,
+        nexus_runtime_mode=NEXUS_RUNTIME_MODE,
+        nexus_chat_transcript_owner=NEXUS_CHAT_TRANSCRIPT_OWNER,
+        nexus_auth_authority=NEXUS_AUTH_AUTHORITY,
+        nexus_execution_credential_source=NEXUS_EXECUTION_CREDENTIAL_SOURCE,
+        nexus_openclaw_broker_url=NEXUS_OPENCLAW_BROKER_URL,
         redis_url=REDIS_URL,
         nexus_core_storage_dir=NEXUS_CORE_STORAGE_DIR,
     )
@@ -894,6 +931,18 @@ def validate_configuration():
             )
         if not NEXUS_CREDENTIALS_MASTER_KEY:
             errors.append("NEXUS_AUTH_ENABLED=true requires NEXUS_CREDENTIALS_MASTER_KEY.")
+
+    if NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker":
+        if not NEXUS_OPENCLAW_BROKER_URL:
+            errors.append(
+                "NEXUS_EXECUTION_CREDENTIAL_SOURCE=openclaw-broker requires "
+                "NEXUS_OPENCLAW_BROKER_URL."
+            )
+        if not NEXUS_OPENCLAW_BROKER_TOKEN:
+            warnings.append(
+                "NEXUS_OPENCLAW_BROKER_TOKEN is not set. "
+                "Use a shared bearer token or another authenticated channel for the broker."
+            )
 
     # Validate PROJECT_CONFIG (when loaded)
     try:

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from nexus.core.interactive.context import InteractiveContext
 
 from nexus.adapters.notifications.base import Button
+from nexus.core.command_bridge.models import requester_context_from_raw_event
 from nexus.core.chat_agents_schema import (
     get_default_project_chat_agent_type,
     get_project_chat_agent_config,
@@ -312,6 +313,21 @@ def _looks_like_explicit_task_request(text: str) -> bool:
     return any(phrase in candidate for phrase in explicit_phrases)
 
 
+def _requester_context_from_ctx(
+    ctx: InteractiveContext,
+    deps: HandsFreeRoutingDeps,
+) -> dict[str, Any] | None:
+    bridge_context = requester_context_from_raw_event(getattr(ctx, "raw_event", None))
+    if bridge_context:
+        return bridge_context
+    if callable(deps.requester_context_builder) and str(ctx.user_id).isdigit():
+        try:
+            return deps.requester_context_builder(int(ctx.user_id))
+        except Exception:
+            return None
+    return None
+
+
 async def resolve_pending_project_selection(
     ctx: InteractiveContext,
     deps: HandsFreeRoutingDeps,
@@ -338,11 +354,7 @@ async def resolve_pending_project_selection(
     if hasattr(ctx.raw_event, "message") and hasattr(ctx.raw_event.message, "message_id"):
         trigger_message_id = str(ctx.raw_event.message.message_id)
 
-    requester_context = (
-        deps.requester_context_builder(int(ctx.user_id))
-        if callable(deps.requester_context_builder)
-        else None
-    )
+    requester_context = _requester_context_from_ctx(ctx, deps)
     result = await deps.save_resolved_task(
         pending_project,
         selected,
@@ -356,11 +368,7 @@ async def resolve_pending_project_selection(
 
 async def route_hands_free_text(ctx: InteractiveContext, deps: HandsFreeRoutingDeps) -> None:
     text = ctx.text
-    requester_context = (
-        deps.requester_context_builder(int(ctx.user_id))
-        if callable(deps.requester_context_builder) and str(ctx.user_id).isdigit()
-        else None
-    )
+    requester_context = _requester_context_from_ctx(ctx, deps)
     user_numeric_id = int(ctx.user_id) if str(ctx.user_id).isdigit() else 0
     chat_data = deps.get_chat(user_numeric_id) or {}
     metadata = chat_data.get("metadata") if isinstance(chat_data, dict) else {}

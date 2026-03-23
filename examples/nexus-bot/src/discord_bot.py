@@ -209,6 +209,9 @@ from nexus.core.auth import (
     get_latest_login_session_status as _svc_get_latest_login_session_status,
 )
 from nexus.core.auth import (
+    import_openclaw_local_provider_credentials as _svc_import_openclaw_local_provider_credentials,
+)
+from nexus.core.auth import (
     get_setup_status as _svc_get_setup_status,
 )
 from nexus.core.auth import register_onboarding_message as _svc_register_onboarding_message
@@ -2282,12 +2285,6 @@ async def login_command(
             ephemeral=True,
         )
         return
-    if not NEXUS_PUBLIC_BASE_URL:
-        await interaction.response.send_message(
-            "⚠️ NEXUS_PUBLIC_BASE_URL is not configured. Ask an admin to configure auth.",
-            ephemeral=True,
-        )
-        return
 
     selected_provider = str(provider.value if provider else "").strip().lower()
     account_provider_target = (
@@ -2295,6 +2292,39 @@ async def login_command(
         if selected_provider in {"codex", "gemini", "claude", "copilot"}
         else ""
     )
+    user = _get_or_create_discord_user(interaction.user)
+
+    if account_provider_target in {"codex", "gemini", "claude", "copilot"}:
+        imported = _svc_import_openclaw_local_provider_credentials(
+            nexus_id=str(user.nexus_id),
+            provider=account_provider_target,
+        )
+        import_state = str(imported.get("state") or "").strip().lower()
+        if bool(imported.get("imported")):
+            await interaction.response.send_message(
+                "\n".join(
+                    [
+                        f"✅ {imported.get('message') or f'Imported saved {account_provider_target.title()} credentials.'}",
+                        "Use `/setup-status` to verify readiness.",
+                    ]
+                ),
+                ephemeral=True,
+            )
+            return
+        if import_state in {"invalid", "error"}:
+            await interaction.response.send_message(
+                f"⚠️ {imported.get('message') or 'Saved provider credentials could not be imported.'}",
+                ephemeral=True,
+            )
+            return
+
+    if not NEXUS_PUBLIC_BASE_URL:
+        await interaction.response.send_message(
+            "⚠️ NEXUS_PUBLIC_BASE_URL is not configured. Ask an admin to configure auth.",
+            ephemeral=True,
+        )
+        return
+
     github_oauth_ready = bool(NEXUS_GITHUB_CLIENT_ID and NEXUS_GITHUB_CLIENT_SECRET)
     gitlab_oauth_ready = bool(NEXUS_GITLAB_CLIENT_ID and NEXUS_GITLAB_CLIENT_SECRET)
     available_providers: list[str] = []
@@ -2314,8 +2344,6 @@ async def login_command(
             ephemeral=True,
         )
         return
-
-    user = _get_or_create_discord_user(interaction.user)
 
     if account_provider_target in {"codex", "gemini", "claude"}:
         try:

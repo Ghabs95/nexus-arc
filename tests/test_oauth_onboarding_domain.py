@@ -98,6 +98,168 @@ def test_store_ai_provider_keys_rejects_codex_when_cli_login_validation_fails(mo
         assert "Codex CLI login validation failed" in str(exc)
 
 
+def test_import_openclaw_local_codex_account_credentials(monkeypatch, tmp_path):
+    import nexus.core.auth.oauth_onboarding_domain as auth_mod
+
+    source_path = tmp_path / "codex-auth.json"
+    source_payload = {
+        "auth_mode": "chatgpt",
+        "OPENAI_API_KEY": None,
+        "tokens": {
+            "access_token": "access-token-1234567890",
+            "refresh_token": "refresh-token-1234567890",
+        },
+    }
+    source_path.write_text(json.dumps(source_payload), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("NEXUS_RUNTIME_MODE", "openclaw")
+    monkeypatch.setenv("NEXUS_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("NEXUS_OPENCLAW_CODEX_AUTH_PATH", str(source_path))
+    monkeypatch.setattr(auth_mod, "upsert_ai_provider_keys", lambda **kwargs: captured.update(kwargs))
+
+    result = auth_mod.import_openclaw_local_provider_credentials(
+        nexus_id="nexus-codex-user",
+        provider="codex",
+    )
+
+    copied_path = tmp_path / "runtime" / "auth" / "codex" / "nexus-codex-user" / "auth.json"
+    assert result["imported"] is True
+    assert result["state"] == "imported"
+    assert copied_path.exists()
+    assert json.loads(copied_path.read_text(encoding="utf-8")) == source_payload
+    assert captured["nexus_id"] == "nexus-codex-user"
+    assert captured["codex_account_enabled"] is True
+
+
+def test_import_openclaw_local_gemini_account_credentials(monkeypatch, tmp_path):
+    import nexus.core.auth.oauth_onboarding_domain as auth_mod
+
+    source_path = tmp_path / "gemini-oauth.json"
+    source_payload = {
+        "access_token": "gemini-access-token-1234567890",
+        "refresh_token": "gemini-refresh-token-1234567890",
+    }
+    source_path.write_text(json.dumps(source_payload), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("NEXUS_RUNTIME_MODE", "openclaw")
+    monkeypatch.setenv("NEXUS_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("NEXUS_OPENCLAW_GEMINI_AUTH_PATH", str(source_path))
+    monkeypatch.setattr(auth_mod, "upsert_ai_provider_keys", lambda **kwargs: captured.update(kwargs))
+
+    result = auth_mod.import_openclaw_local_provider_credentials(
+        nexus_id="nexus-gemini-user",
+        provider="gemini",
+    )
+
+    user_copy = tmp_path / "runtime" / "auth" / "home" / "nexus-gemini-user" / ".gemini" / "oauth_creds.json"
+    provider_copy = tmp_path / "runtime" / "auth" / "gemini" / "nexus-gemini-user" / "oauth_creds.json"
+    settings_path = tmp_path / "runtime" / "auth" / "home" / "nexus-gemini-user" / ".gemini" / "settings.json"
+    assert result["imported"] is True
+    assert result["state"] == "imported"
+    assert json.loads(user_copy.read_text(encoding="utf-8")) == source_payload
+    assert json.loads(provider_copy.read_text(encoding="utf-8")) == source_payload
+    assert settings_path.exists()
+    assert captured["nexus_id"] == "nexus-gemini-user"
+    assert captured["gemini_account_enabled"] is True
+
+
+def test_import_openclaw_local_copilot_token(monkeypatch, tmp_path):
+    import nexus.core.auth.oauth_onboarding_domain as auth_mod
+
+    source_path = tmp_path / "copilot.json"
+    source_payload = {"access_token": "copilot-token-1234567890"}
+    source_path.write_text(json.dumps(source_payload), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("NEXUS_RUNTIME_MODE", "openclaw")
+    monkeypatch.setenv("NEXUS_OPENCLAW_COPILOT_TOKEN_PATH", str(source_path))
+    monkeypatch.setattr(auth_mod, "encrypt_secret", lambda value, key_version=1: f"enc::{value}")
+    monkeypatch.setattr(auth_mod, "upsert_ai_provider_keys", lambda **kwargs: captured.update(kwargs))
+
+    result = auth_mod.import_openclaw_local_provider_credentials(
+        nexus_id="nexus-copilot-user",
+        provider="copilot",
+    )
+
+    assert result["imported"] is True
+    assert result["state"] == "imported"
+    assert captured["nexus_id"] == "nexus-copilot-user"
+    assert captured["copilot_github_token_enc"] == "enc::copilot-token-1234567890"
+
+
+def test_import_openclaw_local_claude_account_credentials(monkeypatch, tmp_path):
+    import nexus.core.auth.oauth_onboarding_domain as auth_mod
+
+    source_path = tmp_path / "claude-credentials.json"
+    source_payload = {
+        "claudeAiOauth": {
+            "accessToken": "claude-access-token-1234567890",
+            "refreshToken": "claude-refresh-token-1234567890",
+        }
+    }
+    source_path.write_text(json.dumps(source_payload), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("NEXUS_RUNTIME_MODE", "openclaw")
+    monkeypatch.setenv("NEXUS_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("NEXUS_OPENCLAW_CLAUDE_CREDENTIALS_PATH", str(source_path))
+    monkeypatch.setattr(auth_mod, "upsert_ai_provider_keys", lambda **kwargs: captured.update(kwargs))
+
+    result = auth_mod.import_openclaw_local_provider_credentials(
+        nexus_id="nexus-claude-user",
+        provider="claude",
+    )
+
+    user_copy = tmp_path / "runtime" / "auth" / "home" / "nexus-claude-user" / ".claude" / "credentials.json"
+    provider_copy = tmp_path / "runtime" / "auth" / "claude" / "nexus-claude-user" / "credentials.json"
+    assert result["imported"] is True
+    assert result["state"] == "imported"
+    assert json.loads(user_copy.read_text(encoding="utf-8")) == source_payload
+    assert json.loads(provider_copy.read_text(encoding="utf-8")) == source_payload
+    assert captured["nexus_id"] == "nexus-claude-user"
+    assert captured["claude_account_enabled"] is True
+
+
+def test_import_openclaw_local_claude_metadata_file_is_rejected(monkeypatch, tmp_path):
+    import nexus.core.auth.oauth_onboarding_domain as auth_mod
+
+    source_path = tmp_path / "claude-credentials.json"
+    source_payload = {
+        "firstStartTime": "2026-03-04T17:34:04.448Z",
+        "opusProMigrationComplete": True,
+        "sonnet1m45MigrationComplete": True,
+        "userID": "e13829a5d7b07ee3edf",
+    }
+    source_path.write_text(json.dumps(source_payload), encoding="utf-8")
+
+    monkeypatch.setenv("NEXUS_RUNTIME_MODE", "openclaw")
+    monkeypatch.setenv("NEXUS_OPENCLAW_CLAUDE_CREDENTIALS_PATH", str(source_path))
+
+    result = auth_mod.import_openclaw_local_provider_credentials(
+        nexus_id="nexus-claude-user",
+        provider="claude",
+    )
+
+    assert result["imported"] is False
+    assert result["state"] == "invalid"
+
+
+def test_import_openclaw_local_provider_credentials_is_disabled_outside_openclaw(monkeypatch):
+    import nexus.core.auth.oauth_onboarding_domain as auth_mod
+
+    monkeypatch.setenv("NEXUS_RUNTIME_MODE", "standalone")
+
+    result = auth_mod.import_openclaw_local_provider_credentials(
+        nexus_id="nexus-user",
+        provider="codex",
+    )
+
+    assert result["imported"] is False
+    assert result["state"] == "disabled"
+
+
 def test_start_oauth_flow_requires_client_secret(monkeypatch):
     import nexus.core.auth.oauth_onboarding_domain as auth_mod
 

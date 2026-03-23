@@ -1,8 +1,10 @@
 # Installing nexus-arc
 
-**nexus-arc** (Agentic Runtime Core) is designed to be installed as a foundational Python framework for building autonomous agent systems and bots.
+**nexus-arc** (Agentic Runtime Core) is designed to be installed as a foundational Python framework for building
+autonomous agent systems and bots.
 
 ## Requirements
+
 - Python 3.14.3 or higher
 
 ## Basic Installation
@@ -12,11 +14,13 @@ You can install the core framework directly using `pip`:
 ```bash
 pip install nexus-arc
 ```
+
 *(Note: For local development from source, use `pip install -e .`)*
 
 ## Optional Dependencies (Extras)
 
-Nexus ARC relies heavily on optional dependencies to keep the base installation lightweight. Install only the components you need for your use case:
+Nexus ARC relies heavily on optional dependencies to keep the base installation lightweight. Install only the components
+you need for your use case:
 
 ```bash
 # Add PostgreSQL storage backend support
@@ -53,4 +57,5 @@ bus = EventBus()
 engine = WorkflowEngine(bus)
 ```
 
-For a comprehensive guide on building a bot using Nexus ARC, see the examples directory, such as `examples/nexus-bot/INSTALL.md`.
+For a comprehensive guide on building a bot using Nexus ARC, see the examples directory, such as
+`examples/nexus-bot/INSTALL.md`.

@@ -31,12 +31,14 @@ from nexus.core.command_visibility import is_command_visible
 from nexus.core.config import PROJECT_CONFIG, get_project_display_names
 from nexus.core.config import normalize_project_key as _normalize_project_key
 from nexus.core.discord.discord_bridge_deps_service import (
+    hands_free_bridge_deps,
     issue_bridge_deps,
     monitoring_bridge_deps,
     ops_bridge_deps,
     workflow_bridge_deps,
 )
 from nexus.core.handlers.chat_command_handlers import chat_agents_handler, chat_menu_handler
+from nexus.core.handlers.hands_free_routing_handler import route_hands_free_text
 from nexus.core.handlers.issue_command_handlers import (
     assign_handler,
     comments_handler,
@@ -74,6 +76,7 @@ from nexus.core.integrations.workflow_state_factory import get_workflow_state
 from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 from nexus.core.project.catalog import get_project_label, iter_project_keys, single_key
 from nexus.core.telegram.telegram_issue_selection_service import parse_project_issue_args
+from nexus.core.user_manager import get_user_manager
 
 logger = logging.getLogger(__name__)
 
@@ -269,22 +272,28 @@ class CommandRouter:
             prompt_project_selection=self._prompt_project_selection,
             ensure_project_issue=self._ensure_project_issue,
         )
+        self.hands_free_deps = hands_free_bridge_deps(
+            requester_context_builder=self._build_requester_context_builder(
+                self.default_source_platform
+            )
+        )
         self._override_requester_builders()
         self._register_default_commands()
 
-    def _override_requester_builders(self) -> None:
-        def _build_requester_context_builder(platform_name: str) -> Callable[[int], dict[str, Any]]:
-            return lambda user_id: {
-                "platform": platform_name,
-                "platform_user_id": str(user_id),
-            }
+    def _build_requester_context_builder(self, platform_name: str) -> Callable[[int], dict[str, Any]]:
+        return lambda user_id: {
+            "platform": platform_name,
+            "platform_user_id": str(user_id),
+        }
 
-        self.workflow_deps.requester_context_builder = _build_requester_context_builder(
-            self.default_source_platform
-        )
-        self.ops_deps.requester_context_builder = _build_requester_context_builder(
-            self.default_source_platform
-        )
+    def _override_requester_builders(self) -> None:
+        requester_builder = self._build_requester_context_builder(self.default_source_platform)
+        self.workflow_deps.requester_context_builder = requester_builder
+        self.ops_deps.requester_context_builder = requester_builder
+        self.hands_free_deps.requester_context_builder = requester_builder
+        feature_ideation_deps = getattr(self.hands_free_deps, "feature_ideation_deps", None)
+        if feature_ideation_deps is not None:
+            feature_ideation_deps.requester_context_builder = requester_builder
 
     def register_command(
         self,
@@ -297,6 +306,32 @@ class CommandRouter:
             callback=callback,
             bridge_enabled=bridge_enabled,
         )
+
+    def _bind_requester_identity(self, requester: RequesterContext) -> None:
+        nexus_id = str(requester.nexus_id or "").strip()
+        platform = str(requester.source_platform or self.default_source_platform).strip().lower()
+        sender_id = str(requester.sender_id or "").strip()
+        if not nexus_id or not platform or not sender_id:
+            return
+
+        try:
+            user_manager = get_user_manager()
+            candidate_user = user_manager.get_or_create_user_by_identity(
+                platform=platform,
+                platform_user_id=sender_id,
+                username=str(requester.sender_name or "").strip() or None,
+                first_name=str(requester.sender_name or "").strip() or None,
+            )
+            if str(candidate_user.nexus_id or "").strip() != nexus_id:
+                user_manager.merge_users(nexus_id, candidate_user.nexus_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to bind bridge requester identity nexus_id=%s platform=%s sender_id=%s: %s",
+                nexus_id,
+                platform,
+                sender_id,
+                exc,
+            )
 
     def build_context(
         self,
@@ -376,6 +411,7 @@ class CommandRouter:
 
         requester = request.requester if isinstance(request.requester, RequesterContext) else RequesterContext()
         context = request.context if isinstance(request.context, SessionContext) else SessionContext()
+        self._bind_requester_identity(requester)
         client = _CapturingInteractiveClient(
             requester.source_platform or self.default_source_platform
         )
@@ -542,8 +578,8 @@ class CommandRouter:
         return _callback
 
     def _register_default_commands(self) -> None:
-        self.register_command("chat", self._wrap_command_handler(chat_menu_handler), bridge_enabled=False)
-        self.register_command("chatagents", self._wrap_command_handler(chat_agents_handler), bridge_enabled=False)
+        self.register_command("chat", self._chat_bridge_callback())
+        self.register_command("chatagents", self._wrap_command_handler(chat_agents_handler))
         self.register_command("assign", self._wrap_command_handler(assign_handler, self.issue_deps), bridge_enabled=False)
         self.register_command("comments", self._wrap_command_handler(comments_handler, self.issue_deps), bridge_enabled=False)
         self.register_command("implement", self._wrap_command_handler(implement_handler, self.issue_deps))
@@ -569,10 +605,10 @@ class CommandRouter:
         self.register_command("stats", self._wrap_command_handler(stats_handler, self.ops_deps))
         self.register_command("continue", self._wrap_command_handler(continue_handler, self.workflow_deps))
         self.register_command("forget", self._wrap_command_handler(forget_handler, self.workflow_deps), bridge_enabled=False)
-        self.register_command("kill", self._wrap_command_handler(kill_handler, self.workflow_deps), bridge_enabled=False)
+        self.register_command("kill", self._wrap_command_handler(kill_handler, self.workflow_deps))
         self.register_command("pause", self._wrap_command_handler(pause_handler, self.workflow_deps))
-        self.register_command("reconcile", self._wrap_command_handler(reconcile_handler, self.workflow_deps), bridge_enabled=False)
-        self.register_command("reprocess", self._wrap_command_handler(reprocess_handler, self.workflow_deps), bridge_enabled=False)
+        self.register_command("reconcile", self._wrap_command_handler(reconcile_handler, self.workflow_deps))
+        self.register_command("reprocess", self._wrap_command_handler(reprocess_handler, self.workflow_deps))
         self.register_command("resume", self._wrap_command_handler(resume_handler, self.workflow_deps))
         self.register_command("stop", self._wrap_command_handler(stop_handler, self.workflow_deps))
         self.register_command("wfstate", self._wrap_command_handler(wfstate_handler, self.workflow_deps))
@@ -605,6 +641,47 @@ class CommandRouter:
                 await handler(ctx)
                 return
             await handler(ctx, deps)
+
+        return _callback
+
+    def _chat_bridge_callback(self) -> Callable[..., Awaitable[None]]:
+        async def _callback(
+            *,
+            client: InteractiveClientPlugin,
+            user_id: str,
+            text: str,
+            args: list[str] | None = None,
+            raw_event: Any = None,
+            attachments: list[Any] | None = None,
+            user_state: dict[str, Any] | None = None,
+        ) -> None:
+            normalized_args = self._normalize_arg_tokens(args or [])
+            effective_user_state = dict(user_state or {})
+            effective_user_state["chat_session_active"] = True
+            if normalized_args:
+                chat_text = " ".join(normalized_args).strip()
+                ctx = self.build_context(
+                    client=client,
+                    user_id=user_id,
+                    text=chat_text,
+                    args=[],
+                    raw_event=raw_event,
+                    user_state=effective_user_state,
+                    attachments=attachments,
+                )
+                await route_hands_free_text(ctx, self.hands_free_deps)
+                return
+
+            ctx = self.build_context(
+                client=client,
+                user_id=user_id,
+                text=text,
+                args=[],
+                raw_event=raw_event,
+                user_state=effective_user_state,
+                attachments=attachments,
+            )
+            await chat_menu_handler(ctx)
 
         return _callback
 
@@ -820,6 +897,12 @@ class CommandRouter:
             command = "pause"
         elif re.search(r"\bresume\b", lowered):
             command = "resume"
+        elif re.search(r"\breconcile\b|\bsync\b.*\bsignals?\b|\brecover\b.*\bstate\b", lowered):
+            command = "reconcile"
+        elif re.search(r"\breprocess\b|\brestart\b.*\bworkflow\b|\brestart\b.*\bagent\b", lowered):
+            command = "reprocess"
+        elif re.search(r"\bkill\b.*\bagent\b|\bterminate\b.*\bagent\b", lowered):
+            command = "kill"
         elif re.search(r"\bstop\b", lowered):
             command = "stop"
         elif re.search(r"\bcontinue\b", lowered):

@@ -5,33 +5,35 @@
 You are responsible for placing code in the correct layer.
 
 1. Classify every request before editing:
-   - `FRAMEWORK`: reusable capabilities, core abstractions, runtime behavior, APIs, tool/memory/orchestration/transport logic.
-   - `EXAMPLE`: demo wiring, sample UX text, tutorial-only glue in `examples/nexus-bot`.
+    - `FRAMEWORK`: reusable capabilities, core abstractions, runtime behavior, APIs, tool/memory/orchestration/transport
+      logic.
+    - `EXAMPLE`: demo wiring, sample UX text, tutorial-only glue in `examples/nexus-bot`.
 
 2. Default to `FRAMEWORK` unless the user explicitly asks for example work using terms like:
-   - "example", "demo", "sample", "nexus-bot".
+    - "example", "demo", "sample", "nexus-bot".
 
 3. Mandatory pre-edit output (first line of your response):
-   - `Placement: FRAMEWORK` or `Placement: EXAMPLE`
-   - `Reason: <one sentence>`
+    - `Placement: FRAMEWORK` or `Placement: EXAMPLE`
+    - `Reason: <one sentence>`
 
 4. If placement is ambiguous, ask one direct question before coding:
-   - "Should I implement this in Nexus ARC framework, or only in examples/nexus-bot?"
+    - "Should I implement this in Nexus ARC framework, or only in examples/nexus-bot?"
 
 5. Never place reusable logic in `examples/nexus-bot`.
 
 6. For every `FRAMEWORK` feature, also implement usage in `examples/nexus-bot` to validate and demonstrate the feature:
-   - Implement framework capability first.
-   - Then wire it in `examples/nexus-bot` as a consumer.
-   - Keep reusable logic in framework files; example files should only consume framework APIs.
+    - Implement framework capability first.
+    - Then wire it in `examples/nexus-bot` as a consumer.
+    - Keep reusable logic in framework files; example files should only consume framework APIs.
 
 7. If modifying `examples/nexus-bot`, include this explicit line:
-   - `Example change justification: "<quoted user request fragment>"`
-   - If no quote exists and the change is not required by rule 6, do not modify example files.
+    - `Example change justification: "<quoted user request fragment>"`
+    - If no quote exists and the change is not required by rule 6, do not modify example files.
 
 ## Framework Architecture
 
-Nexus Core is an **agent-agnostic workflow orchestration framework**. It provides primitives for defining multi-agent workflows without prescribing specific agent implementations.
+Nexus Core is an **agent-agnostic workflow orchestration framework**. It provides primitives for defining multi-agent
+workflows without prescribing specific agent implementations.
 
 ### Agent Type System
 
@@ -63,6 +65,7 @@ When working on **example workflows/agents**: Use agent_type strings defined in 
 
 The `examples/` folder contains sample agent implementations to demonstrate the framework.
 See `examples/agents/*.yaml` for:
+
 - Agent YAML schema structure
 - Input/output contract patterns
 - Tool integration examples
@@ -73,6 +76,7 @@ See `examples/agents/*.yaml` for:
 ### Documentation Context
 
 README.md and ARCHITECTURE.md may contain:
+
 - "Before/After" comparisons showing migration from hardcoded names to agent_type pattern
 - Historical examples with old agent names (ProjectLead, @Atlas, etc.) - these are for illustration only
 
@@ -96,6 +100,7 @@ When referencing agents in code or workflows, always use the `agent_type` field 
 ## Agent Implementation
 
 When implementing agents:
+
 1. Check `examples/agents/` for the agent YAML definition
 2. Follow the input/output schema exactly
 3. Use the tools specified in the workflow step definition

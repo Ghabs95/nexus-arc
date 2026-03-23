@@ -19,6 +19,7 @@ class CommandBridgeConfig:
     auth_token: str = ""
     allowed_sources: list[str] | None = None
     allowed_sender_ids: list[str] | None = None
+    require_authorized_sender: bool = False
 
 
 def create_command_bridge_app(
@@ -121,6 +122,8 @@ def _validate_requester(
     request: CommandRequest, *, config: CommandBridgeConfig
 ) -> tuple[str, str] | None:
     requester = request.requester
+    if config.require_authorized_sender and requester.is_authorized_sender is not True:
+        return "Authenticated OpenClaw requester is required", "requester_not_authorized"
     allowed_sources = [str(item or "").strip().lower() for item in (config.allowed_sources or []) if str(item or "").strip()]
     if allowed_sources:
         source = str(requester.source_platform or "").strip().lower()

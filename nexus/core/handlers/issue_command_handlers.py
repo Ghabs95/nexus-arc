@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from nexus.core.command_bridge.models import (
+    requester_context_from_raw_event,
+    requester_nexus_id_from_raw_event,
+)
 from nexus.core.config import NEXUS_STORAGE_BACKEND
 from nexus.core.runtime_mode import is_postgres_backend
 from nexus.core.utils.log_utils import log_unauthorized_access
@@ -33,7 +37,7 @@ class IssueHandlerDeps:
     project_repo: Callable[[str], str]
     project_issue_url: Callable[[str, str], str]
     get_issue_details: Callable[..., dict[str, Any] | None]
-    get_direct_issue_plugin: Callable[[str], Any]
+    get_direct_issue_plugin: Callable[..., Any]
     resolve_project_config_from_task: Callable[[str], tuple[str | None, dict[str, Any] | None]]
     invoke_ai_agent: Callable[..., tuple[int | None, str | None]]
     get_sop_tier: Callable[[str], tuple[str, Any, Any]]
@@ -51,6 +55,9 @@ class IssueHandlerDeps:
 
 
 def _resolve_requester_nexus_id(ctx: InteractiveContext, deps: IssueHandlerDeps) -> str | None:
+    bridge_nexus_id = requester_nexus_id_from_raw_event(getattr(ctx, "raw_event", None))
+    if bridge_nexus_id:
+        return bridge_nexus_id
     try:
         platform = str(ctx.platform or "").strip().lower()
         user_id = str(ctx.user_id or "").strip()
@@ -59,6 +66,23 @@ def _resolve_requester_nexus_id(ctx: InteractiveContext, deps: IssueHandlerDeps)
         return str(deps.user_manager.resolve_nexus_id(platform, user_id) or "").strip() or None
     except Exception:
         return None
+
+
+def _requester_context_for_ctx(
+    ctx: InteractiveContext,
+    deps: IssueHandlerDeps,
+) -> dict[str, Any]:
+    bridge_context = requester_context_from_raw_event(getattr(ctx, "raw_event", None))
+    if bridge_context:
+        return bridge_context
+    if callable(deps.requester_context_builder):
+        try:
+            built = deps.requester_context_builder(int(str(ctx.user_id)))
+        except Exception:
+            built = None
+        if isinstance(built, dict):
+            return built
+    return {}
 
 
 def _resolve_direct_issue_plugin(
@@ -262,14 +286,7 @@ async def plan_handler(ctx: InteractiveContext, deps: IssueHandlerDeps) -> None:
         await ctx.reply_text(usage)
         return
 
-    requester_context = None
-    if callable(deps.requester_context_builder):
-        try:
-            requester_context = deps.requester_context_builder(int(str(ctx.user_id)))
-        except Exception:
-            requester_context = None
-    if not isinstance(requester_context, dict):
-        requester_context = {}
+    requester_context = _requester_context_for_ctx(ctx, deps)
 
     trigger_message_id = ""
     if hasattr(ctx.raw_event, "message_id"):

@@ -1,6 +1,6 @@
 # OpenClaw Nexus Command Plugin
 
-This package forwards `/nexus` commands from OpenClaw to the Nexus ARC HTTP command bridge.
+This package forwards `/nexus`, `/chat`, and `/chatagents` commands from OpenClaw to the Nexus ARC HTTP command bridge.
 
 Published package target: `@nexus-arc/openclaw-plugin`
 
@@ -33,7 +33,7 @@ Recommended plugin config:
           defaultProject: "demo",
           renderMode: "rich",
           sessionMemory: true,
-          requireConfirmFor: ["implement", "respond", "stop"],
+          requireConfirmFor: ["implement", "respond", "stop", "kill", "reprocess"],
           autoPollAccepted: true,
           acceptedPollDelayMs: 1500,
           acceptedPollAttempts: 1
@@ -66,6 +66,9 @@ Examples:
 - `/nexus health`
 - `/nexus current`
 - `/nexus use demo`
+- `/chat`
+- `/chat Review the current workspace architecture and call out the biggest risks`
+- `/chatagents demo`
 - `/nexus usage demo#42`
 - `/nexus usage #42`
 - `/nexus refresh`
@@ -77,6 +80,9 @@ Examples:
 - `/nexus tracked`
 - `/nexus myissues`
 - `/nexus implement demo#42`
+- `/nexus reconcile demo#42`
+- `/nexus reprocess demo#42`
+- `/nexus kill demo#42 --yes`
 - `/nexus pause demo#42`
 - `/nexus resume demo#42`
 - `/nexus stop demo#42`
@@ -93,9 +99,11 @@ The plugin now forwards richer bridge metadata with each request:
 
 It also keeps per-session local context in memory so `/nexus use <project>` and
 `/nexus current` work without needing the bridge to be available.
+OpenClaw chat turns can also go straight through `/chat <message>` while using
+the same Nexus workspace chat memory and project context.
 
 Risky commands can require local confirmation before they hit the bridge.
-By default this covers `implement`, `respond`, and `stop`, and operators can
+By default this covers `implement`, `respond`, `stop`, `kill`, and `reprocess`, and operators can
 either run `/nexus confirm`, `/nexus cancel`, or re-run the command with
 `--yes`.
 

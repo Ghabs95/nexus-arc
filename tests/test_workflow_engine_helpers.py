@@ -1,9 +1,9 @@
-from nexus.core.models import Agent, StepStatus, Workflow, WorkflowState, WorkflowStep
 from nexus.core.autofix_learning import (
     build_error_fingerprint,
     find_similar_autofix_attempts,
     is_autofix_candidate,
 )
+from nexus.core.models import Agent, StepStatus, Workflow, WorkflowState, WorkflowStep
 from nexus.core.workflow_engine.completion_service import (
     apply_step_completion_result,
     apply_retry_transition,

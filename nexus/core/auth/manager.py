@@ -98,6 +98,17 @@ class AuthManager:
             provider=provider,
         )
 
+    def import_openclaw_local_provider_credentials(
+        self,
+        *,
+        nexus_id: str,
+        provider: str,
+    ) -> dict[str, Any]:
+        return _auth_sessions.import_openclaw_local_provider_credentials(
+            nexus_id=nexus_id,
+            provider=provider,
+        )
+
     def get_provider_account_login_status(self, *, session_id: str, provider: str) -> dict[str, Any]:
         return _auth_sessions.get_provider_account_login_status(session_id=session_id, provider=provider)
 
@@ -245,6 +256,17 @@ def start_provider_account_login(*, session_id: str, provider: str) -> dict[str,
 
 def start_provider_account_login_for_nexus(*, nexus_id: str, provider: str) -> dict[str, Any]:
     return auth_manager.start_provider_account_login_for_nexus(
+        nexus_id=nexus_id,
+        provider=provider,
+    )
+
+
+def import_openclaw_local_provider_credentials(
+    *,
+    nexus_id: str,
+    provider: str,
+) -> dict[str, Any]:
+    return auth_manager.import_openclaw_local_provider_credentials(
         nexus_id=nexus_id,
         provider=provider,
     )

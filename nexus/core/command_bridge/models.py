@@ -24,6 +24,8 @@ class RequesterContext:
     """Metadata about the caller that originated a command."""
 
     source_platform: str = "openclaw"
+    nexus_id: str = ""
+    auth_authority: str = ""
     operator_id: str = ""
     sender_id: str = ""
     sender_name: str = ""
@@ -40,6 +42,8 @@ class RequesterContext:
         data = payload if isinstance(payload, dict) else {}
         return cls(
             source_platform=str(data.get("source_platform", "openclaw") or "openclaw"),
+            nexus_id=str(data.get("nexus_id", "") or ""),
+            auth_authority=str(data.get("auth_authority", "") or ""),
             operator_id=str(data.get("operator_id", "") or ""),
             sender_id=str(data.get("sender_id", "") or ""),
             sender_name=str(data.get("sender_name", "") or ""),
@@ -59,6 +63,8 @@ class RequesterContext:
     def to_dict(self) -> BridgeRequesterPayload:
         return {
             "source_platform": self.source_platform,
+            "nexus_id": self.nexus_id,
+            "auth_authority": self.auth_authority,
             "operator_id": self.operator_id,
             "sender_id": self.sender_id,
             "sender_name": self.sender_name,
@@ -74,6 +80,8 @@ class RequesterContext:
     def to_audit_context(self) -> dict[str, Any]:
         payload = {
             "platform": self.source_platform,
+            "nexus_id": self.nexus_id,
+            "auth_authority": self.auth_authority,
             "operator_id": self.operator_id,
             "platform_user_id": self.sender_id,
             "platform_user_name": self.sender_name,
@@ -86,6 +94,26 @@ class RequesterContext:
         }
         if self.metadata:
             payload["source_metadata"] = dict(self.metadata)
+        return payload
+
+    def to_requester_context(self) -> dict[str, Any]:
+        payload = {
+            "platform": self.source_platform,
+            "platform_user_id": self.sender_id,
+        }
+        nexus_id = str(self.nexus_id or "").strip()
+        if nexus_id:
+            payload["nexus_id"] = nexus_id
+        auth_authority = str(self.auth_authority or "").strip().lower()
+        if auth_authority:
+            payload["auth_authority"] = auth_authority
+        session_id = str(self.session_id or "").strip()
+        if session_id:
+            payload["session_id"] = session_id
+        if self.roles:
+            payload["roles"] = list(self.roles)
+        if self.access_groups:
+            payload["access_groups"] = list(self.access_groups)
         return payload
 
 
@@ -324,3 +352,23 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item or "").strip() for item in value if str(item or "").strip()]
+
+
+def requester_context_from_raw_event(raw_event: Any) -> dict[str, Any]:
+    requester_payload = None
+    if isinstance(raw_event, dict):
+        requester_payload = raw_event.get("requester")
+    elif hasattr(raw_event, "requester"):
+        requester_payload = getattr(raw_event, "requester", None)
+
+    if isinstance(requester_payload, RequesterContext):
+        return requester_payload.to_requester_context()
+    if isinstance(requester_payload, dict):
+        return RequesterContext.from_dict(requester_payload).to_requester_context()
+    return {}
+
+
+def requester_nexus_id_from_raw_event(raw_event: Any) -> str | None:
+    requester_context = requester_context_from_raw_event(raw_event)
+    nexus_id = str(requester_context.get("nexus_id") or "").strip()
+    return nexus_id or None

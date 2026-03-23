@@ -39,10 +39,11 @@ from nexus.core.feature_registry_service import FeatureRegistryService
 from nexus.core.git.direct_issue_plugin_service import (
     get_direct_issue_plugin as _svc_get_direct_issue_plugin,
 )
+from nexus.core.handlers.common_routing import extract_json_dict
 from nexus.core.handlers.feature_registry_command_handlers import FeatureRegistryCommandDeps
-from nexus.core.handlers.inbox_routing_handler import TYPES, process_inbox_task
+from nexus.core.handlers.inbox_routing_handler import TYPES, process_inbox_task, save_resolved_task
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
-from nexus.core.memory import append_message, create_chat, get_chat_history
+from nexus.core.memory import append_message, create_chat, get_chat, get_chat_history
 from nexus.core.orchestration.ai_orchestrator import get_orchestrator
 from nexus.core.orchestration.nexus_core_helpers import get_workflow_definition_path
 from nexus.core.orchestration.plugin_runtime import (
@@ -77,6 +78,12 @@ from nexus.core.runtime.bridge import workflow_resume_handler
 from nexus.core.runtime.bridge import workflow_stop_handler
 from nexus.core.state_manager import HostStateManager
 from nexus.core.task_flow.helpers import normalize_agent_reference as _normalize_agent_reference, get_sop_tier
+from nexus.core.telegram.telegram_handler_deps_service import (
+    build_feature_ideation_handler_deps as _svc_build_feature_ideation_handler_deps,
+)
+from nexus.core.telegram.telegram_handler_deps_service import (
+    build_hands_free_routing_handler_deps as _svc_build_hands_free_routing_handler_deps,
+)
 from nexus.core.telegram.telegram_handler_deps_service import (
     build_issue_handler_deps as _svc_build_issue_handler_deps,
 )
@@ -537,6 +544,42 @@ def issue_bridge_deps(*, allowed_user_ids, prompt_project_selection, ensure_proj
             "platform_user_id": str(user_id),
             "nexus_id": str(_get_user_manager().resolve_nexus_id("discord", str(user_id)) or ""),
         },
+    )
+
+
+def hands_free_bridge_deps(*, requester_context_builder=None):
+    feature_ideation_deps = _svc_build_feature_ideation_handler_deps(
+        logger=logger,
+        allowed_user_ids=[],
+        projects=PROJECTS_MAP,
+        get_project_label=_get_project_label,
+        orchestrator=_get_orchestrator(),
+        base_dir=BASE_DIR,
+        project_config=PROJECT_CONFIG,
+        process_inbox_task=process_inbox_task,
+        requester_context_builder=requester_context_builder,
+        authorize_project=None,
+        feature_registry_service=_get_feature_registry_service(),
+        dedup_similarity=NEXUS_FEATURE_REGISTRY_DEDUP_SIMILARITY,
+    )
+    return _svc_build_hands_free_routing_handler_deps(
+        logger=logger,
+        orchestrator=_get_orchestrator(),
+        ai_persona=AI_PERSONA,
+        projects=PROJECTS_MAP,
+        extract_json_dict=extract_json_dict,
+        get_chat_history=get_chat_history,
+        append_message=append_message,
+        get_chat=get_chat,
+        process_inbox_task=process_inbox_task,
+        feature_ideation_deps=feature_ideation_deps,
+        normalize_project_key=_normalize_project_key,
+        save_resolved_task=save_resolved_task,
+        task_confirmation_mode=os.getenv("TASK_CONFIRMATION_MODE", "smart").strip().lower(),
+        requester_context_builder=requester_context_builder,
+        authorize_project=None,
+        base_dir=BASE_DIR,
+        project_config=PROJECT_CONFIG,
     )
 
 

@@ -28,8 +28,13 @@ from nexus.core.auth.access_domain import (
     check_repo_access,
 )
 from nexus.core.auth.credential_store import get_issue_requester, get_issue_requester_by_url
+from nexus.core.auth.execution_env_resolver import (
+    requester_scoped_execution_enabled,
+    resolve_execution_env,
+)
 from nexus.core.config import (
     BASE_DIR,
+    NEXUS_EXECUTION_CREDENTIAL_SOURCE,
     NEXUS_WEBHOOK_INTERNAL_URL,
     ORCHESTRATOR_CONFIG,
     NEXUS_STORAGE_BACKEND,
@@ -163,25 +168,49 @@ def _resolve_requester_token_for_issue(
     repo: str,
     project_name: str | None,
 ) -> str | None:
-    if not auth_enabled():
+    if not (bool(auth_enabled()) or NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker"):
         return None
-    requester_nexus_id = get_issue_requester(str(repo), str(issue_number))
-    if not requester_nexus_id:
-        # Fallback to URL-bound requester lookup for cases where repo-key
-        # formatting differs from stored bindings.
+
+    requester_nexus_id = None
+    try:
+        requester_nexus_id = str(get_issue_requester(str(repo), str(issue_number)) or "").strip() or None
+    except Exception:
+        requester_nexus_id = None
+
+    issue_url = None
+    try:
+        platform = str(get_project_platform(str(project_name or "")) or "").strip().lower()
+        issue_url = build_issue_url(
+            str(repo),
+            str(issue_number),
+            {"git_platform": platform or "github"},
+        )
+    except Exception:
+        issue_url = None
+
+    if not requester_nexus_id and issue_url:
         try:
-            platform = str(get_project_platform(str(project_name or "")) or "").strip().lower()
-            issue_url = build_issue_url(
-                str(repo),
-                str(issue_number),
-                {"git_platform": platform or "github"},
-            )
-            requester_nexus_id = get_issue_requester_by_url(issue_url)
+            requester_nexus_id = str(get_issue_requester_by_url(issue_url) or "").strip() or None
         except Exception:
             requester_nexus_id = None
+
     if not requester_nexus_id:
         return None
-    user_env, env_error = build_execution_env(str(requester_nexus_id))
+
+    if NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker":
+        user_env, env_error = resolve_execution_env(
+            str(requester_nexus_id),
+            project_name=project_name,
+            repo_name=str(repo),
+            issue_url=issue_url,
+            purpose="git",
+        )
+    else:
+        try:
+            user_env, env_error = build_execution_env(str(requester_nexus_id), purpose="git")
+        except TypeError:
+            user_env, env_error = build_execution_env(str(requester_nexus_id))
+
     if env_error:
         logger.warning(
             "Requester token unavailable for issue #%s repo=%s project=%s requester=%s: %s",
@@ -192,6 +221,7 @@ def _resolve_requester_token_for_issue(
             env_error,
         )
         return None
+
     platform = str(get_project_platform(str(project_name or "")) or "").strip().lower()
     if platform == "gitlab":
         return str(user_env.get("GITLAB_TOKEN") or user_env.get("GITHUB_TOKEN") or "").strip() or None
@@ -1956,10 +1986,11 @@ def invoke_ai_agent(
     # Use orchestrator to launch agent
     orchestrator = get_orchestrator(ORCHESTRATOR_CONFIG)
     auth_is_enabled = bool(auth_enabled())
+    requester_scoped_execution_is_required = requester_scoped_execution_enabled()
     provided_requester_nexus_id = str(requester_nexus_id or "").strip() or None
     bound_requester_nexus_id = _lookup_bound_issue_requester_nexus_id(str(issue_url or ""))
     if (
-        auth_is_enabled
+        requester_scoped_execution_is_required
         and provided_requester_nexus_id
         and bound_requester_nexus_id
         and provided_requester_nexus_id != bound_requester_nexus_id
@@ -1972,9 +2003,10 @@ def invoke_ai_agent(
         )
         return None, None
 
-    if auth_is_enabled and not bound_requester_nexus_id:
+    if requester_scoped_execution_is_required and not bound_requester_nexus_id:
         logger.error(
-            "Auth is enabled but issue requester binding is missing for launch (issue=%s provided=%s). Refusing launch.",
+            "Requester-scoped execution is enabled but issue requester binding is missing for launch "
+            "(issue=%s provided=%s). Refusing launch.",
             issue_url,
             provided_requester_nexus_id or "<none>",
         )
@@ -1992,9 +2024,9 @@ def invoke_ai_agent(
     token = os.getenv(token_var) if not auth_is_enabled else None
 
     agent_env = None
-    if auth_is_enabled:
+    if requester_scoped_execution_is_required:
         if effective_requester_nexus_id:
-            if project_name:
+            if auth_is_enabled and project_name:
                 allowed_project, error_project = check_project_access(
                     str(effective_requester_nexus_id),
                     str(project_name),
@@ -2026,7 +2058,13 @@ def invoke_ai_agent(
                         )
                         return None, None
 
-            resolved_env, env_error = build_execution_env(str(effective_requester_nexus_id))
+            resolved_env, env_error = resolve_execution_env(
+                str(effective_requester_nexus_id),
+                project_name=project_name,
+                repo_name=repo_name,
+                issue_url=issue_url,
+                purpose="agent_run",
+            )
             if env_error:
                 logger.error(
                     "Requester credential resolution failed for nexus_id=%s: %s",
@@ -2039,7 +2077,7 @@ def invoke_ai_agent(
             agent_env = resolved_env
         else:
             logger.error(
-                "Auth is enabled but no requester identity is available for launch "
+                "Requester-scoped execution is enabled but no requester identity is available for launch "
                 "(project=%s issue=%s).",
                 project_name,
                 issue_url,

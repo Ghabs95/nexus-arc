@@ -22,7 +22,6 @@ def prompt_choice(question: str, choices: list[str]) -> int:
             print(f"Please enter a number between 1 and {len(choices)}.")
         except ValueError:
             print("Please enter a valid number.")
-    return -1
 
 
 def prompt_multi_choice(question: str, choices: list[str]) -> list[int]:
@@ -43,7 +42,14 @@ def prompt_multi_choice(question: str, choices: list[str]) -> list[int]:
             print(f"Please enter valid numbers between 1 and {len(choices)}.")
         except ValueError:
             print("Please enter valid comma-separated numbers.")
-    return []
+
+
+def prompt_multi_choice_required(question: str, choices: list[str]) -> list[int]:
+    while True:
+        selected = prompt_multi_choice(question, choices)
+        if selected:
+            return selected
+        print("Please select at least one option.")
 
 
 def prompt_string(question: str, default: str = "") -> str:
@@ -67,39 +73,118 @@ def main():
     print(" 🚀 Welcome to Nexus ARC Installation 🚀")
     print("=======================================\n")
 
-    # 1. Deployment Mode
+    # 1. Runtime Mode
     step_num = 1
-    print(f"\n--- {step_num}. Deployment Mode ---")
+    print(f"\n--- {step_num}. Runtime Mode ---")
     step_num += 1
-    mode_choice = prompt_choice(
-        "Which storage mode do you want to use?",
+    runtime_choice = prompt_choice(
+        "Which runtime mode do you want to install?",
         [
-            "Lite (Filesystem only - no external dependencies, great for local testing)",
-            "Enterprise (PostgreSQL + Redis - persistent queue, chat memory, deduplication)",
+            "Standalone (Nexus manages Telegram/Discord chat surfaces)",
+            "OpenClaw (OpenClaw owns chat UX/transcript; Nexus runs bridge + workflow runtime)",
+            "Advanced (Mix OpenClaw with optional native Nexus bot surfaces)",
         ],
     )
-    is_enterprise = mode_choice == 2
+    runtime_mode = {1: "standalone", 2: "openclaw", 3: "advanced"}[runtime_choice]
+    auth_authority = "openclaw" if runtime_mode == "openclaw" else "nexus"
+    enable_openclaw = runtime_mode == "openclaw"
+    install_telegram = runtime_mode == "standalone"
+    install_discord = runtime_mode == "standalone"
+    chat_transcript_owner = "openclaw" if runtime_mode == "openclaw" else "nexus"
 
-    # 2. Infrastructure
+    if runtime_mode == "advanced":
+        print(f"\n--- {step_num}. Runtime Surfaces ---")
+        step_num += 1
+        selected_surfaces = prompt_multi_choice_required(
+            "Which surfaces should this installation enable?",
+            [
+                "OpenClaw bridge",
+                "Telegram bot",
+                "Discord bot",
+            ],
+        )
+        enable_openclaw = 1 in selected_surfaces
+        install_telegram = 2 in selected_surfaces
+        install_discord = 3 in selected_surfaces
+        if enable_openclaw:
+            owner_choice = prompt_choice(
+                "Who should own chat transcript memory?",
+                [
+                    "OpenClaw (recommended)",
+                    "Nexus",
+                    "Split (OpenClaw transcript, Nexus summaries/facts)",
+                ],
+            )
+            chat_transcript_owner = {1: "openclaw", 2: "nexus", 3: "split"}[owner_choice]
+        else:
+            chat_transcript_owner = "nexus"
+
+    # 2. Storage Mode
+    print(f"\n--- {step_num}. Storage Mode ---")
+    step_num += 1
+    if runtime_mode == "openclaw":
+        storage_choice = prompt_choice(
+            "Which storage mode do you want to use?",
+            [
+                "Lite (Filesystem only - great for local OpenClaw-backed testing)",
+                "Persistent (PostgreSQL only - recommended for durable workflow state and audit)",
+            ],
+        )
+        use_postgres = storage_choice == 2
+        use_redis = False
+    elif runtime_mode == "advanced" and chat_transcript_owner == "openclaw":
+        storage_choice = prompt_choice(
+            "Which storage mode do you want to use?",
+            [
+                "Lite (Filesystem only)",
+                "Persistent (PostgreSQL only - OpenClaw owns transcript memory)",
+            ],
+        )
+        use_postgres = storage_choice == 2
+        use_redis = False
+    else:
+        storage_choice = prompt_choice(
+            "Which storage mode do you want to use?",
+            [
+                "Lite (Filesystem only - no external dependencies, great for local testing)",
+                "Enterprise (PostgreSQL + Redis - persistent queue, chat memory, deduplication)",
+            ],
+        )
+        use_postgres = storage_choice == 2
+        use_redis = storage_choice == 2
+    is_enterprise = use_postgres and use_redis
+
+    # 3. Infrastructure
     setup_db = False
     use_docker = False
 
-    if is_enterprise:
+    if use_postgres or use_redis:
         print(f"\n--- {step_num}. Infrastructure Setup ---")
         step_num += 1
-        infra_choice = prompt_choice(
-            "How do you want to run PostgreSQL and Redis?",
-            [
-                "Docker Compose (Sandboxed, highly recommended)",
-                "System packages (e.g. brew or apt)",
-                "I already have them running (Skip installation)",
-            ],
-        )
-        if infra_choice == 1:
-            use_docker = True
-            setup_db = True
-        elif infra_choice == 2:
-            setup_db = True
+        if use_redis:
+            infra_choice = prompt_choice(
+                "How do you want to run PostgreSQL and Redis?",
+                [
+                    "Docker Compose (Sandboxed, highly recommended)",
+                    "System packages (e.g. brew or apt)",
+                    "I already have them running (Skip installation)",
+                ],
+            )
+            if infra_choice == 1:
+                use_docker = True
+                setup_db = True
+            elif infra_choice == 2:
+                setup_db = True
+        else:
+            infra_choice = prompt_choice(
+                "How do you want to run PostgreSQL?",
+                [
+                    "System packages (e.g. brew or apt)",
+                    "I already have it running (Skip installation)",
+                ],
+            )
+            if infra_choice == 1:
+                setup_db = True
 
     has_core = prompt_choice(
         "Do you already have a Nexus core repository configured locally?",
@@ -165,11 +250,35 @@ def main():
     if write_env:
         print(f"\n--- {step_num}. Credentials & Keys ---")
         step_num += 1
-        telegram_token = prompt_string("Enter your Telegram Bot Token (leave empty to skip)", "")
-        telegram_users = prompt_string(
-            "Enter your Telegram User ID (comma-separated, leave empty to skip)", ""
-        )
-        discord_token = prompt_string("Enter your Discord Bot Token (leave empty to skip)", "")
+        telegram_token = ""
+        telegram_users = ""
+        discord_token = ""
+        bridge_token = ""
+
+        if install_telegram:
+            telegram_token = prompt_string("Enter your Telegram Bot Token", "")
+            telegram_users = prompt_string(
+                "Enter your Telegram User ID (comma-separated)", ""
+            )
+        if install_discord:
+            discord_token = prompt_string("Enter your Discord Bot Token", "")
+        execution_credential_source = "nexus-store"
+        openclaw_broker_url = ""
+        openclaw_broker_token = ""
+        if enable_openclaw:
+            bridge_token = prompt_string(
+                "Enter the Nexus command bridge auth token for OpenClaw",
+                "replace_with_a_long_random_secret",
+            )
+            execution_credential_source = "openclaw-broker"
+            openclaw_broker_url = prompt_string(
+                "Enter the OpenClaw credential broker URL",
+                "http://127.0.0.1:8092/api/v1/nexus/credentials/lease",
+            )
+            openclaw_broker_token = prompt_string(
+                "Enter the OpenClaw credential broker bearer token",
+                bridge_token or "replace_with_a_shared_broker_secret",
+            )
 
         vcs_choice = prompt_choice(
             "Which VCS platform will you be using primarily?", ["GitHub", "GitLab"]
@@ -193,6 +302,10 @@ TELEGRAM_TOKEN={telegram_token}
 TELEGRAM_ALLOWED_USER_IDS={telegram_users}
 DISCORD_TOKEN={discord_token}
 TASK_CONFIRMATION_MODE=smart
+NEXUS_RUNTIME_MODE={runtime_mode}
+NEXUS_CHAT_TRANSCRIPT_OWNER={chat_transcript_owner}
+NEXUS_AUTH_AUTHORITY={auth_authority}
+NEXUS_EXECUTION_CREDENTIAL_SOURCE={execution_credential_source}
 
 # ================================
 # PROJECT & PATHS
@@ -211,23 +324,41 @@ LOGS_DIR=/var/lib/nexus/logs
         elif gitlab_token:
             env_content += f"GITLAB_TOKEN={gitlab_token}\nGITLAB_BASE_URL={gitlab_url}\n"
 
+        env_content += (
+            "\n# ================================\n# OPENCLAW / COMMAND BRIDGE\n# ================================\n"
+        )
+        env_content += f"NEXUS_COMMAND_BRIDGE_ENABLED={'true' if enable_openclaw else 'false'}\n"
+        env_content += "NEXUS_COMMAND_BRIDGE_HOST=127.0.0.1\n"
+        env_content += "NEXUS_COMMAND_BRIDGE_PORT=8091\n"
+        env_content += f"NEXUS_COMMAND_BRIDGE_AUTH_TOKEN={bridge_token}\n"
+        env_content += (
+            "NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=openclaw\n"
+            if enable_openclaw
+            else "NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=\n"
+        )
+        env_content += f"NEXUS_OPENCLAW_BROKER_URL={openclaw_broker_url}\n"
+        env_content += f"NEXUS_OPENCLAW_BROKER_TOKEN={openclaw_broker_token}\n"
+        env_content += "NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS=15\n"
+
         # Storage section
         env_content += "\n# ================================\n# INFRASTRUCTURE / STORAGE\n# ================================\n"
-        if is_enterprise:
+        if use_postgres:
             env_content += "NEXUS_STORAGE_BACKEND=postgres\n"
             env_content += "NEXUS_HOST_STATE_BACKEND=postgres\n"
             if use_docker:
                 env_content += "NEXUS_STORAGE_DSN=postgresql://nexus:nexus@127.0.0.1:5432/nexus\n"
-                env_content += "REDIS_URL=redis://localhost:6379/0\n"
+                if use_redis:
+                    env_content += "REDIS_URL=redis://localhost:6379/0\n"
                 env_content += "DEPLOY_TYPE=compose\n"
                 env_content += "COMPOSE_PROFILES=enterprise\n"
             else:
                 pg_dsn = prompt_string(
                     "Enter PostgreSQL DSN", "postgresql://nexus:nexus@127.0.0.1:5432/nexus"
                 )
-                redis_url = prompt_string("Enter Redis URL", "redis://localhost:6379/0")
                 env_content += f"NEXUS_STORAGE_DSN={pg_dsn}\n"
-                env_content += f"REDIS_URL={redis_url}\n"
+                if use_redis:
+                    redis_url = prompt_string("Enter Redis URL", "redis://localhost:6379/0")
+                    env_content += f"REDIS_URL={redis_url}\n"
                 env_content += "DEPLOY_TYPE=systemd\n"
         else:
             env_content += "NEXUS_STORAGE_BACKEND=filesystem\n"
@@ -434,28 +565,39 @@ ai_tool_preferences:
                 if not shutil.which("brew"):
                     print("[ERROR] Homebrew not found. Skipping system package installation.")
                 else:
-                    run_command(["brew", "install", "postgresql@15", "redis"])
+                    packages = ["postgresql@15"]
+                    if use_redis:
+                        packages.append("redis")
+                    run_command(["brew", "install"] + packages)
                     run_command(["brew", "services", "start", "postgresql@15"])
-                    run_command(["brew", "services", "start", "redis"])
-                    print("✅ PostgreSQL and Redis installed and started via Homebrew.")
+                    if use_redis:
+                        run_command(["brew", "services", "start", "redis"])
+                    print("✅ Infrastructure installed and started via Homebrew.")
                     print("⚠️ Note: You may need to create the 'nexus' database user manually:")
                     print("   createuser -s postgres")
                     print("   psql -U postgres -c \"CREATE USER nexus WITH PASSWORD 'nexus';\"")
                     print('   psql -U postgres -c "CREATE DATABASE nexus OWNER nexus;"')
             elif sys.platform.startswith("linux"):
                 if shutil.which("apt"):
-                    print("This requires sudo access to install PostgreSQL and Redis.")
+                    package_list = ["postgresql"]
+                    if use_redis:
+                        package_list.append("redis-server")
+                    print(
+                        "This requires sudo access to install "
+                        + ("PostgreSQL and Redis." if use_redis else "PostgreSQL.")
+                    )
                     run_command(["sudo", "apt", "update"])
-                    run_command(["sudo", "apt", "install", "-y", "postgresql", "redis-server"])
-                    run_command(["sudo", "systemctl", "enable", "--now", "redis-server"])
+                    run_command(["sudo", "apt", "install", "-y"] + package_list)
+                    if use_redis:
+                        run_command(["sudo", "systemctl", "enable", "--now", "redis-server"])
                     run_command(
                         ["sudo", "-u", "postgres", "createuser", "nexus", "--pwprompt"]
                     )  # Will block for prompt
                     run_command(["sudo", "-u", "postgres", "createdb", "nexus", "--owner=nexus"])
-                    print("✅ PostgreSQL and Redis installed via apt.")
+                    print("✅ Infrastructure installed via apt.")
                 else:
                     print(
-                        "⚠️ Only 'apt' is supported for automated Linux installs right now. Please install postgres and redis manually."
+                        "⚠️ Only 'apt' is supported for automated Linux installs right now. Please install the required infrastructure manually."
                     )
 
     print("\n=======================================")
@@ -464,8 +606,28 @@ ai_tool_preferences:
     print("\nNext steps:")
     print(" 1. Review the generated .env file")
     print(" 2. Review config/project_config.yaml")
-    print(" 3. Make sure to pip install the package if you haven't: pip install -e .")
-    print(" 4. Start bot runtimes with: nexus-telegram-bot and nexus-discord-bot\n")
+    if runtime_mode == "openclaw":
+        print(" 3. Install the core package if needed: pip install -e .")
+        print(" 4. Start the bridge/runtime with: nexus-bridge")
+        print(" 5. Install the OpenClaw plugin from packages/nexus-arc\n")
+    elif runtime_mode == "advanced":
+        print(" 3. Install the core package if needed: pip install -e .")
+        if install_telegram or install_discord:
+            print(" 4. Install the bot package if needed: pip install -e .[nexus-bot]")
+        if enable_openclaw:
+            print(" 5. Start the bridge/runtime with: nexus-bridge")
+        active_surfaces = []
+        if install_telegram:
+            active_surfaces.append("nexus-telegram-bot")
+        if install_discord:
+            active_surfaces.append("nexus-discord-bot")
+        if active_surfaces:
+            print(f" 6. Start selected bot runtimes: {' and '.join(active_surfaces)}\n")
+        else:
+            print(" 6. No native Nexus bots were selected for this install.\n")
+    else:
+        print(" 3. Make sure to pip install the package if you haven't: pip install -e .[nexus-bot]")
+        print(" 4. Start bot runtimes with: nexus-telegram-bot and nexus-discord-bot\n")
 
 
 if __name__ == "__main__":
