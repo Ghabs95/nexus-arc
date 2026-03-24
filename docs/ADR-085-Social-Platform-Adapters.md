@@ -19,9 +19,9 @@ We will define a `SocialPlatformAdapter` protocol with concrete implementations 
 - **MetaAdapter (Facebook/Instagram)**: Focuses on media-first publishing capabilities.
 
 The protocol will enforce standard methods:
-- `validate_content(content_bundle)`
-- `publish(content_bundle, credentials)`
-- `get_status(post_id)`
+- `validate(post)`
+- `publish(post)`
+- `dry_run(post)`
 
 ### 2. Campaign Context & State Model
 We will extend the Nexus workflow state models in Python to support the new campaign payload schema.

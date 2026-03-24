@@ -91,18 +91,17 @@
 └─────────┬───────────────────────────────┘
           │
           ▼
-┌─────────────────────────────────────────┐
-│         Output Adapters                 │
-│  ┌──────────────┬───────────────────┐   │
-│  │Git Platform  │  Notifications    │   │
-│  │┌──────────┐  │  ┌─────────────┐  │   │
-│  ││ GitHub   │  │  │  Telegram   │  │   │
-│  ││ GitLab   │  │  │  Slack      │  │   │
-│  ││Bitbucket │  │  │  Email      │  │   │
-│  │└──────────┘  │  │  Discord    │  │   │
-│  │              │  └─────────────┘  │   │
-│  └──────────────┴───────────────────┘   │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│         Output Adapters                          │
+│  ┌──────────────┬───────────────┬─────────────┐  │
+│  │Git Platform  │ Notifications │    Social   │  │
+│  │┌──────────┐  │ ┌───────────┐ │ ┌─────────┐ │  │
+│  ││ GitHub   │  │ │ Telegram  │ │ │ Discord │ │  │
+│  ││ GitLab   │  │ │ Slack     │ │ │ X (Tw)  │ │  │
+│  ││Bitbucket │  │ │ Email     │ │ │ LinkedIn│ │  │
+│  │└──────────┘  │ └───────────┘ │ │ Meta    │ │  │
+│  └──────────────┴───────────────┴─────────────┘  │
+└──────────────────────────────────────────────────┘
 ```
 
 **Benefits:**
@@ -294,6 +293,38 @@ class NotificationChannel(ABC):
 - `SlackNotifier` - Slack webhooks
 - `EmailNotifier` - SMTP
 - `DiscordNotifier` - Discord webhooks
+
+### 5. SocialPlatformAdapter
+
+**Why**: Abstract intricacies of publishing across various platforms with idempotency and safety.
+
+**Interface**:
+
+```python
+class SocialPlatformAdapter(ABC):
+    @property
+    @abstractmethod
+    def platform(self) -> str:
+        """Canonical platform identifier."""
+
+    @abstractmethod
+    async def publish(self, post: SocialPost) -> PublishResult:
+        """Publish post to the live platform API."""
+
+    @abstractmethod
+    def validate(self, post: SocialPost) -> list[str]:
+        """Return a list of validation errors (no network calls)."""
+
+    async def dry_run(self, post: SocialPost) -> PublishResult:
+        """Simulated publish using validate() logic."""
+```
+
+**Implementations**:
+
+- `DiscordSocialAdapter` - Webhook and REST API
+- `XSocialAdapter` - Twitter API v2 with thread splitting
+- `LinkedInSocialAdapter` - UGC posts with rich metadata
+- `MetaSocialAdapter` - Facebook & Instagram publishing
 
 ---
 

@@ -477,6 +477,7 @@ That's YOUR integration layer's job.
 | **Generic workflow orchestration**    | ✅ Yes     | ❌ No              |
 | **Storage adapters (File, Postgres)** | ✅ Yes     | ❌ No              |
 | **Git adapters (GitHub, GitLab)**     | ✅ Yes     | ❌ No              |
+| **Social adapters (Discord, X, etc.)**| ✅ Yes     | ❌ No              |
 | **Your tier system**                  | ❌ No      | ✅ Yes             |
 | **Your project structure**            | ❌ No      | ✅ Yes             |
 | **Your Telegram bot**                 | ❌ No      | ✅ Yes             |

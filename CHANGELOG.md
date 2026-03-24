@@ -10,6 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Social Platform Adapter Layer** — Implemented a robust, idempotent, and secure mechanism for multi-platform content distribution. This includes concrete Python implementations of the `SocialPlatformAdapter` protocol for Discord, X (Twitter), LinkedIn, and Meta (Facebook/Instagram). Key features include:
+    - **Platform-Specific Validation** for character limits, thread logic, and rich link metadata.
+    - **Campaign Context & State Model** extensions for tracking `campaign_id`, `objective`, and `content_bundle`.
+    - **Idempotency & Retry Logic** using `(campaign_id, platform, scheduled_time_utc)` composite keys and exponential backoff with jitter.
+    - **Encrypted Credential Management** for requester-scoped OAuth tokens.
+    - **Approval Gates** for `reviewer` and `compliance` agents to block live publishing on formatting or regulatory violations.
+    Documented in [ADR-085](docs/ADR-085-Social-Platform-Adapters.md) ([#123](https://github.com/Ghabs95/nexus-arc/issues/123)).
 - **Social Media Marketing Workflow Design** — Designed a new workflow for automated social media content creation,
   approval, and multi-platform publishing. This includes a technical design
   document ([docs/DESIGN-Social-Media-Marketing-Workflow.md](docs/DESIGN-Social-Media-Marketing-Workflow.md)), an
