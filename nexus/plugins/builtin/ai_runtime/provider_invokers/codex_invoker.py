@@ -186,14 +186,20 @@ def invoke_codex_cli(
 
     _cleanup_empty_rollout_files(logger=logger)
 
-    # Default to retrying with danger-full-access when workspace-write fails due
-    # to bubblewrap namespace restrictions. Operators can still disable this
-    # explicitly with NEXUS_CODEX_ALLOW_DANGER_SANDBOX=0/false/off.
+    # Only retry with danger-full-access when the operator has explicitly opted in.
+    # An unset or empty value keeps the safe default of workspace-write only.
     effective_env = {**os.environ, **(env or {})}
     raw_allow_danger_sandbox = str(
         effective_env.get("NEXUS_CODEX_ALLOW_DANGER_SANDBOX") or ""
     ).strip().lower()
-    allow_danger_sandbox = raw_allow_danger_sandbox not in {"0", "false", "off", "no"}
+    allow_danger_sandbox = raw_allow_danger_sandbox in {"1", "true", "on", "yes"}
+    if not allow_danger_sandbox and raw_allow_danger_sandbox:
+        logger.info(
+            "NEXUS_CODEX_ALLOW_DANGER_SANDBOX=%r is not a recognised truthy value; "
+            "danger-full-access sandbox retry is disabled. "
+            "Set to '1' or 'true' to enable.",
+            raw_allow_danger_sandbox,
+        )
     sandbox_modes = ["workspace-write", "danger-full-access"] if allow_danger_sandbox else ["workspace-write"]
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
