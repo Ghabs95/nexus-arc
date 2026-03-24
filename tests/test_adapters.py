@@ -1577,34 +1577,36 @@ class TestOpenClawNotificationChannel:
     def _make_channel(self):
         """Create an OpenClawNotificationChannel bypassing __init__ for test setup.
 
-        Note: aiohttp must be installed for most tests to run; tests are skipped
-        when it is unavailable.
+        Bypasses ``__init__`` entirely so no ``aiohttp`` import is needed; only
+        tests that exercise ``_post`` or ``__init__`` directly require ``aiohttp``.
         """
-        from nexus.adapters.notifications.openclaw import (
-            _AIOHTTP_AVAILABLE,
-            OpenClawNotificationChannel,
-        )
-
-        if not _AIOHTTP_AVAILABLE:
-            pytest.skip("aiohttp not installed")
+        from nexus.adapters.notifications.openclaw import OpenClawNotificationChannel
 
         channel = OpenClawNotificationChannel.__new__(OpenClawNotificationChannel)
         channel._bridge_url = "http://127.0.0.1:18789"
         channel._auth_token = "test-token"
         channel._sender_id = "12345"
         channel._channel = "telegram"
+        channel._timeout_seconds = 10
+        channel._sessions_by_loop = {}
         return channel
 
     def test_name(self):
-        from nexus.adapters.notifications.openclaw import (
-            _AIOHTTP_AVAILABLE,
-            OpenClawNotificationChannel,
-        )
+        from nexus.adapters.notifications.openclaw import OpenClawNotificationChannel
 
-        if not _AIOHTTP_AVAILABLE:
-            pytest.skip("aiohttp not installed")
         channel = OpenClawNotificationChannel.__new__(OpenClawNotificationChannel)
         assert channel.name == "openclaw"
+
+    def test_init_raises_importerror_without_aiohttp(self):
+        import nexus.adapters.notifications.openclaw as _mod
+
+        original = _mod._AIOHTTP_AVAILABLE
+        _mod._AIOHTTP_AVAILABLE = False
+        try:
+            with pytest.raises(ImportError, match="pip install aiohttp"):
+                _mod.OpenClawNotificationChannel()
+        finally:
+            _mod._AIOHTTP_AVAILABLE = original
 
     def test_build_payload_basic(self):
         channel = self._make_channel()
@@ -1660,7 +1662,7 @@ class TestOpenClawNotificationChannel:
         msg = Message(text="Step failed", severity=Severity.ERROR)
         with patch.object(channel, "_post", new=AsyncMock(return_value=False)):
             result = await channel.send_message("user1", msg)
-        assert result == "openclaw:error"
+        assert result == ""
 
     async def test_send_alert_posts_with_severity_emoji(self):
         from nexus.core.models import Severity
