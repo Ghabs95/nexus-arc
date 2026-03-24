@@ -20,43 +20,12 @@ def test_prepare_execution_env_allows_git_only_for_issue_write(monkeypatch):
     assert env["HOME"].endswith("/openclaw:user:alice")
 
 
-def test_resolve_execution_env_from_openclaw_broker(monkeypatch):
-    captured: dict[str, object] = {}
-
-    class _Response:
-        ok = True
-        status_code = 200
-
-        def json(self):
-            return {
-                "env": {
-                    "GITHUB_TOKEN": "ghu_brokered",
-                    "OPENAI_API_KEY": "sk-brokered",
-                },
-                "expires_at": "2026-03-23T14:05:00Z",
-            }
-
-    def _fake_post(url, *, json=None, headers=None, timeout=None):
-        captured["url"] = url
-        captured["json"] = json
-        captured["headers"] = headers
-        captured["timeout"] = timeout
-        return _Response()
-
-    monkeypatch.setattr(resolver, "NEXUS_EXECUTION_CREDENTIAL_SOURCE", "openclaw-broker")
+def test_resolve_execution_env_uses_credential_store(monkeypatch):
     monkeypatch.setattr(
         resolver,
-        "NEXUS_OPENCLAW_BROKER_URL",
-        "http://127.0.0.1:8092/api/v1/nexus/credentials/lease",
-    )
-    monkeypatch.setattr(resolver, "NEXUS_OPENCLAW_BROKER_TOKEN", "shared-secret")
-    monkeypatch.setattr(resolver, "NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS", 9)
-    monkeypatch.setattr(resolver.requests, "post", _fake_post)
-    monkeypatch.setattr(
-        resolver,
-        "prepare_execution_env",
-        lambda nexus_id, env, *, purpose="agent_run": (
-            {"NEXUS_ID": nexus_id, **dict(env), "PURPOSE": purpose},
+        "build_execution_env",
+        lambda requester_id, *, purpose="agent_run": (
+            {"NEXUS_ID": requester_id, "GITHUB_TOKEN": "ghu_store", "PURPOSE": purpose},
             None,
         ),
     )
@@ -70,11 +39,6 @@ def test_resolve_execution_env_from_openclaw_broker(monkeypatch):
     )
 
     assert error is None
-    assert captured["url"] == "http://127.0.0.1:8092/api/v1/nexus/credentials/lease"
-    assert captured["headers"]["Authorization"] == "Bearer shared-secret"
-    assert captured["timeout"] == 9
-    assert captured["json"]["requester_nexus_id"] == "openclaw:user:alice"
-    assert captured["json"]["project_name"] == "demo"
-    assert captured["json"]["purpose"] == "agent_run"
-    assert env["GITHUB_TOKEN"] == "ghu_brokered"
-    assert env["OPENAI_API_KEY"] == "sk-brokered"
+    assert env["NEXUS_ID"] == "openclaw:user:alice"
+    assert env["GITHUB_TOKEN"] == "ghu_store"
+    assert env["PURPOSE"] == "agent_run"

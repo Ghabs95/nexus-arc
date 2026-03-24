@@ -195,14 +195,10 @@ pip install -e .
 ```bash
 NEXUS_RUNTIME_MODE=openclaw
 NEXUS_AUTH_AUTHORITY=openclaw
-NEXUS_EXECUTION_CREDENTIAL_SOURCE=openclaw-broker
 NEXUS_CHAT_TRANSCRIPT_OWNER=openclaw
 NEXUS_COMMAND_BRIDGE_ENABLED=true
 NEXUS_COMMAND_BRIDGE_AUTH_TOKEN=replace_with_a_long_random_secret
 NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=openclaw
-NEXUS_OPENCLAW_BROKER_URL=http://127.0.0.1:8092/api/v1/nexus/credentials/lease
-NEXUS_OPENCLAW_BROKER_TOKEN=replace_with_a_shared_broker_secret
-NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS=15
 
 # Choose one:
 NEXUS_STORAGE_BACKEND=filesystem
@@ -215,18 +211,6 @@ NEXUS_STORAGE_DSN=postgresql://nexus:your_password@127.0.0.1:5432/nexus
 
 # Typically disabled because OpenClaw owns end-user auth flows
 NEXUS_AUTH_ENABLED=false
-```
-
-The broker endpoint should return a short-lived JSON lease like:
-
-```json
-{
-  "env": {
-    "GITHUB_TOKEN": "ghu_...",
-    "OPENAI_API_KEY": "sk-..."
-  },
-  "expires_at": "2026-03-23T14:05:00Z"
-}
 ```
 
 ### Run

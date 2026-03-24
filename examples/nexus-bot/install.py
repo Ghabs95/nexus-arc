@@ -262,22 +262,10 @@ def main():
             )
         if install_discord:
             discord_token = prompt_string("Enter your Discord Bot Token", "")
-        execution_credential_source = "nexus-store"
-        openclaw_broker_url = ""
-        openclaw_broker_token = ""
         if enable_openclaw:
             bridge_token = prompt_string(
                 "Enter the Nexus command bridge auth token for OpenClaw",
                 "replace_with_a_long_random_secret",
-            )
-            execution_credential_source = "openclaw-broker"
-            openclaw_broker_url = prompt_string(
-                "Enter the OpenClaw credential broker URL",
-                "http://127.0.0.1:8092/api/v1/nexus/credentials/lease",
-            )
-            openclaw_broker_token = prompt_string(
-                "Enter the OpenClaw credential broker bearer token",
-                bridge_token or "replace_with_a_shared_broker_secret",
             )
 
         vcs_choice = prompt_choice(
@@ -305,7 +293,6 @@ TASK_CONFIRMATION_MODE=smart
 NEXUS_RUNTIME_MODE={runtime_mode}
 NEXUS_CHAT_TRANSCRIPT_OWNER={chat_transcript_owner}
 NEXUS_AUTH_AUTHORITY={auth_authority}
-NEXUS_EXECUTION_CREDENTIAL_SOURCE={execution_credential_source}
 
 # ================================
 # PROJECT & PATHS
@@ -336,9 +323,6 @@ LOGS_DIR=/var/lib/nexus/logs
             if enable_openclaw
             else "NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=\n"
         )
-        env_content += f"NEXUS_OPENCLAW_BROKER_URL={openclaw_broker_url}\n"
-        env_content += f"NEXUS_OPENCLAW_BROKER_TOKEN={openclaw_broker_token}\n"
-        env_content += "NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS=15\n"
 
         # Storage section
         env_content += "\n# ================================\n# INFRASTRUCTURE / STORAGE\n# ================================\n"

@@ -311,15 +311,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 def _allow_env_token_fallback_default() -> bool:
     """Allow global env-token fallback only when requester-scoped auth is inactive."""
     auth_enabled = _env_bool("NEXUS_AUTH_ENABLED", False)
-    runtime_mode = str(os.getenv("NEXUS_RUNTIME_MODE", "")).strip().lower()
-    execution_source = str(os.getenv("NEXUS_EXECUTION_CREDENTIAL_SOURCE", "")).strip().lower()
-    try:
-        from nexus.core.config.runtime import normalize_execution_credential_source
-
-        normalized_source = normalize_execution_credential_source(execution_source, runtime_mode)
-    except Exception:
-        normalized_source = execution_source or "nexus-store"
-    return (not auth_enabled) and normalized_source != "openclaw-broker"
+    return not auth_enabled
 
 
 def get_git_platform(

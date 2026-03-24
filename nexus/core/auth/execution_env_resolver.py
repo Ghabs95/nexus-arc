@@ -6,18 +6,10 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-import requests
-
 from nexus.adapters.git.utils import build_issue_url
-from nexus.core.auth.access_domain import auth_enabled, build_execution_env, prepare_execution_env
+from nexus.core.auth.access_domain import auth_enabled, build_execution_env
 from nexus.core.auth.credential_store import get_issue_requester, get_issue_requester_by_url
 from nexus.core.config import (
-    NEXUS_AUTH_AUTHORITY,
-    NEXUS_EXECUTION_CREDENTIAL_SOURCE,
-    NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS,
-    NEXUS_OPENCLAW_BROKER_TOKEN,
-    NEXUS_OPENCLAW_BROKER_URL,
-    NEXUS_RUNTIME_MODE,
     get_project_platform,
 )
 
@@ -26,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def requester_scoped_execution_enabled() -> bool:
     """Return whether execution should resolve requester-scoped credentials."""
-    return bool(auth_enabled()) or NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker"
+    return bool(auth_enabled())
 
 
 def resolve_issue_requester_nexus_id(
@@ -133,15 +125,6 @@ def resolve_execution_env(
     if not normalized_requester:
         return {}, "Requester Nexus ID is required."
 
-    if NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker":
-        return _resolve_execution_env_from_openclaw_broker(
-            normalized_requester,
-            project_name=project_name,
-            repo_name=repo_name,
-            issue_url=issue_url,
-            purpose=purpose,
-        )
-
     return build_execution_env(normalized_requester, purpose=purpose)
 
 
@@ -203,77 +186,3 @@ def resolve_requester_git_token_for_issue(
     return None
 
 
-def _resolve_execution_env_from_openclaw_broker(
-    requester_nexus_id: str,
-    *,
-    project_name: str | None = None,
-    repo_name: str | None = None,
-    issue_url: str | None = None,
-    purpose: str = "agent_run",
-) -> tuple[dict[str, str], str | None]:
-    broker_url = str(NEXUS_OPENCLAW_BROKER_URL or "").strip()
-    if not broker_url:
-        return {}, "OpenClaw credential broker URL is not configured."
-
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-    broker_token = str(NEXUS_OPENCLAW_BROKER_TOKEN or "").strip()
-    if broker_token:
-        headers["Authorization"] = f"Bearer {broker_token}"
-
-    payload = {
-        "requester_nexus_id": str(requester_nexus_id),
-        "project_name": str(project_name or ""),
-        "repo_name": str(repo_name or ""),
-        "issue_url": str(issue_url or ""),
-        "purpose": str(purpose or "agent_run"),
-        "runtime_mode": str(NEXUS_RUNTIME_MODE or ""),
-        "auth_authority": str(NEXUS_AUTH_AUTHORITY or ""),
-    }
-
-    try:
-        response = requests.post(
-            broker_url,
-            json=payload,
-            headers=headers,
-            timeout=max(1, int(NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS)),
-        )
-    except Exception as exc:
-        return {}, f"OpenClaw credential broker request failed: {exc}"
-
-    try:
-        response_payload = response.json()
-    except Exception:
-        response_payload = {}
-
-    if not response.ok:
-        message = ""
-        if isinstance(response_payload, dict):
-            message = str(response_payload.get("error") or response_payload.get("message") or "").strip()
-        return {}, message or f"OpenClaw credential broker returned HTTP {response.status_code}."
-
-    if not isinstance(response_payload, dict):
-        return {}, "OpenClaw credential broker returned an invalid JSON payload."
-
-    env_payload = response_payload.get("env", {})
-    if not isinstance(env_payload, Mapping):
-        return {}, "OpenClaw credential broker response is missing an object `env` payload."
-
-    env = {
-        str(key).strip(): str(value)
-        for key, value in env_payload.items()
-        if str(key).strip() and value is not None
-    }
-    providers = response_payload.get("account_auth_providers")
-    if isinstance(providers, list):
-        provider_values = [str(item).strip() for item in providers if str(item).strip()]
-        if provider_values:
-            env["NEXUS_ACCOUNT_AUTH_PROVIDERS"] = ",".join(provider_values)
-
-    return prepare_execution_env(
-        str(requester_nexus_id),
-        env,
-        purpose=purpose,
-    )

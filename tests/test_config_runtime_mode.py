@@ -2,11 +2,9 @@ from nexus.core.config.runtime import (
     bridge_requires_authorized_sender,
     chat_metadata_backend,
     chat_transcript_persistence_enabled,
-    default_execution_credential_source,
     default_rate_limit_backend,
     normalize_auth_authority,
     normalize_chat_transcript_owner,
-    normalize_execution_credential_source,
     normalize_runtime_mode,
 )
 
@@ -53,13 +51,6 @@ def test_bridge_requires_authorized_sender_when_openclaw_owns_auth():
     assert bridge_requires_authorized_sender("", "standalone") is False
     assert bridge_requires_authorized_sender("", "openclaw") is True
     assert bridge_requires_authorized_sender("openclaw", "advanced") is True
-
-
-def test_execution_credential_source_defaults_by_runtime_mode():
-    assert default_execution_credential_source("standalone") == "nexus-store"
-    assert default_execution_credential_source("openclaw") == "openclaw-broker"
-    assert normalize_execution_credential_source("", "openclaw") == "openclaw-broker"
-    assert normalize_execution_credential_source("NEXUS-STORE", "advanced") == "nexus-store"
 
 
 def test_default_rate_limit_backend_tracks_runtime_ownership():

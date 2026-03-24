@@ -206,10 +206,6 @@ elif [ "$runtime_choice" == "3" ]; then
     fi
 fi
 
-execution_credential_source="nexus-store"
-openclaw_broker_url=""
-openclaw_broker_token=""
-
 echo -e "\n--- ${step_num}. Storage Mode ---"
 ((step_num++))
 use_postgres=0
@@ -310,9 +306,6 @@ if [ "$write_env" -eq 1 ]; then
     fi
     if [ "$enable_openclaw" -eq 1 ]; then
         bridge_token=$(prompt_string "Enter the Nexus command bridge auth token for OpenClaw" "replace_with_a_long_random_secret")
-        execution_credential_source="openclaw-broker"
-        openclaw_broker_url=$(prompt_string "Enter the OpenClaw credential broker URL" "http://127.0.0.1:8092/api/v1/nexus/credentials/lease")
-        openclaw_broker_token=$(prompt_string "Enter the OpenClaw credential broker bearer token" "${bridge_token:-replace_with_a_shared_broker_secret}")
     fi
     
     vcs_choice=$(prompt_choice "Which VCS platform will you be using primarily?" "GitHub" "GitLab")
@@ -340,7 +333,6 @@ TASK_CONFIRMATION_MODE=smart
 NEXUS_RUNTIME_MODE=${runtime_mode}
 NEXUS_CHAT_TRANSCRIPT_OWNER=${chat_transcript_owner}
 NEXUS_AUTH_AUTHORITY=${auth_authority}
-NEXUS_EXECUTION_CREDENTIAL_SOURCE=${execution_credential_source}
 
 # ================================
 # PROJECT & PATHS
@@ -375,9 +367,6 @@ EOF
     echo "NEXUS_COMMAND_BRIDGE_HOST=127.0.0.1" >> "$ENV_FILE"
     echo "NEXUS_COMMAND_BRIDGE_PORT=8091" >> "$ENV_FILE"
     echo "NEXUS_COMMAND_BRIDGE_AUTH_TOKEN=${bridge_token}" >> "$ENV_FILE"
-    echo "NEXUS_OPENCLAW_BROKER_URL=${openclaw_broker_url}" >> "$ENV_FILE"
-    echo "NEXUS_OPENCLAW_BROKER_TOKEN=${openclaw_broker_token}" >> "$ENV_FILE"
-    echo "NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS=15" >> "$ENV_FILE"
 
     echo -e "\n# ================================" >> "$ENV_FILE"
     echo "# INFRASTRUCTURE / STORAGE" >> "$ENV_FILE"

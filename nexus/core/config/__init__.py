@@ -53,7 +53,6 @@ from nexus.core.config.runtime import (
     get_tasks_logs_dir as _svc_get_tasks_logs_dir,
     normalize_auth_authority as _normalize_auth_authority,
     normalize_chat_transcript_owner as _normalize_chat_transcript_owner,
-    normalize_execution_credential_source as _normalize_execution_credential_source,
     normalize_runtime_mode as _normalize_runtime_mode,
 )
 from nexus.core.config.validators import validate_project_config as _svc_validate_project_config
@@ -109,13 +108,6 @@ NEXUS_AUTH_AUTHORITY = _normalize_auth_authority(
     os.getenv("NEXUS_AUTH_AUTHORITY", ""),
     NEXUS_RUNTIME_MODE,
 )
-NEXUS_EXECUTION_CREDENTIAL_SOURCE = _normalize_execution_credential_source(
-    os.getenv("NEXUS_EXECUTION_CREDENTIAL_SOURCE", ""),
-    NEXUS_RUNTIME_MODE,
-)
-NEXUS_OPENCLAW_BROKER_URL = str(os.getenv("NEXUS_OPENCLAW_BROKER_URL", "")).strip()
-NEXUS_OPENCLAW_BROKER_TOKEN = str(os.getenv("NEXUS_OPENCLAW_BROKER_TOKEN", "")).strip()
-NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS = _get_int_env("NEXUS_OPENCLAW_BROKER_TIMEOUT_SECONDS", 15)
 
 # --- REDIS CONFIGURATION ---
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -676,8 +668,6 @@ class RuntimeSettings:
     nexus_runtime_mode: str
     nexus_chat_transcript_owner: str
     nexus_auth_authority: str
-    nexus_execution_credential_source: str
-    nexus_openclaw_broker_url: str
     redis_url: str
     nexus_core_storage_dir: str
 
@@ -691,8 +681,6 @@ def get_runtime_settings() -> RuntimeSettings:
         nexus_runtime_mode=NEXUS_RUNTIME_MODE,
         nexus_chat_transcript_owner=NEXUS_CHAT_TRANSCRIPT_OWNER,
         nexus_auth_authority=NEXUS_AUTH_AUTHORITY,
-        nexus_execution_credential_source=NEXUS_EXECUTION_CREDENTIAL_SOURCE,
-        nexus_openclaw_broker_url=NEXUS_OPENCLAW_BROKER_URL,
         redis_url=REDIS_URL,
         nexus_core_storage_dir=NEXUS_CORE_STORAGE_DIR,
     )
@@ -931,18 +919,6 @@ def validate_configuration():
             )
         if not NEXUS_CREDENTIALS_MASTER_KEY:
             errors.append("NEXUS_AUTH_ENABLED=true requires NEXUS_CREDENTIALS_MASTER_KEY.")
-
-    if NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker":
-        if not NEXUS_OPENCLAW_BROKER_URL:
-            errors.append(
-                "NEXUS_EXECUTION_CREDENTIAL_SOURCE=openclaw-broker requires "
-                "NEXUS_OPENCLAW_BROKER_URL."
-            )
-        if not NEXUS_OPENCLAW_BROKER_TOKEN:
-            warnings.append(
-                "NEXUS_OPENCLAW_BROKER_TOKEN is not set. "
-                "Use a shared bearer token or another authenticated channel for the broker."
-            )
 
     # Validate PROJECT_CONFIG (when loaded)
     try:

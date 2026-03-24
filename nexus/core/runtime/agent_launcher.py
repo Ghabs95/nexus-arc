@@ -34,7 +34,6 @@ from nexus.core.auth.execution_env_resolver import (
 )
 from nexus.core.config import (
     BASE_DIR,
-    NEXUS_EXECUTION_CREDENTIAL_SOURCE,
     NEXUS_WEBHOOK_INTERNAL_URL,
     ORCHESTRATOR_CONFIG,
     NEXUS_STORAGE_BACKEND,
@@ -168,7 +167,7 @@ def _resolve_requester_token_for_issue(
     repo: str,
     project_name: str | None,
 ) -> str | None:
-    if not (bool(auth_enabled()) or NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker"):
+    if not bool(auth_enabled()):
         return None
 
     requester_nexus_id = None
@@ -197,19 +196,10 @@ def _resolve_requester_token_for_issue(
     if not requester_nexus_id:
         return None
 
-    if NEXUS_EXECUTION_CREDENTIAL_SOURCE == "openclaw-broker":
-        user_env, env_error = resolve_execution_env(
-            str(requester_nexus_id),
-            project_name=project_name,
-            repo_name=str(repo),
-            issue_url=issue_url,
-            purpose="git",
-        )
-    else:
-        try:
-            user_env, env_error = build_execution_env(str(requester_nexus_id), purpose="git")
-        except TypeError:
-            user_env, env_error = build_execution_env(str(requester_nexus_id))
+    try:
+        user_env, env_error = build_execution_env(str(requester_nexus_id), purpose="git")
+    except TypeError:
+        user_env, env_error = build_execution_env(str(requester_nexus_id))
 
     if env_error:
         logger.warning(

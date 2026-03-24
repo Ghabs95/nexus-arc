@@ -5,7 +5,6 @@ from typing import Callable
 VALID_RUNTIME_MODES = {"standalone", "openclaw", "advanced"}
 VALID_TRANSCRIPT_OWNERS = {"nexus", "openclaw", "split"}
 VALID_AUTH_AUTHORITIES = {"nexus", "openclaw"}
-VALID_EXECUTION_CREDENTIAL_SOURCES = {"nexus-store", "openclaw-broker"}
 
 
 def normalize_runtime_mode(value: str | None) -> str:
@@ -65,23 +64,6 @@ def bridge_requires_authorized_sender(
     runtime_mode: str | None = None,
 ) -> bool:
     return normalize_auth_authority(auth_authority, runtime_mode) == "openclaw"
-
-
-def default_execution_credential_source(runtime_mode: str | None = None) -> str:
-    normalized_mode = normalize_runtime_mode(runtime_mode)
-    if normalized_mode == "openclaw":
-        return "openclaw-broker"
-    return "nexus-store"
-
-
-def normalize_execution_credential_source(
-    value: str | None,
-    runtime_mode: str | None = None,
-) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in VALID_EXECUTION_CREDENTIAL_SOURCES:
-        return normalized
-    return default_execution_credential_source(runtime_mode)
 
 
 def default_rate_limit_backend(
