@@ -43,6 +43,7 @@ class ApprovalGateType(Enum):
     PR_MERGE = "pr_merge"  # Blocks PR merge operations
     DEPLOYMENT = "deployment"  # Blocks deployment operations
     DATA_ACCESS = "data_access"  # Blocks sensitive data access
+    PUBLISH = "publish"  # Blocks social-media publish operations
     CUSTOM = "custom"  # Custom approval gate
 
 
@@ -71,6 +72,28 @@ class ApprovalGate:
                 "✅ Post PR link in your review comment\n"
                 "✅ Human approval REQUIRED before merge\n"
                 "⚠️  Violating this can break production - wait for human review"
+            ),
+        )
+
+    @staticmethod
+    def publish_gate() -> "ApprovalGate":
+        """Create a social-media publish approval gate.
+
+        Blocks deployer from executing live publish operations until the
+        reviewer and compliance agents have explicitly approved the content.
+        """
+        return ApprovalGate(
+            gate_type=ApprovalGateType.PUBLISH,
+            required=True,
+            tool_restrictions=["social:live_publish", "social:publish"],
+            approval_message=(
+                "🚨 **SOCIAL PUBLISH APPROVAL POLICY:**\n"
+                "❌ DO NOT execute live_publish before reviewer and compliance approval\n"
+                "❌ DO NOT call social:live_publish or social:publish directly\n"
+                "✅ Run dry_run validation first — fix all errors before proceeding\n"
+                "✅ Reviewer and compliance agents MUST approve content\n"
+                "✅ Regulated claims and unsafe prompts block this gate automatically\n"
+                "⚠️  Publishing non-compliant content may violate platform policies"
             ),
         )
 
