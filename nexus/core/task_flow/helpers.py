@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from nexus.adapters.git.utils import build_issue_url
 from nexus.core.auth.execution_env_resolver import resolve_requester_git_token_for_issue
 from nexus.core.config import BASE_DIR, NEXUS_CORE_STORAGE_DIR, PROJECT_CONFIG, get_repo_branch
 from nexus.core.config import get_tasks_active_dir, get_tasks_closed_dir
@@ -54,11 +53,6 @@ def _resolve_issue_requester_token(
         repo_name=str(repo),
         issue_number=str(issue_number),
         project_name=project_name,
-        issue_url=build_issue_url(
-            str(repo),
-            str(issue_number),
-            {"git_platform": "github"},
-        ),
         purpose="git",
     )
 
