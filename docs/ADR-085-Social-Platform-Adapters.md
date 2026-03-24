@@ -1,7 +1,7 @@
 # ADR 085: Social Platform Adapters Implementation
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 As defined in ADR 084, Nexus requires a social media marketing workflow. A core component of this workflow is the **Social Platform Adapter Layer**, which abstracts the intricacies of publishing across various platforms (Discord, X/Twitter, LinkedIn, Meta). 
