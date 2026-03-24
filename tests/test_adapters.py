@@ -110,7 +110,6 @@ class TestAdapterRegistry:
         from nexus.adapters.registry import AdapterRegistry
 
         AdapterRegistry()
-        import importlib
 
         import nexus.adapters.ai.claude_provider as _mod
 
@@ -126,6 +125,8 @@ class TestAdapterRegistry:
             setattr(_mod, "_ANTHROPIC_AVAILABLE", original_available)
             if original_module is not None:
                 setattr(_mod, "_anthropic_module", original_module)
+            elif hasattr(_mod, "_anthropic_module"):
+                delattr(_mod, "_anthropic_module")
         assert provider.name == "claude"
 
     def test_raises_for_unknown_type(self):
@@ -1183,6 +1184,8 @@ class TestClaudeProvider:
             setattr(_mod, "_ANTHROPIC_AVAILABLE", original_available)
             if original_module is not None:
                 setattr(_mod, "_anthropic_module", original_module)
+            elif hasattr(_mod, "_anthropic_module"):
+                delattr(_mod, "_anthropic_module")
 
         return (provider, mock_client, _cleanup)
 

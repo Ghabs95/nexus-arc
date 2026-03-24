@@ -4,7 +4,7 @@ Requires the ``anthropic`` optional extra::
 
     pip install nexus-arc[anthropic]
 
-Uses the ``anthropic`` Python SDK (v0.25+) with async support.
+Uses the ``anthropic`` Python SDK with async support.
 """
 
 import logging
@@ -115,7 +115,7 @@ class ClaudeProvider(AIProvider):
                 max_tokens=max_tokens,
                 system=self._system_prompt,
                 messages=[{"role": "user", "content": user_content}],
-                timeout=context.timeout or self._timeout,
+                timeout=context.timeout if context.timeout is not None else self._timeout,
             )
             elapsed = time.time() - start
             output = response.content[0].text if response.content else ""
