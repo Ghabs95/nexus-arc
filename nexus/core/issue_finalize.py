@@ -418,18 +418,10 @@ def validate_pr_non_empty_diff(
     if not normalized_repo_dir:
         return False, f"{repo}: missing local repo_dir for PR/MR diff validation"
 
-    target_repo_dir = _resolve_issue_worktree_dir(
-        repo_dir=normalized_repo_dir,
-        issue_number=str(issue_number),
-        base_branch=base_branch,
-        create_if_missing=False,
-    )
-    if not target_repo_dir:
-        return (
-            False,
-            f"{repo}: missing issue worktree .nexus/worktrees/issue-{issue_number} (finalization blocked)",
-        )
-
+    # Check the remote PR/MR diff FIRST (before requiring the local worktree).
+    # The worktree may have been cleaned up by the time finalization runs (e.g. after
+    # the writer step completes and before the PR is merged), but the remote API
+    # still has the authoritative diff.
     normalized_url = str(pr_url or "").strip()
     platform = None
     if normalized_url:
@@ -457,6 +449,19 @@ def validate_pr_non_empty_diff(
                 return True, ""
             if remote_ok is False:
                 return False, f"{repo}: GitLab MR has empty diff ({normalized_url})"
+
+    # Fall back to local worktree diff check when remote check was inconclusive.
+    target_repo_dir = _resolve_issue_worktree_dir(
+        repo_dir=normalized_repo_dir,
+        issue_number=str(issue_number),
+        base_branch=base_branch,
+        create_if_missing=False,
+    )
+    if not target_repo_dir:
+        return (
+            False,
+            f"{repo}: missing issue worktree .nexus/worktrees/issue-{issue_number} (finalization blocked)",
+        )
 
     local_ok, local_reason = _repo_has_non_empty_diff(
         target_repo_dir,
