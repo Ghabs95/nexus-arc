@@ -23,15 +23,19 @@ Requires hooks to be enabled in openclaw.json:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
 
-import aiohttp
-
 from nexus.adapters.notifications.base import Message, NotificationChannel
 from nexus.core.models import Severity
+
+try:
+    import aiohttp
+
+    _AIOHTTP_AVAILABLE = True
+except ImportError:
+    _AIOHTTP_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,14 @@ _SEVERITY_EMOJI = {
     Severity.ERROR: "🚨",
     Severity.CRITICAL: "🔴",
 }
+
+
+def _require_aiohttp() -> None:
+    if not _AIOHTTP_AVAILABLE:
+        raise ImportError(
+            "aiohttp is required for OpenClawNotificationChannel. "
+            "Install it with: pip install nexus-arc[openclaw]"
+        )
 
 
 class OpenClawNotificationChannel(NotificationChannel):
@@ -67,6 +79,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         channel: str | None = None,
         timeout: int = 10,
     ):
+        _require_aiohttp()
         self._bridge_url = (
             (bridge_url or os.getenv("NEXUS_OPENCLAW_BRIDGE_URL") or _DEFAULT_BRIDGE_URL).rstrip("/")
         )
