@@ -8,7 +8,7 @@ import logging
 import random
 from typing import TYPE_CHECKING, Any
 
-from nexus.adapters.social.base import PublishResult, SocialPost, SocialPublishError
+from nexus.adapters.social.base import PublishResult, SocialPost, SocialPublishError, derive_idempotency_key as derive_idempotency_key  # re-export
 from nexus.core.campaign import CampaignState, PublishRecord
 
 if TYPE_CHECKING:

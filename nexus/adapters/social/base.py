@@ -171,7 +171,7 @@ class SocialPlatformAdapter(ABC):
         No network call is made.  Returns success when :meth:`validate`
         finds no errors, otherwise returns failure with the first error.
         """
-        from nexus.core.social_publish import derive_idempotency_key
+        from nexus.adapters.social.base import derive_idempotency_key
 
         key = derive_idempotency_key(
             post.campaign_id, self.platform, post.scheduled_time_utc or ""
@@ -206,3 +206,18 @@ class SocialPublishError(RuntimeError):
         super().__init__(f"[{platform}] {message}")
         self.platform = platform
         self.retryable = retryable
+
+
+# ---------------------------------------------------------------------------
+# Idempotency helper (lives here to avoid circular imports with social_publish)
+# ---------------------------------------------------------------------------
+
+import hashlib as _hashlib
+
+_IDEMPOTENCY_HASH_LENGTH = 16
+
+
+def derive_idempotency_key(campaign_id: str, platform: str, scheduled_time_utc: str) -> str:
+    """Derive a stable idempotency key from (campaign_id, platform, scheduled_time_utc)."""
+    raw = f"{campaign_id}:{platform}:{scheduled_time_utc}".encode("utf-8")
+    return _hashlib.sha256(raw).hexdigest()[: _IDEMPOTENCY_HASH_LENGTH * 2]

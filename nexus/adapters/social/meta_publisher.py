@@ -17,7 +17,7 @@ from nexus.adapters.social.base import (
     SocialPost,
     SocialPublishError,
 )
-from nexus.core.social_publish import derive_idempotency_key
+from nexus.adapters.social.base import derive_idempotency_key
 
 logger = logging.getLogger(__name__)
 
