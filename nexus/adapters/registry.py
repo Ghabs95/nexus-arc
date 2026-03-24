@@ -100,6 +100,10 @@ def _load_builtin_ai(type_name: str) -> type[AIProvider] | None:
         from nexus.adapters.ai.openai_provider import OpenAIProvider
 
         return OpenAIProvider
+    if type_name == "claude":
+        from nexus.adapters.ai.claude_provider import ClaudeProvider
+
+        return ClaudeProvider
     return None
 
 
@@ -226,7 +230,7 @@ class AdapterRegistry:
         """Instantiate an AIProvider by type name.
 
         Args:
-            type_name: Adapter type (``"codex"``, ``"copilot"``, ``"gemini"``, ``"openai"``).
+            type_name: Adapter type (``"codex"``, ``"copilot"``, ``"gemini"``, ``"openai"``, ``"claude"``).
             **kwargs: Constructor keyword arguments forwarded to the class.
         """
         cls = self._resolve("ai", type_name, _load_builtin_ai)
