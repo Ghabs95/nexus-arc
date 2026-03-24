@@ -5,10 +5,20 @@ step completions, alerts, and workflow updates directly to the OpenClaw agent
 session (e.g. a Telegram chat), without requiring a dedicated Nexus Telegram bot.
 
 Configuration (env vars or project_config.yaml plugin block):
-    NEXUS_OPENCLAW_BRIDGE_URL     URL of the OpenClaw command bridge (default: http://127.0.0.1:8082)
-    NEXUS_OPENCLAW_BRIDGE_TOKEN   Bearer token for the OpenClaw bridge
-    NEXUS_OPENCLAW_SENDER_ID      Sender/chat ID to deliver notifications to
+    NEXUS_OPENCLAW_BRIDGE_URL     Base URL of the OpenClaw gateway (default: http://127.0.0.1:18789)
+    NEXUS_OPENCLAW_BRIDGE_TOKEN   Bearer token for the OpenClaw hooks endpoint
+    NEXUS_OPENCLAW_SENDER_ID      Telegram/channel chat ID to deliver notifications to
     NEXUS_OPENCLAW_CHANNEL        Optional channel hint (e.g. "telegram")
+
+Requires hooks to be enabled in openclaw.json:
+    {
+      "hooks": {
+        "enabled": true,
+        "token": "<same as NEXUS_OPENCLAW_BRIDGE_TOKEN>",
+        "path": "/hooks",
+        "allowedAgentIds": ["main"]
+      }
+    }
 """
 
 from __future__ import annotations
@@ -25,7 +35,7 @@ from nexus.core.models import Severity
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BRIDGE_URL = "http://127.0.0.1:8082"
+_DEFAULT_BRIDGE_URL = "http://127.0.0.1:18789"
 _SEVERITY_EMOJI = {
     Severity.INFO: "ℹ️",
     Severity.WARNING: "⚠️",
@@ -62,7 +72,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         )
         self._auth_token = auth_token or os.getenv("NEXUS_OPENCLAW_BRIDGE_TOKEN") or ""
         self._sender_id = sender_id or os.getenv("NEXUS_OPENCLAW_SENDER_ID") or ""
-        self._channel = channel or os.getenv("NEXUS_OPENCLAW_CHANNEL") or ""
+        self._channel = channel or os.getenv("NEXUS_OPENCLAW_CHANNEL") or "telegram"
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
     # ------------------------------------------------------------------
@@ -113,13 +123,18 @@ class OpenClawNotificationChannel(NotificationChannel):
     # ------------------------------------------------------------------
 
     def _build_payload(self, text: str, target_user: str | None = None) -> dict[str, Any]:
+        """Build a /hooks/agent payload that delivers a message to the OpenClaw session."""
         payload: dict[str, Any] = {
-            "event": "nexus.notification",
-            "text": text,
-            "sender_id": target_user or self._sender_id,
+            "message": text,
+            "name": "Nexus",
+            "deliver": True,
+            "channel": self._channel or "telegram",
+            "wakeMode": "now",
         }
-        if self._channel:
-            payload["channel"] = self._channel
+        # If a specific recipient is set, pass it as `to`
+        recipient = target_user or self._sender_id
+        if recipient:
+            payload["to"] = recipient
         return payload
 
     def _headers(self) -> dict[str, str]:
@@ -129,7 +144,8 @@ class OpenClawNotificationChannel(NotificationChannel):
         return headers
 
     async def _post(self, payload: dict[str, Any]) -> bool:
-        url = f"{self._bridge_url}/api/v1/events/publish"
+        # Use /hooks/agent to trigger an isolated agent delivery turn
+        url = f"{self._bridge_url}/hooks/agent"
         try:
             async with aiohttp.ClientSession(timeout=self._timeout) as session:
                 async with session.post(url, json=payload, headers=self._headers()) as resp:
