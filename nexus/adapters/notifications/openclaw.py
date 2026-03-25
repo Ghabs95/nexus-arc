@@ -52,7 +52,7 @@ def _require_aiohttp() -> None:
     if not _AIOHTTP_AVAILABLE:
         raise ImportError(
             "aiohttp is required for OpenClawNotificationChannel. "
-            "Install it with: pip install nexus-arc[openclaw]"
+            "Install it with: pip install aiohttp"
         )
 
 
@@ -86,7 +86,8 @@ class OpenClawNotificationChannel(NotificationChannel):
         self._auth_token = auth_token or os.getenv("NEXUS_OPENCLAW_BRIDGE_TOKEN") or ""
         self._sender_id = sender_id or os.getenv("NEXUS_OPENCLAW_SENDER_ID") or ""
         self._channel = channel or os.getenv("NEXUS_OPENCLAW_CHANNEL") or "telegram"
-        self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._timeout_seconds = timeout
+        self._sessions_by_loop: dict[object, aiohttp.ClientSession] = {}
 
     # ------------------------------------------------------------------
     # NotificationChannel interface
@@ -99,13 +100,20 @@ class OpenClawNotificationChannel(NotificationChannel):
     async def send_message(self, user_id: str, message: Message) -> str:
         """Send a notification message to the OpenClaw session.
 
-        Returns a synthetic message ID (``"openclaw:<status>"``).
+        Returns a synthetic message ID (``"openclaw:ok"``) on success, or an empty string on failure.
         """
         emoji = _SEVERITY_EMOJI.get(message.severity, "ℹ️")
         text = f"{emoji} **[Nexus]** {message.text}"
         payload = self._build_payload(text, target_user=user_id or self._sender_id)
         ok = await self._post(payload)
-        return f"openclaw:{'ok' if ok else 'error'}"
+        if not ok:
+            logger.error(
+                "Failed to send OpenClaw notification for user '%s' via bridge '%s'",
+                user_id or self._sender_id,
+                self._bridge_url,
+            )
+            return ""
+        return "openclaw:ok"
 
     async def update_message(self, message_id: str, new_text: str) -> None:
         """OpenClaw bridge does not support in-place message edits; sends a new message."""
@@ -156,20 +164,44 @@ class OpenClawNotificationChannel(NotificationChannel):
             headers["Authorization"] = f"Bearer {self._auth_token}"
         return headers
 
+    def _get_session(self) -> "aiohttp.ClientSession":
+        """Return a shared aiohttp session for the current event loop, creating it on first use."""
+        import asyncio
+
+        current_loop = asyncio.get_running_loop()
+        session = self._sessions_by_loop.get(current_loop)
+        if session is not None and session.closed:
+            self._sessions_by_loop.pop(current_loop, None)
+            session = None
+
+        if session is None:
+            timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
+            session = aiohttp.ClientSession(timeout=timeout)
+            self._sessions_by_loop[current_loop] = session
+
+        return session
+
+    async def aclose(self) -> None:
+        """Close all underlying aiohttp sessions."""
+        for session in list(self._sessions_by_loop.values()):
+            if not session.closed:
+                await session.close()
+        self._sessions_by_loop = {}
+
     async def _post(self, payload: dict[str, Any]) -> bool:
         # Use /hooks/agent to trigger an isolated agent delivery turn
         url = f"{self._bridge_url}/hooks/agent"
         try:
-            async with aiohttp.ClientSession(timeout=self._timeout) as session:
-                async with session.post(url, json=payload, headers=self._headers()) as resp:
-                    if resp.status < 300:
-                        logger.debug("OpenClaw notification delivered (status=%s)", resp.status)
-                        return True
-                    body = await resp.text()
-                    logger.warning(
-                        "OpenClaw notification failed: HTTP %s — %s", resp.status, body[:200]
-                    )
-                    return False
+            session = self._get_session()
+            async with session.post(url, json=payload, headers=self._headers()) as resp:
+                if resp.status < 300:
+                    logger.debug("OpenClaw notification delivered (status=%s)", resp.status)
+                    return True
+                body = await resp.text()
+                logger.warning(
+                    "OpenClaw notification failed: HTTP %s — %s", resp.status, body[:200]
+                )
+                return False
         except Exception as exc:
             logger.warning("OpenClaw notification error: %s", exc)
             return False
