@@ -59,6 +59,15 @@ class AuthManager:
     def complete_gitlab_oauth(self, *, code: str, state: str) -> dict[str, Any]:
         return _auth_sessions.complete_gitlab_oauth(code=code, state=state)
 
+    def complete_linkedin_oauth(self, *, code: str, state: str) -> dict[str, Any]:
+        return _auth_sessions.complete_linkedin_oauth(code=code, state=state)
+
+    def complete_x_oauth(self, *, code: str, state: str) -> dict[str, Any]:
+        return _auth_sessions.complete_x_oauth(code=code, state=state)
+
+    def complete_meta_oauth(self, *, code: str, state: str) -> dict[str, Any]:
+        return _auth_sessions.complete_meta_oauth(code=code, state=state)
+
     def store_ai_provider_keys(
         self,
         *,
@@ -217,6 +226,18 @@ def complete_github_oauth(*, code: str, state: str) -> dict[str, Any]:
 
 def complete_gitlab_oauth(*, code: str, state: str) -> dict[str, Any]:
     return auth_manager.complete_gitlab_oauth(code=code, state=state)
+
+
+def complete_linkedin_oauth(*, code: str, state: str) -> dict[str, Any]:
+    return auth_manager.complete_linkedin_oauth(code=code, state=state)
+
+
+def complete_x_oauth(*, code: str, state: str) -> dict[str, Any]:
+    return auth_manager.complete_x_oauth(code=code, state=state)
+
+
+def complete_meta_oauth(*, code: str, state: str) -> dict[str, Any]:
+    return auth_manager.complete_meta_oauth(code=code, state=state)
 
 
 def store_ai_provider_keys(

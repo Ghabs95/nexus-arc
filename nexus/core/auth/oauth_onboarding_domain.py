@@ -39,6 +39,9 @@ from nexus.core.auth.credential_store import (
     upsert_ai_provider_keys,
     upsert_github_credentials,
     upsert_gitlab_credentials,
+    upsert_linkedin_credentials,
+    upsert_x_credentials,
+    upsert_meta_credentials,
 )
 from nexus.core.config.runtime import normalize_runtime_mode
 
@@ -93,8 +96,10 @@ def _key_version() -> int:
 
 def _normalize_provider(provider: str | None) -> str:
     value = str(provider or "github").strip().lower()
-    if value not in {"github", "gitlab"}:
-        raise ValueError("Unsupported auth provider. Use 'github' or 'gitlab'.")
+    if value == "instagram":
+        return "meta"  # instagram aliases to meta
+    if value not in {"github", "gitlab", "linkedin", "x", "meta"}:
+        raise ValueError("Unsupported auth provider. Use 'github', 'gitlab', 'linkedin', 'x', or 'meta'.")
     return value
 
 
@@ -105,17 +110,12 @@ def _gitlab_base_url() -> str:
 
 
 def _oauth_callback_url(provider: str) -> str:
-    auth_provider = _normalize_provider(provider)
-    if auth_provider == "github":
-        override = str(os.getenv("NEXUS_GITHUB_CALLBACK_URL", "")).strip()
-        if override:
-            return override
-    else:
-        override = str(os.getenv("NEXUS_GITLAB_CALLBACK_URL", "")).strip()
-        if override:
-            return override
+    norm = _normalize_provider(provider)
+    env_override = os.getenv(f"NEXUS_{norm.upper()}_CALLBACK_URL", "")
+    if env_override:
+        return str(env_override).strip()
     base_url = _required_env("NEXUS_PUBLIC_BASE_URL").rstrip("/")
-    return f"{base_url}/auth/{auth_provider}/callback"
+    return f"{base_url}/auth/{norm}/callback"
 
 
 _SESSION_REF_PREFIX = "lsr_"
@@ -930,6 +930,15 @@ def register_onboarding_message(
 def start_oauth_flow(session_id: str, provider: str = "github") -> tuple[str, str]:
     """Return (auth_url, state) and persist one-time state hash for provider."""
     auth_provider = _normalize_provider(provider)
+
+    # Delegate social providers to their dedicated flow functions
+    if auth_provider == "linkedin":
+        return start_linkedin_oauth(session_id)
+    if auth_provider == "x":
+        return start_x_oauth(session_id)
+    if auth_provider == "meta":
+        return start_meta_oauth(session_id)
+
     state = secrets.token_urlsafe(32)
 
     resolved_session_id = resolve_login_session_id(session_id)
@@ -1304,6 +1313,355 @@ def complete_gitlab_oauth(*, code: str, state: str) -> dict[str, Any]:
         "gitlab_username": gitlab_username,
         "groups": sorted(groups),
         "grants_count": grants_count,
+    }
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn OAuth 2.0 (PKCE)
+# ---------------------------------------------------------------------------
+
+def start_linkedin_oauth(session_id: str) -> tuple[str, str]:
+    """Start LinkedIn OAuth 2.0 PKCE flow. Returns (auth_url, state)."""
+    client_id = _required_env("NEXUS_LINKEDIN_CLIENT_ID")
+    _required_env("NEXUS_LINKEDIN_CLIENT_SECRET")
+    state = secrets.token_urlsafe(32)
+    resolved_session_id = resolve_login_session_id(session_id)
+    record = get_auth_session(str(resolved_session_id))
+    if not record:
+        raise ValueError("Invalid session")
+    if record.expires_at < _now_utc():
+        update_auth_session(session_id=str(resolved_session_id), status="expired")
+        raise ValueError("Session expired")
+    from nexus.core.auth.credential_store import hash_oauth_state
+    update_auth_session(
+        session_id=str(resolved_session_id),
+        oauth_provider="linkedin",
+        oauth_state_hash=hash_oauth_state(state),
+        status="pending",
+        last_error="",
+    )
+    callback_url = _oauth_callback_url("linkedin")
+    query = urlencode({
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": callback_url,
+        "state": state,
+        "scope": "openid profile w_member_social",
+    })
+    return f"https://www.linkedin.com/oauth/v2/authorization?{query}", state
+
+
+def complete_linkedin_oauth(*, code: str, state: str) -> dict[str, Any]:
+    """Complete LinkedIn callback and persist credentials."""
+    session_record = _assert_valid_callback_session(state, "linkedin")
+
+    client_id = _required_env("NEXUS_LINKEDIN_CLIENT_ID")
+    client_secret = _required_env("NEXUS_LINKEDIN_CLIENT_SECRET")
+    callback_url = _oauth_callback_url("linkedin")
+
+    # Exchange code for token
+    resp = requests.post(
+        "https://www.linkedin.com/oauth/v2/accessToken",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": callback_url,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    token_data = resp.json()
+    access_token = str(token_data.get("access_token") or "").strip()
+    expires_in = token_data.get("expires_in")
+    expires_at = None
+    if isinstance(expires_in, int) and expires_in > 0:
+        expires_at = _now_utc() + timedelta(seconds=expires_in)
+
+    # Fetch profile (OpenID userinfo endpoint)
+    profile_resp = requests.get(
+        "https://api.linkedin.com/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    profile_resp.raise_for_status()
+    profile = profile_resp.json()
+    sub = str(profile.get("sub") or "").strip()
+    name = str(profile.get("name") or profile.get("given_name") or "").strip()
+    if not sub:
+        raise RuntimeError("LinkedIn profile missing sub")
+
+    author_urn = f"urn:li:person:{sub}"
+    nexus_id = str(session_record.nexus_id)
+    enc_token = encrypt_secret(access_token, key_version=_key_version())
+    upsert_linkedin_credentials(
+        nexus_id=nexus_id,
+        linkedin_token_enc=enc_token,
+        linkedin_author_urn=author_urn,
+        linkedin_token_expires_at=expires_at,
+        key_version=_key_version(),
+    )
+    update_auth_session(
+        session_id=session_record.session_id,
+        nexus_id=nexus_id,
+        oauth_provider="linkedin",
+        status="oauth_done",
+        last_error="",
+    )
+    return {
+        "session_id": session_record.session_id,
+        "nexus_id": nexus_id,
+        "provider": "linkedin",
+        "linkedin_name": name,
+        "linkedin_author_urn": author_urn,
+    }
+
+
+# ---------------------------------------------------------------------------
+# X (Twitter) OAuth 2.0 PKCE
+# ---------------------------------------------------------------------------
+
+def start_x_oauth(session_id: str) -> tuple[str, str]:
+    """Start X OAuth 2.0 PKCE flow. Returns (auth_url, state)."""
+    client_id = _required_env("NEXUS_X_CLIENT_ID")
+    state = secrets.token_urlsafe(32)
+    # Generate PKCE code_verifier + challenge
+    code_verifier = secrets.token_urlsafe(43)
+    import hashlib as _hl
+    challenge = base64.urlsafe_b64encode(
+        _hl.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+
+    resolved_session_id = resolve_login_session_id(session_id)
+    record = get_auth_session(str(resolved_session_id))
+    if not record:
+        raise ValueError("Invalid session")
+    if record.expires_at < _now_utc():
+        update_auth_session(session_id=str(resolved_session_id), status="expired")
+        raise ValueError("Session expired")
+    from nexus.core.auth.credential_store import hash_oauth_state
+    # Store code_verifier in last_error field temporarily (safe reuse)
+    update_auth_session(
+        session_id=str(resolved_session_id),
+        oauth_provider="x",
+        oauth_state_hash=hash_oauth_state(state),
+        status="pending",
+        last_error=f"pkce:{code_verifier}",
+    )
+    callback_url = _oauth_callback_url("x")
+    query = urlencode({
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": callback_url,
+        "scope": "tweet.read tweet.write users.read offline.access",
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    })
+    return f"https://twitter.com/i/oauth2/authorize?{query}", state
+
+
+def complete_x_oauth(*, code: str, state: str) -> dict[str, Any]:
+    """Complete X callback and persist credentials."""
+    session_record = _assert_valid_callback_session(state, "x")
+
+    # Retrieve code_verifier from last_error
+    last_error = str(getattr(session_record, "last_error", "") or "")
+    code_verifier = ""
+    if last_error.startswith("pkce:"):
+        code_verifier = last_error[5:]
+
+    client_id = _required_env("NEXUS_X_CLIENT_ID")
+    client_secret = _required_env("NEXUS_X_CLIENT_SECRET")
+    callback_url = _oauth_callback_url("x")
+
+    # Exchange code for token (Basic auth with client_id:secret)
+    auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    resp = requests.post(
+        "https://api.twitter.com/2/oauth2/token",
+        headers={
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": callback_url,
+            "code_verifier": code_verifier,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    token_data = resp.json()
+    access_token = str(token_data.get("access_token") or "").strip()
+    if not access_token:
+        raise RuntimeError("X OAuth: no access_token in response")
+
+    # Fetch username
+    profile_resp = requests.get(
+        "https://api.twitter.com/2/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    profile_resp.raise_for_status()
+    profile_data = profile_resp.json().get("data", {})
+    username = str(profile_data.get("username") or "").strip()
+
+    nexus_id = str(session_record.nexus_id)
+    enc_token = encrypt_secret(access_token, key_version=_key_version())
+    upsert_x_credentials(
+        nexus_id=nexus_id,
+        x_bearer_token_enc=enc_token,
+        key_version=_key_version(),
+    )
+    update_auth_session(
+        session_id=session_record.session_id,
+        nexus_id=nexus_id,
+        oauth_provider="x",
+        status="oauth_done",
+        last_error="",
+    )
+    return {
+        "session_id": session_record.session_id,
+        "nexus_id": nexus_id,
+        "provider": "x",
+        "x_username": username,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Meta (Facebook / Instagram) OAuth 2.0
+# ---------------------------------------------------------------------------
+
+def start_meta_oauth(session_id: str) -> tuple[str, str]:
+    """Start Meta OAuth 2.0 flow. Returns (auth_url, state)."""
+    app_id = _required_env("NEXUS_META_APP_ID")
+    _required_env("NEXUS_META_APP_SECRET")
+    state = secrets.token_urlsafe(32)
+
+    resolved_session_id = resolve_login_session_id(session_id)
+    record = get_auth_session(str(resolved_session_id))
+    if not record:
+        raise ValueError("Invalid session")
+    if record.expires_at < _now_utc():
+        update_auth_session(session_id=str(resolved_session_id), status="expired")
+        raise ValueError("Session expired")
+    from nexus.core.auth.credential_store import hash_oauth_state
+    update_auth_session(
+        session_id=str(resolved_session_id),
+        oauth_provider="meta",
+        oauth_state_hash=hash_oauth_state(state),
+        status="pending",
+        last_error="",
+    )
+    callback_url = _oauth_callback_url("meta")
+    query = urlencode({
+        "client_id": app_id,
+        "redirect_uri": callback_url,
+        "state": state,
+        "scope": "pages_manage_posts,instagram_basic,instagram_content_publish",
+        "response_type": "code",
+    })
+    return f"https://www.facebook.com/v19.0/dialog/oauth?{query}", state
+
+
+def complete_meta_oauth(*, code: str, state: str) -> dict[str, Any]:
+    """Complete Meta callback, exchange for long-lived page token, persist credentials."""
+    session_record = _assert_valid_callback_session(state, "meta")
+
+    app_id = _required_env("NEXUS_META_APP_ID")
+    app_secret = _required_env("NEXUS_META_APP_SECRET")
+    callback_url = _oauth_callback_url("meta")
+
+    # Step 1: Exchange code for short-lived user token
+    token_resp = requests.get(
+        "https://graph.facebook.com/v19.0/oauth/access_token",
+        params={
+            "client_id": app_id,
+            "redirect_uri": callback_url,
+            "client_secret": app_secret,
+            "code": code,
+        },
+        timeout=15,
+    )
+    token_resp.raise_for_status()
+    short_token = str(token_resp.json().get("access_token") or "").strip()
+    if not short_token:
+        raise RuntimeError("Meta OAuth: no access_token in response")
+
+    # Step 2: Exchange short-lived for long-lived user token
+    ll_resp = requests.get(
+        "https://graph.facebook.com/v19.0/oauth/access_token",
+        params={
+            "grant_type": "fb_exchange_token",
+            "client_id": app_id,
+            "client_secret": app_secret,
+            "fb_exchange_token": short_token,
+        },
+        timeout=15,
+    )
+    ll_resp.raise_for_status()
+    long_user_token = str(ll_resp.json().get("access_token") or short_token).strip()
+
+    # Step 3: Get page list and page access token
+    pages_resp = requests.get(
+        "https://graph.facebook.com/v19.0/me/accounts",
+        params={"access_token": long_user_token, "fields": "id,name,access_token"},
+        timeout=10,
+    )
+    pages_resp.raise_for_status()
+    pages_data = pages_resp.json().get("data", [])
+
+    page_token = ""
+    page_id = ""
+    page_name = ""
+    if pages_data:
+        # Use the first page by default
+        first_page = pages_data[0]
+        page_id = str(first_page.get("id") or "").strip()
+        page_token = str(first_page.get("access_token") or "").strip()
+        page_name = str(first_page.get("name") or "").strip()
+
+    if not page_token:
+        # Fall back to user token if no pages (some IG business accounts)
+        page_token = long_user_token
+
+    # Step 4: Check for linked Instagram Business account
+    ig_account_id = ""
+    if page_id:
+        ig_resp = requests.get(
+            f"https://graph.facebook.com/v19.0/{page_id}",
+            params={"fields": "instagram_business_account", "access_token": page_token},
+            timeout=10,
+        )
+        if ig_resp.ok:
+            ig_data = ig_resp.json().get("instagram_business_account", {})
+            ig_account_id = str(ig_data.get("id") or "").strip()
+
+    nexus_id = str(session_record.nexus_id)
+    enc_token = encrypt_secret(page_token, key_version=_key_version())
+    upsert_meta_credentials(
+        nexus_id=nexus_id,
+        meta_page_token_enc=enc_token,
+        meta_page_id=page_id,
+        meta_ig_account_id=ig_account_id or None,
+        key_version=_key_version(),
+    )
+    update_auth_session(
+        session_id=session_record.session_id,
+        nexus_id=nexus_id,
+        oauth_provider="meta",
+        status="oauth_done",
+        last_error="",
+    )
+    return {
+        "session_id": session_record.session_id,
+        "nexus_id": nexus_id,
+        "provider": "meta",
+        "meta_page_id": page_id,
+        "meta_page_name": page_name,
+        "meta_ig_account_id": ig_account_id,
     }
 
 

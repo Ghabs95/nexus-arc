@@ -1793,14 +1793,16 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning("Failed to register Telegram onboarding message for session %s: %s", session_id, exc)
         return
 
-    if requested_provider and not account_provider_target and requested_provider not in {"github", "gitlab"}:
+    if requested_provider and not account_provider_target and requested_provider not in {"github", "gitlab", "linkedin", "x", "meta", "instagram"}:
         await update.effective_message.reply_text(
-            "⚠️ Invalid provider. Use `/login github`, `/login gitlab`, `/login codex`, `/login gemini`, `/login claude`, or `/login copilot`.",
+            "⚠️ Invalid provider. Use `/login github`, `/login gitlab`, `/login linkedin`, `/login x`, `/login meta`, `/login codex`, `/login gemini`, `/login claude`, or `/login copilot`.",
             parse_mode="Markdown",
         )
         return
 
-    if not account_provider_target and requested_provider not in available_providers:
+    # Social providers (linkedin, x, meta/instagram) don't need available_providers check
+    _social_providers = {"linkedin", "x", "meta", "instagram"}
+    if not account_provider_target and requested_provider not in _social_providers and requested_provider not in available_providers:
         await update.effective_message.reply_text(
             f"⚠️ {requested_provider.title()} OAuth is not configured in this environment.",
         )

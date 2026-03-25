@@ -108,6 +108,15 @@ from nexus.core.auth import (
     complete_gitlab_oauth as _svc_complete_gitlab_oauth,
 )
 from nexus.core.auth import (
+    complete_linkedin_oauth as _svc_complete_linkedin_oauth,
+)
+from nexus.core.auth import (
+    complete_x_oauth as _svc_complete_x_oauth,
+)
+from nexus.core.auth import (
+    complete_meta_oauth as _svc_complete_meta_oauth,
+)
+from nexus.core.auth import (
     format_login_session_ref as _svc_format_login_session_ref,
 )
 from nexus.core.auth import (
@@ -1439,15 +1448,17 @@ def auth_start():
             status_code=400,
         )
     provider = str(request.args.get("provider", "")).strip().lower()
+    if provider == "instagram":
+        provider = "meta"
     if not provider:
         provider = _default_oauth_provider(configured_providers)
-    if provider not in {"github", "gitlab"}:
+    if provider not in {"github", "gitlab", "linkedin", "x", "meta"}:
         return _render_auth_message(
             "Invalid Request",
-            "Unsupported <code>provider</code>. Use <code>github</code> or <code>gitlab</code>.",
+            "Unsupported <code>provider</code>. Use <code>github</code>, <code>gitlab</code>, <code>linkedin</code>, <code>x</code>, or <code>meta</code>.",
             status_code=400,
         )
-    if provider not in configured_providers:
+    if provider in {"github", "gitlab"} and provider not in configured_providers:
         return _render_auth_message(
             "Login Error",
             f"{provider.title()} OAuth is not fully configured in this environment.",
@@ -1727,6 +1738,93 @@ def auth_gitlab_callback():
     response = make_response(_render_auth_message("Complete Setup", form_body, status_code=200))
     _set_web_session_cookie(response, session_id)
     return response
+
+
+@app.route("/auth/linkedin/callback", methods=["GET"])
+def auth_linkedin_callback():
+    if not NEXUS_AUTH_ENABLED:
+        return _render_auth_message("Auth Disabled", "Auth is disabled.", status_code=404)
+    code = str(request.args.get("code", "")).strip()
+    state = str(request.args.get("state", "")).strip()
+    oauth_error = str(request.args.get("error", "")).strip()
+    if oauth_error:
+        detail = str(request.args.get("error_description") or oauth_error).strip()
+        return _render_auth_message("OAuth Error", f"LinkedIn returned: <code>{html.escape(detail)}</code>", status_code=400)
+    if not code or not state:
+        return _render_auth_message("OAuth Error", "Missing <code>code</code> or <code>state</code>.", status_code=400)
+    try:
+        result = _svc_complete_linkedin_oauth(code=code, state=state)
+    except Exception as exc:
+        return _render_auth_message("OAuth Error", f"LinkedIn login failed: <code>{html.escape(str(exc))}</code>", status_code=400)
+    session_id = str(result.get("session_id") or "").strip()
+    name = str(result.get("linkedin_name") or "").strip()
+    urn = str(result.get("linkedin_author_urn") or "").strip()
+    _notify_onboarding_message(
+        session_id=session_id,
+        text=f"✅ LinkedIn connected!\nName: {name}\nAuthor URN: `{urn}`",
+    )
+    return _render_auth_message(
+        "LinkedIn Connected",
+        f"✅ LinkedIn account connected for <strong>{html.escape(name)}</strong>.<br>You can close this window.",
+    )
+
+
+@app.route("/auth/x/callback", methods=["GET"])
+def auth_x_callback():
+    if not NEXUS_AUTH_ENABLED:
+        return _render_auth_message("Auth Disabled", "Auth is disabled.", status_code=404)
+    code = str(request.args.get("code", "")).strip()
+    state = str(request.args.get("state", "")).strip()
+    oauth_error = str(request.args.get("error", "")).strip()
+    if oauth_error:
+        detail = str(request.args.get("error_description") or oauth_error).strip()
+        return _render_auth_message("OAuth Error", f"X returned: <code>{html.escape(detail)}</code>", status_code=400)
+    if not code or not state:
+        return _render_auth_message("OAuth Error", "Missing <code>code</code> or <code>state</code>.", status_code=400)
+    try:
+        result = _svc_complete_x_oauth(code=code, state=state)
+    except Exception as exc:
+        return _render_auth_message("OAuth Error", f"X login failed: <code>{html.escape(str(exc))}</code>", status_code=400)
+    session_id = str(result.get("session_id") or "").strip()
+    username = str(result.get("x_username") or "").strip()
+    _notify_onboarding_message(
+        session_id=session_id,
+        text=f"✅ X (Twitter) connected! Username: @{username}",
+    )
+    return _render_auth_message(
+        "X Connected",
+        f"✅ X account <strong>@{html.escape(username)}</strong> connected.<br>You can close this window.",
+    )
+
+
+@app.route("/auth/meta/callback", methods=["GET"])
+def auth_meta_callback():
+    if not NEXUS_AUTH_ENABLED:
+        return _render_auth_message("Auth Disabled", "Auth is disabled.", status_code=404)
+    code = str(request.args.get("code", "")).strip()
+    state = str(request.args.get("state", "")).strip()
+    oauth_error = str(request.args.get("error", "")).strip()
+    if oauth_error:
+        detail = str(request.args.get("error_description") or oauth_error).strip()
+        return _render_auth_message("OAuth Error", f"Meta returned: <code>{html.escape(detail)}</code>", status_code=400)
+    if not code or not state:
+        return _render_auth_message("OAuth Error", "Missing <code>code</code> or <code>state</code>.", status_code=400)
+    try:
+        result = _svc_complete_meta_oauth(code=code, state=state)
+    except Exception as exc:
+        return _render_auth_message("OAuth Error", f"Meta login failed: <code>{html.escape(str(exc))}</code>", status_code=400)
+    session_id = str(result.get("session_id") or "").strip()
+    page_name = str(result.get("meta_page_name") or "").strip()
+    ig_id = str(result.get("meta_ig_account_id") or "").strip()
+    ig_note = f"\nInstagram account ID: `{ig_id}`" if ig_id else "\n⚠️ No Instagram Business account linked to this page."
+    _notify_onboarding_message(
+        session_id=session_id,
+        text=f"✅ Meta connected!\nPage: {page_name}{ig_note}",
+    )
+    return _render_auth_message(
+        "Meta Connected",
+        f"✅ Meta page <strong>{html.escape(page_name)}</strong> connected.<br>{'Instagram account linked.' if ig_id else 'No Instagram Business account found.'}<br>You can close this window.",
+    )
 
 
 @app.route("/auth/ai-keys", methods=["POST"])

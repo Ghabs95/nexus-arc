@@ -106,6 +106,18 @@ if _SA_AVAILABLE:
         gemini_api_key_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
         claude_api_key_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
         copilot_github_token_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
+        # Social platform tokens
+        linkedin_token_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
+        linkedin_token_expires_at: sa.orm.Mapped[datetime | None] = sa.orm.mapped_column(
+            sa.DateTime(timezone=True)
+        )
+        linkedin_author_urn: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.String(255))
+        x_bearer_token_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
+        x_oauth_token_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
+        x_oauth_secret_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
+        meta_page_token_enc: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.Text)
+        meta_page_id: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.String(128))
+        meta_ig_account_id: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.String(128))
         codex_account_enabled: sa.orm.Mapped[bool] = sa.orm.mapped_column(
             sa.Boolean, nullable=False, default=False
         )
@@ -201,6 +213,16 @@ class CredentialRecord:
     gemini_api_key_enc: str | None
     claude_api_key_enc: str | None
     copilot_github_token_enc: str | None
+    # Social platform tokens
+    linkedin_token_enc: str | None
+    linkedin_token_expires_at: datetime | None
+    linkedin_author_urn: str | None
+    x_bearer_token_enc: str | None
+    x_oauth_token_enc: str | None
+    x_oauth_secret_enc: str | None
+    meta_page_token_enc: str | None
+    meta_page_id: str | None
+    meta_ig_account_id: str | None
     codex_account_enabled: bool
     gemini_account_enabled: bool
     claude_account_enabled: bool
@@ -269,6 +291,16 @@ def _run_schema_migrations(engine: Any) -> None:
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS gemini_api_key_enc TEXT",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS claude_api_key_enc TEXT",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS copilot_github_token_enc TEXT",
+        # Social platform tokens
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS linkedin_token_enc TEXT",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS linkedin_token_expires_at TIMESTAMPTZ",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS linkedin_author_urn VARCHAR(255)",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS x_bearer_token_enc TEXT",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS x_oauth_token_enc TEXT",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS x_oauth_secret_enc TEXT",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS meta_page_token_enc TEXT",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS meta_page_id VARCHAR(128)",
+        "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS meta_ig_account_id VARCHAR(128)",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS codex_account_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS gemini_account_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS claude_account_enabled BOOLEAN DEFAULT FALSE",
@@ -386,6 +418,15 @@ def _row_to_credential(row: Any) -> CredentialRecord:
         gemini_api_key_enc=row.gemini_api_key_enc,
         claude_api_key_enc=row.claude_api_key_enc,
         copilot_github_token_enc=row.copilot_github_token_enc,
+        linkedin_token_enc=getattr(row, "linkedin_token_enc", None),
+        linkedin_token_expires_at=getattr(row, "linkedin_token_expires_at", None),
+        linkedin_author_urn=getattr(row, "linkedin_author_urn", None),
+        x_bearer_token_enc=getattr(row, "x_bearer_token_enc", None),
+        x_oauth_token_enc=getattr(row, "x_oauth_token_enc", None),
+        x_oauth_secret_enc=getattr(row, "x_oauth_secret_enc", None),
+        meta_page_token_enc=getattr(row, "meta_page_token_enc", None),
+        meta_page_id=getattr(row, "meta_page_id", None),
+        meta_ig_account_id=getattr(row, "meta_ig_account_id", None),
         codex_account_enabled=bool(getattr(row, "codex_account_enabled", False)),
         gemini_account_enabled=bool(getattr(row, "gemini_account_enabled", False)),
         claude_account_enabled=bool(getattr(row, "claude_account_enabled", False)),
@@ -686,6 +727,81 @@ def upsert_codex_key(*, nexus_id: str, codex_api_key_enc: str, key_version: int 
         codex_api_key_enc=codex_api_key_enc,
         key_version=key_version,
     )
+
+
+def upsert_linkedin_credentials(
+    *,
+    nexus_id: str,
+    linkedin_token_enc: str,
+    linkedin_author_urn: str,
+    linkedin_token_expires_at: datetime | None = None,
+    key_version: int = 1,
+) -> None:
+    """Store LinkedIn OAuth access token and author URN."""
+    engine = _get_engine()
+    with Session(engine) as session:
+        row = session.get(_UserCredentialRow, str(nexus_id))
+        now = _now_utc()
+        if not row:
+            row = _UserCredentialRow(nexus_id=str(nexus_id), created_at=now, updated_at=now)
+            session.add(row)
+        row.linkedin_token_enc = str(linkedin_token_enc or "").strip() or None
+        row.linkedin_author_urn = str(linkedin_author_urn or "").strip() or None
+        row.linkedin_token_expires_at = linkedin_token_expires_at
+        row.key_version = max(1, int(key_version or 1))
+        row.updated_at = now
+        session.commit()
+
+
+def upsert_x_credentials(
+    *,
+    nexus_id: str,
+    x_bearer_token_enc: str | None = None,
+    x_oauth_token_enc: str | None = None,
+    x_oauth_secret_enc: str | None = None,
+    key_version: int = 1,
+) -> None:
+    """Store X (Twitter) OAuth 2.0 bearer token and/or OAuth 1.0a token pair."""
+    engine = _get_engine()
+    with Session(engine) as session:
+        row = session.get(_UserCredentialRow, str(nexus_id))
+        now = _now_utc()
+        if not row:
+            row = _UserCredentialRow(nexus_id=str(nexus_id), created_at=now, updated_at=now)
+            session.add(row)
+        if x_bearer_token_enc is not None:
+            row.x_bearer_token_enc = str(x_bearer_token_enc or "").strip() or None
+        if x_oauth_token_enc is not None:
+            row.x_oauth_token_enc = str(x_oauth_token_enc or "").strip() or None
+        if x_oauth_secret_enc is not None:
+            row.x_oauth_secret_enc = str(x_oauth_secret_enc or "").strip() or None
+        row.key_version = max(1, int(key_version or 1))
+        row.updated_at = now
+        session.commit()
+
+
+def upsert_meta_credentials(
+    *,
+    nexus_id: str,
+    meta_page_token_enc: str,
+    meta_page_id: str,
+    meta_ig_account_id: str | None = None,
+    key_version: int = 1,
+) -> None:
+    """Store Meta (Facebook/Instagram) page access token and account IDs."""
+    engine = _get_engine()
+    with Session(engine) as session:
+        row = session.get(_UserCredentialRow, str(nexus_id))
+        now = _now_utc()
+        if not row:
+            row = _UserCredentialRow(nexus_id=str(nexus_id), created_at=now, updated_at=now)
+            session.add(row)
+        row.meta_page_token_enc = str(meta_page_token_enc or "").strip() or None
+        row.meta_page_id = str(meta_page_id or "").strip() or None
+        row.meta_ig_account_id = str(meta_ig_account_id or "").strip() or None
+        row.key_version = max(1, int(key_version or 1))
+        row.updated_at = now
+        session.commit()
 
 
 def update_gitlab_oauth_tokens(
