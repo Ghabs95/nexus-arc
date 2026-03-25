@@ -300,6 +300,26 @@ def setup_event_handlers() -> None:
         except Exception as exc:
             logger.warning("Failed to setup Slack event handler: %s", exc)
 
+    # OpenClaw — activated when NEXUS_RUNTIME_MODE=openclaw and bridge token is set
+    oc_token = os.getenv("NEXUS_OPENCLAW_BRIDGE_TOKEN", "")
+    oc_runtime = os.getenv("NEXUS_RUNTIME_MODE", "")
+    if oc_token and oc_runtime == "openclaw":
+        try:
+            from nexus.plugins.builtin.openclaw_event_handler_plugin import OpenClawEventHandler
+
+            handler = OpenClawEventHandler(
+                {
+                    "bridge_url": os.getenv("NEXUS_OPENCLAW_BRIDGE_URL"),
+                    "auth_token": oc_token,
+                    "sender_id": os.getenv("NEXUS_OPENCLAW_SENDER_ID"),
+                    "channel": os.getenv("NEXUS_OPENCLAW_CHANNEL", "telegram"),
+                }
+            )
+            handler.attach(bus)
+            logger.info("OpenClaw event handler attached to EventBus")
+        except Exception as exc:
+            logger.warning("Failed to setup OpenClaw event handler: %s", exc)
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
