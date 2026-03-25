@@ -1566,3 +1566,134 @@ class TestDiscordNotificationChannel:
         with patch.object(channel, "_post_webhook", side_effect=error):
             with pytest.raises(RuntimeError, match="Discord API 403"):
                 await channel.send_message("chan123", Message(text="test"))
+
+
+# ---------------------------------------------------------------------------
+# OpenClawNotificationChannel
+# ---------------------------------------------------------------------------
+
+
+class TestOpenClawNotificationChannel:
+    def _make_channel(self):
+        """Create an OpenClawNotificationChannel bypassing __init__ for test setup.
+
+        Bypasses ``__init__`` entirely so no ``aiohttp`` import is needed; only
+        tests that exercise ``_post`` or ``__init__`` directly require ``aiohttp``.
+        """
+        from nexus.adapters.notifications.openclaw import OpenClawNotificationChannel
+
+        channel = OpenClawNotificationChannel.__new__(OpenClawNotificationChannel)
+        channel._bridge_url = "http://127.0.0.1:18789"
+        channel._auth_token = "test-token"
+        channel._sender_id = "12345"
+        channel._channel = "telegram"
+        channel._timeout_seconds = 10
+        channel._sessions_by_loop = {}
+        return channel
+
+    def test_name(self):
+        from nexus.adapters.notifications.openclaw import OpenClawNotificationChannel
+
+        channel = OpenClawNotificationChannel.__new__(OpenClawNotificationChannel)
+        assert channel.name == "openclaw"
+
+    def test_init_raises_importerror_without_aiohttp(self):
+        import nexus.adapters.notifications.openclaw as _mod
+
+        original = _mod._AIOHTTP_AVAILABLE
+        _mod._AIOHTTP_AVAILABLE = False
+        try:
+            with pytest.raises(ImportError, match="pip install aiohttp"):
+                _mod.OpenClawNotificationChannel()
+        finally:
+            _mod._AIOHTTP_AVAILABLE = original
+
+    def test_build_payload_basic(self):
+        channel = self._make_channel()
+        payload = channel._build_payload("Hello OpenClaw")
+        assert payload["message"] == "Hello OpenClaw"
+        assert payload["name"] == "Nexus"
+        assert payload["deliver"] is True
+        assert payload["channel"] == "telegram"
+
+    def test_build_payload_includes_to_when_recipient_set(self):
+        channel = self._make_channel()
+        payload = channel._build_payload("Hi", target_user="99999")
+        assert payload["to"] == "99999"
+
+    def test_build_payload_falls_back_to_sender_id(self):
+        channel = self._make_channel()
+        payload = channel._build_payload("Hi")
+        assert payload["to"] == "12345"
+
+    def test_build_payload_omits_to_when_no_recipient(self):
+        channel = self._make_channel()
+        channel._sender_id = ""
+        payload = channel._build_payload("Hi", target_user="")
+        assert "to" not in payload
+
+    def test_headers_include_bearer_token(self):
+        channel = self._make_channel()
+        headers = channel._headers()
+        assert headers["Authorization"] == "Bearer test-token"
+        assert headers["Content-Type"] == "application/json"
+
+    def test_headers_omit_authorization_when_no_token(self):
+        channel = self._make_channel()
+        channel._auth_token = ""
+        headers = channel._headers()
+        assert "Authorization" not in headers
+
+    async def test_send_message_returns_ok_on_success(self):
+        from nexus.adapters.notifications.base import Message
+        from nexus.core.models import Severity
+
+        channel = self._make_channel()
+        msg = Message(text="Workflow complete", severity=Severity.INFO)
+        with patch.object(channel, "_post", new=AsyncMock(return_value=True)):
+            result = await channel.send_message("user1", msg)
+        assert result == "openclaw:ok"
+
+    async def test_send_message_returns_error_on_failure(self):
+        from nexus.adapters.notifications.base import Message
+        from nexus.core.models import Severity
+
+        channel = self._make_channel()
+        msg = Message(text="Step failed", severity=Severity.ERROR)
+        with patch.object(channel, "_post", new=AsyncMock(return_value=False)):
+            result = await channel.send_message("user1", msg)
+        assert result == ""
+
+    async def test_send_alert_posts_with_severity_emoji(self):
+        from nexus.core.models import Severity
+
+        channel = self._make_channel()
+        with patch.object(channel, "_post", new=AsyncMock(return_value=True)) as mock_post:
+            await channel.send_alert("Disk full", Severity.CRITICAL)
+        payload = mock_post.call_args[0][0]
+        assert "🔴" in payload["message"]
+        assert "Disk full" in payload["message"]
+
+    async def test_update_message_sends_new_message(self):
+        channel = self._make_channel()
+        with patch.object(channel, "_post", new=AsyncMock(return_value=True)) as mock_post:
+            await channel.update_message("openclaw:ok", "Updated text")
+        payload = mock_post.call_args[0][0]
+        assert "Updated text" in payload["message"]
+
+    async def test_request_input_returns_empty_string(self):
+        channel = self._make_channel()
+        with patch.object(channel, "_post", new=AsyncMock(return_value=True)):
+            result = await channel.request_input("user1", "Please confirm?")
+        assert result == ""
+
+    def test_require_aiohttp_raises_when_unavailable(self):
+        import nexus.adapters.notifications.openclaw as _mod
+
+        original = _mod._AIOHTTP_AVAILABLE
+        _mod._AIOHTTP_AVAILABLE = False
+        try:
+            with pytest.raises(ImportError, match="aiohttp"):
+                _mod._require_aiohttp()
+        finally:
+            _mod._AIOHTTP_AVAILABLE = original
