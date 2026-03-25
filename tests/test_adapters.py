@@ -106,6 +106,29 @@ class TestAdapterRegistry:
             provider = _mod.OpenAIProvider(api_key="sk-test")
         assert provider.name == "openai"
 
+    def test_create_claude_provider(self):
+        from nexus.adapters.registry import AdapterRegistry
+
+        AdapterRegistry()
+
+        import nexus.adapters.ai.claude_provider as _mod
+
+        original_available = _mod._ANTHROPIC_AVAILABLE
+        original_module = _mod._anthropic_module if _mod._ANTHROPIC_AVAILABLE else None
+        mock_anthropic = MagicMock()
+        mock_anthropic.AsyncAnthropic = MagicMock(return_value=MagicMock())
+        setattr(_mod, "_ANTHROPIC_AVAILABLE", True)
+        setattr(_mod, "_anthropic_module", mock_anthropic)
+        try:
+            provider = _mod.ClaudeProvider(api_key="sk-ant-test")
+        finally:
+            setattr(_mod, "_ANTHROPIC_AVAILABLE", original_available)
+            if original_module is not None:
+                setattr(_mod, "_anthropic_module", original_module)
+            elif hasattr(_mod, "_anthropic_module"):
+                delattr(_mod, "_anthropic_module")
+        assert provider.name == "claude"
+
     def test_raises_for_unknown_type(self):
         from nexus.adapters.registry import AdapterRegistry
 
@@ -1132,6 +1155,168 @@ class TestOpenAIProvider:
                 _mod._require_openai()
         finally:
             _mod._OPENAI_AVAILABLE = original
+
+
+# ---------------------------------------------------------------------------
+# ClaudeProvider
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeProvider:
+    def _make_provider(self):
+        """Build a ClaudeProvider with the anthropic SDK mocked out."""
+        import nexus.adapters.ai.claude_provider as _mod
+
+        mock_anthropic = MagicMock()
+        mock_client = MagicMock()
+        mock_anthropic.AsyncAnthropic = MagicMock(return_value=mock_client)
+        mock_anthropic.RateLimitError = type("RateLimitError", (Exception,), {})
+        mock_anthropic.APITimeoutError = type("APITimeoutError", (Exception,), {})
+
+        original_available = _mod._ANTHROPIC_AVAILABLE
+        original_module = getattr(_mod, "_anthropic_module", None)
+        setattr(_mod, "_ANTHROPIC_AVAILABLE", True)
+        setattr(_mod, "_anthropic_module", mock_anthropic)
+
+        provider = _mod.ClaudeProvider(api_key="sk-ant-test")
+
+        def _cleanup():
+            setattr(_mod, "_ANTHROPIC_AVAILABLE", original_available)
+            if original_module is not None:
+                setattr(_mod, "_anthropic_module", original_module)
+            elif hasattr(_mod, "_anthropic_module"):
+                delattr(_mod, "_anthropic_module")
+
+        return (provider, mock_client, _cleanup)
+
+    def test_name(self):
+        provider, _, cleanup = self._make_provider()
+        try:
+            assert provider.name == "claude"
+        finally:
+            cleanup()
+
+    def test_preference_score_reasoning(self):
+        provider, _, cleanup = self._make_provider()
+        try:
+            assert provider.get_preference_score("reasoning") == 0.9
+            assert provider.get_preference_score("analysis") == 0.9
+            assert provider.get_preference_score("code_generation") == 0.75
+        finally:
+            cleanup()
+
+    def test_execute_agent_success(self):
+        from nexus.adapters.ai.base import ExecutionContext
+
+        provider, mock_client, cleanup = self._make_provider()
+        try:
+            mock_content = MagicMock()
+            mock_content.text = "Analysis complete."
+            mock_response = MagicMock()
+            mock_response.content = [mock_content]
+            mock_response.model = "claude-sonnet-4-5"
+            mock_response.usage.input_tokens = 50
+            mock_response.usage.output_tokens = 20
+            mock_response.stop_reason = "end_turn"
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+            ctx = ExecutionContext(
+                agent_name="triage",
+                prompt="Analyze this issue",
+                workspace=Path("/tmp"),
+            )
+            result = asyncio.run(provider.execute_agent(ctx))
+            assert result.success is True
+            assert result.output == "Analysis complete."
+            assert result.provider_used == "claude"
+            assert result.metadata["usage"]["input_tokens"] == 50
+            assert result.metadata["usage"]["output_tokens"] == 20
+        finally:
+            cleanup()
+
+    def test_execute_agent_appends_issue_context_after_prompt(self):
+        from nexus.adapters.ai.base import ExecutionContext
+
+        provider, mock_client, cleanup = self._make_provider()
+        try:
+            mock_content = MagicMock()
+            mock_content.text = "ok"
+            mock_response = MagicMock()
+            mock_response.content = [mock_content]
+            mock_response.model = "claude-sonnet-4-5"
+            mock_response.usage.input_tokens = 10
+            mock_response.usage.output_tokens = 2
+            mock_response.stop_reason = "end_turn"
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+            ctx = ExecutionContext(
+                agent_name="triage",
+                prompt="Analyze this issue",
+                workspace=Path("/tmp"),
+                issue_url="https://github.com/org/repo/issues/42",
+            )
+            result = asyncio.run(provider.execute_agent(ctx))
+            assert result.success is True
+
+            payload = mock_client.messages.create.await_args.kwargs
+            user_content = payload["messages"][0]["content"]
+            assert user_content.startswith("Analyze this issue")
+            assert user_content.endswith("Issue: https://github.com/org/repo/issues/42")
+        finally:
+            cleanup()
+
+    def test_execute_agent_rate_limit(self):
+        import nexus.adapters.ai.claude_provider as _mod
+        from nexus.adapters.ai.base import ExecutionContext
+
+        provider, mock_client, cleanup = self._make_provider()
+        try:
+            mock_anthropic_mod = getattr(_mod, "_anthropic_module")
+            RateLimitError = mock_anthropic_mod.RateLimitError
+            mock_client.messages.create = AsyncMock(side_effect=RateLimitError("Rate limited"))
+
+            ctx = ExecutionContext(
+                agent_name="triage",
+                prompt="Analyze",
+                workspace=Path("/tmp"),
+            )
+            result = asyncio.run(provider.execute_agent(ctx))
+            assert result.success is False
+            assert "Rate limit" in result.error
+        finally:
+            cleanup()
+
+    def test_execute_agent_timeout(self):
+        import nexus.adapters.ai.claude_provider as _mod
+        from nexus.adapters.ai.base import ExecutionContext
+
+        provider, mock_client, cleanup = self._make_provider()
+        try:
+            mock_anthropic_mod = getattr(_mod, "_anthropic_module")
+            APITimeoutError = mock_anthropic_mod.APITimeoutError
+            mock_client.messages.create = AsyncMock(side_effect=APITimeoutError("Timed out"))
+
+            ctx = ExecutionContext(
+                agent_name="triage",
+                prompt="Analyze",
+                workspace=Path("/tmp"),
+            )
+            result = asyncio.run(provider.execute_agent(ctx))
+            assert result.success is False
+            assert "Timeout" in result.error
+        finally:
+            cleanup()
+
+    def test_requires_sdk_without_install(self):
+        import nexus.adapters.ai.claude_provider as _mod
+
+        original = _mod._ANTHROPIC_AVAILABLE
+        _mod._ANTHROPIC_AVAILABLE = False
+        try:
+            with pytest.raises(ImportError, match="anthropic"):
+                _mod._require_anthropic()
+        finally:
+            _mod._ANTHROPIC_AVAILABLE = original
 
 
 # ---------------------------------------------------------------------------
