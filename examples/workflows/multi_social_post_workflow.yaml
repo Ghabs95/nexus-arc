@@ -1,0 +1,217 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Multi-Platform Social Post Workflow"
+  description: >
+    Research a topic, write platform-adapted content, validate all, then
+    publish to LinkedIn, X, and Instagram in sequence.
+  version: "1.0.0"
+
+workflow_type: "social-post"
+timeout_seconds: 14400
+allowed_tools:
+  - "vcs:read_issue"
+  - "vcs:read_comments"
+  - "vcs:add_comment"
+  - "vcs:add_label"
+  - "vcs:close_issue"
+
+steps:
+  - id: "research"
+    name: "Research"
+    description: >
+      Research the topic deeply. Produce a master brief covering: core insight,
+      key facts, audience for each platform (LinkedIn=professional, X=technical/punchy,
+      Instagram=visual/human), CTA options, 3–5 universal themes, and image concept.
+    agent_type: "researcher"
+    context_policy: "minimal"
+    tools:
+      - vcs:read_issue
+      - vcs:add_comment
+    inputs:
+      - topic: "string"
+      - platforms: "list[string]"
+      - image_url: "string"
+    outputs:
+      - research_brief: "string"
+      - key_facts: "list[string]"
+      - visual_concept: "string"
+    on_success: "write_linkedin"
+
+  - id: "write_linkedin"
+    name: "Write LinkedIn Post"
+    description: >
+      Write a LinkedIn post based on the research brief.
+      Format: hook → body (3–5 paragraphs) → CTA → hashtags (3–5).
+      Max 3000 chars. Tone: professional, insightful, human.
+    agent_type: "writer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 10
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - research_brief: "string"
+      - key_facts: "list[string]"
+    outputs:
+      - linkedin_post: "string"
+    on_success: "write_x"
+
+  - id: "write_x"
+    name: "Write X Post/Thread"
+    description: >
+      Adapt the LinkedIn content for X. Either a single punchy tweet (≤280 chars)
+      or a thread (3–8 tweets). Lead with the sharpest insight.
+      Hashtags: max 2–3 at the end of the last tweet only.
+    agent_type: "writer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 15
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - research_brief: "string"
+      - linkedin_post: "string"
+    outputs:
+      - x_post: "string"
+      - x_is_thread: "boolean"
+    on_success: "write_instagram"
+
+  - id: "write_instagram"
+    name: "Write Instagram Caption"
+    description: >
+      Write an Instagram caption. Hook → story/insight → CTA → hashtag block (10–20).
+      Max 2200 chars. Tone: authentic and visual-first.
+      image_url must be set in the issue for the publish step.
+    agent_type: "writer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 15
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - research_brief: "string"
+      - visual_concept: "string"
+      - image_url: "string"
+    outputs:
+      - instagram_post: "string"
+    on_success: "review"
+
+  - id: "review"
+    name: "Review All Three Posts"
+    description: >
+      Review all three posts together for: character limits, tone consistency,
+      cross-platform coherence, hashtag counts, no unverified claims.
+      Approve all or request specific changes per platform.
+    agent_type: "reviewer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 30
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - linkedin_post: "string"
+      - x_post: "string"
+      - instagram_post: "string"
+    outputs:
+      - review_status: "enum[approved|changes_requested]"
+      - review_notes: "string"
+      - platforms_approved: "list[string]"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Review"
+    agent_type: "router"
+    context_policy: "minimal"
+    routes:
+      - when: "review_status == 'approved'"
+        then: "publish_linkedin"
+      - when: "review_status == 'changes_requested'"
+        then: "write_linkedin"
+      - default: "write_linkedin"
+
+  - id: "publish_linkedin"
+    name: "Publish to LinkedIn"
+    description: >
+      Run dry_run on LinkedIn post. If PASSED: publish.
+      Post result as comment. Continue to X publish regardless of outcome
+      (each platform publishes independently).
+    agent_type: "publisher"
+    context_policy: "standard"
+    require_human_approval: true
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - linkedin_post: "string"
+    outputs:
+      - linkedin_publish_status: "enum[published|dry_run_only|failed]"
+      - linkedin_url: "string"
+    on_success: "publish_x"
+
+  - id: "publish_x"
+    name: "Publish to X"
+    description: >
+      Run dry_run on X post/thread. If PASSED: publish.
+      Post result as comment. Continue to Instagram publish.
+    agent_type: "publisher"
+    context_policy: "standard"
+    require_human_approval: true
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - x_post: "string"
+      - x_is_thread: "boolean"
+    outputs:
+      - x_publish_status: "enum[published|dry_run_only|failed]"
+      - x_url: "string"
+    on_success: "publish_instagram"
+
+  - id: "publish_instagram"
+    name: "Publish to Instagram"
+    description: >
+      Run dry_run on Instagram caption + image. If PASSED: publish via Meta adapter.
+      Post result as comment.
+    agent_type: "publisher"
+    context_policy: "standard"
+    require_human_approval: true
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - instagram_post: "string"
+      - image_url: "string"
+    outputs:
+      - instagram_publish_status: "enum[published|dry_run_only|failed]"
+      - instagram_url: "string"
+    on_success: "close_loop"
+
+  - id: "close_loop"
+    name: "Document & Close"
+    description: >
+      Summarise all three publish outcomes. Add label social:published.
+      Close the issue.
+    agent_type: "writer"
+    context_policy: "minimal"
+    tools:
+      - vcs:add_comment
+      - vcs:add_label
+      - vcs:close_issue
+    inputs:
+      - linkedin_url: "string"
+      - x_url: "string"
+      - instagram_url: "string"
+    outputs:
+      - summary: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  audit_trail: "vcs_comments"
+  notify_human: true
+  require_human_merge_approval: false

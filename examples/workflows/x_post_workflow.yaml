@@ -1,0 +1,145 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "X (Twitter) Post Workflow"
+  description: "Research a topic, write an X post or thread, validate it, and publish."
+  version: "1.0.0"
+
+workflow_type: "social-post"
+timeout_seconds: 3600
+allowed_tools:
+  - "vcs:read_issue"
+  - "vcs:read_comments"
+  - "vcs:add_comment"
+  - "vcs:add_label"
+  - "vcs:close_issue"
+
+steps:
+  - id: "research"
+    name: "Research"
+    description: >
+      Gather context about the topic. Identify: key insight or hook, audience,
+      ideal format (single tweet vs thread), and 2–4 relevant hashtags.
+      X audience skews technical/professional. Punchy, opinionated content performs better.
+    agent_type: "researcher"
+    context_policy: "minimal"
+    tools:
+      - vcs:read_issue
+      - vcs:add_comment
+    inputs:
+      - topic: "string"
+      - audience: "string"
+      - thread_mode: "boolean"
+    outputs:
+      - research_brief: "string"
+      - key_insight: "string"
+      - recommended_format: "enum[single_tweet|thread]"
+      - suggested_hashtags: "list[string]"
+    on_success: "write"
+
+  - id: "write"
+    name: "Write X Post"
+    description: >
+      Write the X post or thread based on the research brief.
+      Single tweet: max 280 chars, punchy, one clear idea.
+      Thread: 3–8 tweets, each ≤280 chars. Number them (1/ 2/ etc.).
+      Tone: direct, confident, conversational. No corporate speak.
+      Hashtags: max 2–3, at the end of the last tweet only.
+    agent_type: "writer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 10
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - research_brief: "string"
+      - key_insight: "string"
+      - recommended_format: "string"
+      - suggested_hashtags: "list[string]"
+    outputs:
+      - post_text: "string"
+      - post_platform: "string"
+      - is_thread: "boolean"
+      - tweet_count: "integer"
+    on_success: "review"
+
+  - id: "review"
+    name: "Review & Validate"
+    description: >
+      Review the post for: character limits (each tweet ≤280 chars),
+      tone (punchy, not corporate), hashtag count (≤3), no unverified claims,
+      no policy violations. Approve or request specific changes.
+    agent_type: "reviewer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 20
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - post_text: "string"
+      - is_thread: "boolean"
+    outputs:
+      - review_status: "enum[approved|changes_requested]"
+      - review_notes: "string"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Review"
+    agent_type: "router"
+    context_policy: "minimal"
+    routes:
+      - when: "review_status == 'approved'"
+        then: "publish"
+      - when: "review_status == 'changes_requested'"
+        then: "write"
+      - default: "write"
+
+  - id: "publish"
+    name: "Publish to X"
+    description: >
+      Publish the approved post or thread to X.
+      First run a dry_run to validate character limits and credentials.
+      For threads: set metadata.thread_mode=True.
+      Post the result (tweet URL or first tweet URL) as a comment.
+    agent_type: "publisher"
+    context_policy: "standard"
+    require_human_approval: true
+    include_audit_history: true
+    audit_limit: 20
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - post_text: "string"
+      - post_platform: "string"
+      - is_thread: "boolean"
+    outputs:
+      - publish_status: "enum[published|dry_run_only|failed]"
+      - publish_url: "string"
+      - publish_platform: "string"
+    on_success: "close_loop"
+
+  - id: "close_loop"
+    name: "Document & Close"
+    description: "Write a short summary of the published post. Close the issue with label social:published."
+    agent_type: "writer"
+    context_policy: "minimal"
+    tools:
+      - vcs:add_comment
+      - vcs:add_label
+      - vcs:close_issue
+    inputs:
+      - publish_url: "string"
+      - publish_platform: "string"
+      - post_text: "string"
+    outputs:
+      - summary: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  audit_trail: "vcs_comments"
+  notify_human: true
+  require_human_merge_approval: false

@@ -1,0 +1,145 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Instagram Post Workflow"
+  description: "Research a topic, write an Instagram caption, validate it, and publish via Meta adapter."
+  version: "1.0.0"
+
+workflow_type: "social-post"
+timeout_seconds: 3600
+allowed_tools:
+  - "vcs:read_issue"
+  - "vcs:read_comments"
+  - "vcs:add_comment"
+  - "vcs:add_label"
+  - "vcs:close_issue"
+
+steps:
+  - id: "research"
+    name: "Research"
+    description: >
+      Gather context about the topic for Instagram. Identify: visual concept (what image/video
+      would work), caption hook, tone (authentic, aspirational, or educational), and 10–20
+      relevant hashtags. Instagram audience is visual-first — the caption supports the image.
+    agent_type: "researcher"
+    context_policy: "minimal"
+    tools:
+      - vcs:read_issue
+      - vcs:add_comment
+    inputs:
+      - topic: "string"
+      - audience: "string"
+      - image_url: "string"
+    outputs:
+      - research_brief: "string"
+      - visual_concept: "string"
+      - suggested_hashtags: "list[string]"
+    on_success: "write"
+
+  - id: "write"
+    name: "Write Instagram Caption"
+    description: >
+      Write the Instagram caption based on the research brief.
+      Format: hook (1–2 sentences) → body (story or insight) → CTA → hashtag block.
+      Max 2200 characters. Hashtags: 10–20, grouped at the end.
+      Tone: authentic, human, platform-native. No corporate speak.
+      Note: the image must be provided separately via image_url in the issue.
+    agent_type: "writer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 10
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - research_brief: "string"
+      - visual_concept: "string"
+      - suggested_hashtags: "list[string]"
+      - image_url: "string"
+    outputs:
+      - post_text: "string"
+      - post_platform: "string"
+      - image_url: "string"
+      - hashtag_count: "integer"
+    on_success: "review"
+
+  - id: "review"
+    name: "Review & Validate"
+    description: >
+      Review caption for: character limit (≤2200), hashtag count (10–20),
+      tone (authentic, not corporate), no unverified claims, image_url present.
+      Approve or request specific changes.
+    agent_type: "reviewer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 20
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - post_text: "string"
+      - image_url: "string"
+    outputs:
+      - review_status: "enum[approved|changes_requested]"
+      - review_notes: "string"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Review"
+    agent_type: "router"
+    context_policy: "minimal"
+    routes:
+      - when: "review_status == 'approved'"
+        then: "publish"
+      - when: "review_status == 'changes_requested'"
+        then: "write"
+      - default: "write"
+
+  - id: "publish"
+    name: "Publish to Instagram"
+    description: >
+      Publish the approved caption + image to Instagram via the Meta adapter
+      (target=instagram, instagram_account_id required).
+      First run a dry_run to validate credentials, image_url, and caption length.
+      If dry_run passes: publish. Post the result (IG post URL) as a comment.
+      NOTE: image_url must be a public HTTPS URL accessible by Meta's servers.
+    agent_type: "publisher"
+    context_policy: "standard"
+    require_human_approval: true
+    include_audit_history: true
+    audit_limit: 20
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - post_text: "string"
+      - post_platform: "string"
+      - image_url: "string"
+    outputs:
+      - publish_status: "enum[published|dry_run_only|failed]"
+      - publish_url: "string"
+      - publish_platform: "string"
+    on_success: "close_loop"
+
+  - id: "close_loop"
+    name: "Document & Close"
+    description: "Write a short summary of the published post. Close the issue with label social:published."
+    agent_type: "writer"
+    context_policy: "minimal"
+    tools:
+      - vcs:add_comment
+      - vcs:add_label
+      - vcs:close_issue
+    inputs:
+      - publish_url: "string"
+      - publish_platform: "string"
+      - post_text: "string"
+    outputs:
+      - summary: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  audit_trail: "vcs_comments"
+  notify_human: true
+  require_human_merge_approval: false

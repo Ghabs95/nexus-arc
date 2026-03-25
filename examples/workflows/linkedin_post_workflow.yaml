@@ -1,0 +1,141 @@
+apiVersion: "nexus-arc/v1"
+kind: "Workflow"
+metadata:
+  name: "Social Post Workflow"
+  description: "Research a topic, write a LinkedIn post, validate it, and publish. Optional X/Meta cross-post."
+  version: "1.0.0"
+
+workflow_type: "social-post"
+timeout_seconds: 7200
+allowed_tools:
+  - "vcs:read_issue"
+  - "vcs:read_comments"
+  - "vcs:add_comment"
+  - "vcs:add_label"
+  - "vcs:close_issue"
+
+steps:
+  - id: "research"
+    name: "Research"
+    description: >
+      Gather relevant context about the topic from the issue description, linked docs,
+      web search results, and any project knowledge base. Produce a structured brief:
+      key facts, tone, audience, CTA suggestion, and 3–5 relevant hashtags.
+    agent_type: "researcher"
+    context_policy: "minimal"
+    tools:
+      - vcs:read_issue
+      - vcs:add_comment
+    inputs:
+      - topic: "string"
+      - audience: "string"
+    outputs:
+      - research_brief: "string"
+      - key_facts: "list[string]"
+      - suggested_hashtags: "list[string]"
+    on_success: "write"
+
+  - id: "write"
+    name: "Write LinkedIn Post"
+    description: >
+      Write a high-quality LinkedIn post based on the research brief.
+      Format: hook (1–2 lines) → body (insight or story, 3–5 paragraphs) → CTA → hashtags.
+      Tone: professional but human. Max 3000 characters. No generic openers.
+      Output the final post text only — no markdown formatting wrappers.
+    agent_type: "writer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 10
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - research_brief: "string"
+      - key_facts: "list[string]"
+      - suggested_hashtags: "list[string]"
+    outputs:
+      - post_text: "string"
+      - post_platform: "string"
+      - post_word_count: "integer"
+    on_success: "review"
+
+  - id: "review"
+    name: "Review & Validate"
+    description: >
+      Review the post for: accuracy, tone consistency, platform compliance (LinkedIn rules),
+      brand voice, no unverified claims, appropriate hashtag count (3–5).
+      Either approve or request specific changes with actionable feedback.
+    agent_type: "reviewer"
+    context_policy: "standard"
+    include_audit_history: true
+    audit_limit: 20
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - post_text: "string"
+    outputs:
+      - review_status: "enum[approved|changes_requested]"
+      - review_notes: "string"
+    on_success: "route_review"
+
+  - id: "route_review"
+    name: "Route After Review"
+    agent_type: "router"
+    context_policy: "minimal"
+    routes:
+      - when: "review_status == 'approved'"
+        then: "publish"
+      - when: "review_status == 'changes_requested'"
+        then: "write"
+      - default: "write"
+
+  - id: "publish"
+    name: "Publish to LinkedIn"
+    description: >
+      Publish the approved post to LinkedIn.
+      First run a dry_run to validate credentials and content format.
+      If dry_run passes, call social:publish with platform=linkedin.
+      Post the publish result (post URL or error) as a comment.
+      DO NOT publish without a passing dry_run.
+    agent_type: "publisher"
+    context_policy: "standard"
+    require_human_approval: true
+    include_audit_history: true
+    audit_limit: 20
+    tools:
+      - vcs:read_comments
+      - vcs:add_comment
+    inputs:
+      - post_text: "string"
+      - post_platform: "string"
+    outputs:
+      - publish_status: "enum[published|dry_run_only|failed]"
+      - publish_url: "string"
+      - publish_platform: "string"
+    on_success: "close_loop"
+
+  - id: "close_loop"
+    name: "Document & Close"
+    description: >
+      Write a short summary of the published post (platform, URL, reach estimate).
+      Close the issue with label social:published.
+    agent_type: "writer"
+    context_policy: "minimal"
+    tools:
+      - vcs:add_comment
+      - vcs:add_label
+      - vcs:close_issue
+    inputs:
+      - publish_url: "string"
+      - publish_platform: "string"
+      - post_text: "string"
+    outputs:
+      - summary: "string"
+    final_step: true
+
+monitoring:
+  log_all_decisions: true
+  audit_trail: "vcs_comments"
+  notify_human: true
+  require_human_merge_approval: false
