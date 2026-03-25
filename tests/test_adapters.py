@@ -1772,6 +1772,7 @@ class TestOpenClawNotificationChannel:
         channel._auth_token = "test-token"
         channel._sender_id = "12345"
         channel._channel = "telegram"
+        channel._session_key = ""
         channel._timeout_seconds = 10
         channel._sessions_by_loop = {}
         return channel
