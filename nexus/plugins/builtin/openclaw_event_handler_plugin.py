@@ -64,6 +64,7 @@ class OpenClawEventHandler:
             auth_token=config.get("auth_token"),
             sender_id=config.get("sender_id"),
             channel=config.get("channel"),
+            session_key=config.get("session_key"),
         )
         self._subscriptions: list[str] = []
         self._last_send_ok: bool = True

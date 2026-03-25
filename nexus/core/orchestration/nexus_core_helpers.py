@@ -313,6 +313,7 @@ def setup_event_handlers() -> None:
                     "auth_token": oc_token,
                     "sender_id": os.getenv("NEXUS_OPENCLAW_SENDER_ID"),
                     "channel": os.getenv("NEXUS_OPENCLAW_CHANNEL", "telegram"),
+                    "session_key": os.getenv("NEXUS_OPENCLAW_SESSION_KEY", ""),
                 }
             )
             handler.attach(bus)

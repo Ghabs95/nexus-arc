@@ -77,6 +77,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         auth_token: str | None = None,
         sender_id: str | None = None,
         channel: str | None = None,
+        session_key: str | None = None,
         timeout: int = 10,
     ):
         _require_aiohttp()
@@ -86,6 +87,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         self._auth_token = auth_token or os.getenv("NEXUS_OPENCLAW_BRIDGE_TOKEN") or ""
         self._sender_id = sender_id or os.getenv("NEXUS_OPENCLAW_SENDER_ID") or ""
         self._channel = channel or os.getenv("NEXUS_OPENCLAW_CHANNEL") or "telegram"
+        self._session_key = session_key or os.getenv("NEXUS_OPENCLAW_SESSION_KEY") or ""
         self._timeout_seconds = timeout
         self._sessions_by_loop: dict[object, aiohttp.ClientSession] = {}
 
@@ -152,6 +154,9 @@ class OpenClawNotificationChannel(NotificationChannel):
             "channel": self._channel or "telegram",
             "wakeMode": "now",
         }
+        # If a specific session key is set, pass it to route directly to that session
+        if self._session_key:
+            payload["sessionKey"] = self._session_key
         # If a specific recipient is set, pass it as `to`
         recipient = target_user or self._sender_id
         if recipient:
