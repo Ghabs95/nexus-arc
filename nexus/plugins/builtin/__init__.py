@@ -30,6 +30,12 @@ from nexus.plugins.builtin.openclaw_event_handler_plugin import (
 from nexus.plugins.builtin.openclaw_event_handler_plugin import (
     register_plugins as register_openclaw_event_handler_plugins,
 )
+from nexus.plugins.builtin.social_publisher_plugin import (
+    SocialPublisherPlugin,
+)
+from nexus.plugins.builtin.social_publisher_plugin import (
+    register_plugins as register_social_publisher_plugins,
+)
 from nexus.plugins.builtin.discord_interactive_plugin import (
     DiscordInteractivePlugin,
 )
@@ -154,6 +160,8 @@ __all__ = [
     "register_discord_interactive_plugins",
     "register_discord_event_handler_plugins",
     "register_openclaw_event_handler_plugins",
+    "register_social_publisher_plugins",
+    "SocialPublisherPlugin",
     "OpenClawEventHandler",
     "register_runtime_ops_plugins",
     "register_workflow_policy_plugins",

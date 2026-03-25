@@ -322,6 +322,47 @@ def setup_event_handlers() -> None:
             logger.warning("Failed to setup OpenClaw event handler: %s", exc)
 
 
+_SOCIAL_PUBLISHER_PLUGIN: Any = None
+
+
+def get_social_publisher(project_name: str | None = None) -> Any | None:
+    """Return the global SocialPublisherPlugin instance, initialised on first call."""
+    global _SOCIAL_PUBLISHER_PLUGIN
+    if _SOCIAL_PUBLISHER_PLUGIN is not None:
+        return _SOCIAL_PUBLISHER_PLUGIN
+
+    # Build config from env vars (project-specific config can be added later)
+    config: dict[str, Any] = {}
+    if os.getenv("NEXUS_LINKEDIN_ACCESS_TOKEN") and os.getenv("NEXUS_LINKEDIN_AUTHOR_URN"):
+        config["linkedin"] = {
+            "access_token": os.getenv("NEXUS_LINKEDIN_ACCESS_TOKEN"),
+            "author_urn": os.getenv("NEXUS_LINKEDIN_AUTHOR_URN"),
+        }
+    if os.getenv("NEXUS_DISCORD_SOCIAL_WEBHOOK_URL"):
+        config["discord"] = {"webhook_url": os.getenv("NEXUS_DISCORD_SOCIAL_WEBHOOK_URL")}
+    if os.getenv("NEXUS_X_API_KEY"):
+        config["x"] = {
+            "api_key": os.getenv("NEXUS_X_API_KEY"),
+            "api_secret": os.getenv("NEXUS_X_API_SECRET"),
+            "access_token": os.getenv("NEXUS_X_ACCESS_TOKEN"),
+            "access_secret": os.getenv("NEXUS_X_ACCESS_SECRET"),
+        }
+    if not config:
+        return None
+
+    try:
+        from nexus.plugins.builtin.social_publisher_plugin import SocialPublisherPlugin
+        _SOCIAL_PUBLISHER_PLUGIN = SocialPublisherPlugin(config)
+        logger.info(
+            "SocialPublisherPlugin initialised. Platforms: %s",
+            _SOCIAL_PUBLISHER_PLUGIN.available_platforms(),
+        )
+    except Exception as exc:
+        logger.warning("Failed to initialise SocialPublisherPlugin: %s", exc)
+
+    return _SOCIAL_PUBLISHER_PLUGIN
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
