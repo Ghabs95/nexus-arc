@@ -128,6 +128,26 @@ curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/recent-incidents?limit=
   -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
 ```
 
+### Authorship audit
+
+Returns a best-effort bot-vs-human provenance summary based on workflow/issue/PR/comment/runtime identity that Nexus currently knows about.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/authorship-audit?issue_number=123" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+This is intended for operator review, not as a security boundary. Secret values are never returned.
+
+### Approval / blocker awareness
+
+Returns current blocking signals including paused workflows, pending approval-gate records, and downstream review/compliance-style gates when inferable from workflow state.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/blockers?issue_number=123" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
 ### Logs-context shortcut
 
 Returns the current workflow summary together with recent relevant task-log
@@ -164,6 +184,15 @@ Returns a structured explanation of:
 - default branch
 - git platform
 - agent preference/profile (when determinable)
+
+### Routing validate
+
+Validates the currently configured routing assumptions for a project/work-type pair. For `project_key=nexus`, this adds best-effort checks for the expected repo split across `nexus-os`, `nexus-arc`, and `nexus`, plus branch/provider expectations when they can be inferred from config.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/routing/validate?project_key=nexus&task_type=operator" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
 
 ## Safe Control Endpoints
 

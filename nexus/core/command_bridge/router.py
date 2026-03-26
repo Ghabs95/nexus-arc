@@ -582,6 +582,28 @@ class CommandRouter:
             issue_number=issue_number,
         )
 
+    async def get_workflow_authorship_audit(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_authorship_audit(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
+    async def get_workflow_blockers(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_blockers(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
     async def get_workflow_logs_context(
         self,
         *,
@@ -615,6 +637,23 @@ class CommandRouter:
         agent_name: str | None = None,
     ) -> dict[str, Any]:
         return await self.operator_service.routing_explain(
+            project_key=project_key,
+            task_type=task_type,
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            agent_name=agent_name,
+        )
+
+    async def validate_routing(
+        self,
+        *,
+        project_key: str,
+        task_type: str = 'feature',
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        agent_name: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.routing_validate(
             project_key=project_key,
             task_type=task_type,
             workflow_id=workflow_id,

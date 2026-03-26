@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import glob
 import inspect
+import json
 import os
 import re
 import shutil
@@ -41,6 +42,16 @@ def _trim_error_summary(error: Any, *, max_len: int = 240) -> str | None:
     return compact[: max_len - 3].rstrip() + "..."
 
 
+def _safe_text(value: Any, *, max_len: int = 240) -> str | None:
+    text = str(value or '').strip()
+    if not text:
+        return None
+    compact = re.sub(r'\s+', ' ', text)
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 3].rstrip() + '...'
+
+
 async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
@@ -67,6 +78,66 @@ def _resolve_tier(task_type: str) -> tuple[str | None, str | None]:
         return tier_name, workflow_label
     except Exception:
         return None, None
+
+
+def _classify_identity(name: Any, *, kind: str | None = None) -> dict[str, Any]:
+    raw = str(name or '').strip()
+    normalized = raw.lower()
+    reasons: list[str] = []
+    actor_type = 'unknown'
+    if not raw:
+        reasons.append('missing_identity')
+    else:
+        bot_markers = ('[bot]', '-bot', '_bot', ' bot', 'openclaw', 'codex', 'claude', 'gemini', 'copilot')
+        if kind == 'active_agent' and raw:
+            actor_type = 'bot'
+            reasons.append('workflow_active_agent')
+        elif any(marker in normalized for marker in bot_markers):
+            actor_type = 'bot'
+            reasons.append('matched_bot_marker')
+        elif kind in {'requester_nexus_id', 'requester_login', 'requester_user', 'requested_by', 'issue_author', 'pr_author', 'comment_author'}:
+            actor_type = 'human'
+            reasons.append('requester_or_author_identity_hint')
+        elif raw:
+            actor_type = 'likely_human'
+            reasons.append('plain_identity_without_bot_markers')
+    return {'name': raw or None, 'classification': actor_type, 'reasons': reasons}
+
+
+def _repo_slug_name(repo: Any) -> str:
+    repo_text = str(repo or '').strip()
+    if not repo_text:
+        return ''
+    return repo_text.rsplit('/', 1)[-1].lower()
+
+
+def _expected_repo_roles(project_key: str, repos: list[str], task_type: str) -> list[dict[str, Any]]:
+    normalized_task = str(task_type or 'feature').strip().lower()
+    roles: list[dict[str, Any]] = []
+    for repo in repos:
+        slug = _repo_slug_name(repo)
+        role = 'general'
+        expected_for: list[str] = []
+        notes: list[str] = []
+        if slug == 'nexus-os':
+            role = 'platform'
+            expected_for = ['ops', 'infra', 'runtime', 'deployment', 'operator']
+            notes.append('Best fit for machine/runtime/deployment or host/operator work.')
+        elif slug == 'nexus-arc':
+            role = 'framework'
+            expected_for = ['feature', 'workflow', 'plugin', 'bridge', 'orchestration']
+            notes.append('Best fit for core workflow/runtime/bridge framework changes.')
+        elif slug == 'nexus':
+            role = 'product'
+            expected_for = ['feature', 'product', 'integration', 'control-surface', 'workflow-truth']
+            notes.append('Best fit for the main Nexus repo and workflow-truth changes.')
+        else:
+            notes.append('No nexus-specific split heuristic available for this repo.')
+        task_match = any(token in normalized_task for token in expected_for) if expected_for else False
+        if project_key == 'nexus' and slug in {'nexus-arc', 'nexus'} and normalized_task in {'feature', 'bug', 'fix'}:
+            task_match = True
+        roles.append({'repo': repo, 'slug': slug, 'role': role, 'expected_work_types': expected_for, 'task_type_match': task_match, 'notes': notes})
+    return roles
 
 
 class BridgeOperatorService:
@@ -715,6 +786,145 @@ class BridgeOperatorService:
                 "provider": provider_name,
             },
         }
+
+    def _approval_store(self):
+        try:
+            from nexus.core.integrations.workflow_state_factory import get_workflow_state
+
+            return get_workflow_state()
+        except Exception:
+            return None
+
+    def _approval_gate_summary(self, workflow: Any, *, issue_number: str | None = None) -> dict[str, Any]:
+        steps = list(getattr(workflow, 'steps', []) or [])
+        pending_steps: list[dict[str, Any]] = []
+        for step in steps:
+            gates = list(getattr(step, 'approval_gates', []) or [])
+            if not gates and not bool(getattr(step, 'require_human_approval', False)):
+                continue
+            gate_types = [str(getattr(getattr(g, 'gate_type', None), 'value', getattr(g, 'gate_type', None)) or 'custom') for g in gates if getattr(g, 'required', True)]
+            tool_restrictions: list[str] = []
+            for gate in gates:
+                for restriction in list(getattr(gate, 'tool_restrictions', []) or []):
+                    value = str(restriction or '').strip()
+                    if value and value not in tool_restrictions:
+                        tool_restrictions.append(value)
+            pending_steps.append({
+                'step_num': getattr(step, 'step_num', None),
+                'step_name': getattr(step, 'name', None),
+                'status': _status_value(getattr(step, 'status', None)),
+                'requires_human_approval': bool(getattr(step, 'require_human_approval', False) or gate_types),
+                'gate_types': gate_types,
+                'tool_restrictions': tool_restrictions,
+            })
+
+        pending_record = None
+        if issue_number:
+            store = self._approval_store()
+            getter = getattr(store, 'get_pending_approval', None) if store is not None else None
+            if callable(getter):
+                try:
+                    candidate = getter(str(issue_number))
+                    pending_record = candidate if isinstance(candidate, dict) else None
+                except Exception:
+                    pending_record = None
+
+        blockers: list[dict[str, Any]] = []
+        state = _status_value(getattr(workflow, 'state', None))
+        if state == 'paused':
+            blockers.append({'type': 'workflow_paused', 'severity': 'high', 'summary': 'Workflow is paused and waiting for an explicit operator action.'})
+        if pending_record:
+            blockers.append({'type': 'approval_required', 'severity': 'high', 'summary': f"Step {pending_record.get('step_num')} is waiting for approval", 'approval': {'step_num': pending_record.get('step_num'), 'step_name': pending_record.get('step_name'), 'approvers': list(pending_record.get('approvers') or []), 'approval_timeout': pending_record.get('approval_timeout')}})
+
+        for step in steps:
+            status = _status_value(getattr(step, 'status', None))
+            name = str(getattr(step, 'name', '') or '')
+            lower_name = name.lower()
+            if status == 'pending' and any(token in lower_name for token in ('review', 'compliance', 'approval')):
+                blockers.append({'type': 'downstream_gate', 'severity': 'medium', 'summary': f'Pending downstream gate on step {getattr(step, "step_num", None)}:{name}'})
+            error_summary = _trim_error_summary(getattr(step, 'error', None))
+            if error_summary and any(token in error_summary.lower() for token in ('approval', 'blocked', 'dependency', 'waiting for human', 'compliance')):
+                blockers.append({'type': 'reported_blocker', 'severity': 'medium', 'summary': error_summary, 'step_num': getattr(step, 'step_num', None)})
+
+        seen = set()
+        unique_blockers = []
+        for blocker in blockers:
+            key = json.dumps(blocker, sort_keys=True, default=str)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_blockers.append(blocker)
+
+        return {'pending_approval': pending_record, 'step_gates': pending_steps, 'blockers': unique_blockers, 'blocking': bool(unique_blockers)}
+
+    async def workflow_blockers(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        workflow, resolved_issue, resolved_workflow_id = await self._workflow_by_ref(workflow_id=workflow_id, issue_number=issue_number)
+        if workflow is None:
+            return {'ok': False, 'error': 'Workflow not found', 'workflow_id': resolved_workflow_id, 'issue_number': resolved_issue}
+        summary = self._workflow_summary(workflow, issue_number=resolved_issue)
+        approval = self._approval_gate_summary(workflow, issue_number=resolved_issue)
+        return {'ok': True, 'workflow': summary, 'approval': approval, 'blockers': approval.get('blockers') or [], 'blocking': bool(approval.get('blocking'))}
+
+    async def workflow_authorship_audit(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        workflow, resolved_issue, resolved_workflow_id = await self._workflow_by_ref(workflow_id=workflow_id, issue_number=issue_number)
+        if workflow is None:
+            return {'ok': False, 'error': 'Workflow not found', 'workflow_id': resolved_workflow_id, 'issue_number': resolved_issue}
+        metadata = getattr(workflow, 'metadata', {}) or {}
+        provenance: list[dict[str, Any]] = []
+        for kind, value in [('requester_nexus_id', metadata.get('requester_nexus_id')), ('requester_login', metadata.get('requester_login')), ('requested_by', metadata.get('requested_by')), ('issue_author', metadata.get('issue_author')), ('pr_author', metadata.get('pr_author')), ('comment_author', metadata.get('comment_author')), ('source_platform', metadata.get('source_platform')), ('active_agent', getattr(workflow, 'active_agent_type', None))]:
+            info = _classify_identity(value, kind=kind)
+            if info.get('name') is None:
+                continue
+            provenance.append({'source': kind, **info})
+
+        bot_votes = sum(1 for item in provenance if item.get('classification') == 'bot')
+        human_votes = sum(1 for item in provenance if item.get('classification') in {'human', 'likely_human'})
+        overall = 'unknown'
+        explicit_human_request = any(item.get('source') in {'requester_nexus_id', 'requester_login', 'requested_by', 'issue_author', 'pr_author'} and item.get('classification') in {'human', 'likely_human'} for item in provenance)
+        if bot_votes > human_votes and not explicit_human_request:
+            overall = 'bot_authored_or_bot_forwarded'
+        elif human_votes > 0 and (human_votes >= bot_votes or explicit_human_request):
+            overall = 'human_requested'
+        elif provenance:
+            overall = str(provenance[0].get('classification') or 'unknown')
+
+        return {'ok': True, 'workflow': self._workflow_summary(workflow, issue_number=resolved_issue), 'authorship': {'classification': overall, 'provenance': provenance, 'human_signals': human_votes, 'bot_signals': bot_votes, 'note': 'Best-effort classification from workflow metadata/runtime identity only; secret values are never returned.'}}
+
+    async def routing_validate(
+        self,
+        *,
+        project_key: str,
+        task_type: str = 'feature',
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        agent_name: str | None = None,
+    ) -> dict[str, Any]:
+        explained = await self.routing_explain(project_key=project_key, task_type=task_type, workflow_id=workflow_id, issue_number=issue_number, agent_name=agent_name)
+        if not explained.get('ok'):
+            return explained
+        repos = list(explained.get('repos') or [])
+        repo_roles = _expected_repo_roles(str(project_key), repos, str(task_type))
+        validations: list[dict[str, Any]] = []
+        default_branch = str(explained.get('default_branch') or '').strip() or None
+        validations.append({'status': 'ok' if repos else 'error', 'check': 'repos_configured', 'message': f'{len(repos)} repo(s) configured' if repos else 'No repos are configured for this project.'})
+        validations.append({'status': 'ok' if default_branch else 'warning', 'check': 'default_branch', 'message': f'Default branch is {default_branch}' if default_branch else 'No default branch configured; Nexus will typically fall back to main.'})
+        if str(project_key) == 'nexus':
+            expected = {'nexus-os', 'nexus-arc', 'nexus'}
+            seen = {_repo_slug_name(repo) for repo in repos}
+            missing = sorted(expected - seen)
+            validations.append({'status': 'ok' if not missing else 'warning', 'check': 'nexus_repo_split', 'message': 'All expected nexus split repos are configured.' if not missing else f"Missing expected nexus split repo(s): {', '.join(missing)}"})
+        active_role = next((item for item in repo_roles if item.get('task_type_match')), None)
+        return {'ok': True, **explained, 'validation': {'checks': validations, 'repo_roles': repo_roles, 'recommended_repo': active_role.get('repo') if active_role else explained.get('default_repo'), 'provider_expectation': explained.get('resolved_profile', {}), 'note': 'Validation is best-effort and based on current PROJECT_CONFIG plus repo-name heuristics for the nexus multi-repo split.'}}
 
     async def continue_workflow(
         self,

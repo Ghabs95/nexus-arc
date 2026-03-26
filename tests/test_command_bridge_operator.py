@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from nexus.core.command_bridge.operator import BridgeOperatorService
-from nexus.core.models import Agent, StepStatus, Workflow, WorkflowState, WorkflowStep
+from nexus.core.models import Agent, ApprovalGate, ApprovalGateType, StepStatus, Workflow, WorkflowState, WorkflowStep
 
 
 class _Storage:
@@ -25,6 +25,14 @@ class _Engine:
 
     async def get_workflow(self, workflow_id):
         return self.workflows.get(workflow_id)
+
+
+class _ApprovalStore:
+    def __init__(self, pending=None):
+        self.pending = pending or {}
+
+    def get_pending_approval(self, issue_num):
+        return self.pending.get(str(issue_num))
 
 
 class _Plugin:
@@ -130,21 +138,52 @@ def operator_service(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> BridgeO
         issue_number="104",
     )
 
-    workflows = {wf.id: wf for wf in [failed, paused, running, handoff]}
+    review = _workflow(
+        "demo-105-full",
+        WorkflowState.RUNNING,
+        [
+            _step(1, "triage", "triage", StepStatus.COMPLETED),
+            WorkflowStep(
+                step_num=2,
+                name="review",
+                agent=_agent("reviewer"),
+                prompt_template="...",
+                status=StepStatus.PENDING,
+                require_human_approval=True,
+                approval_gates=[ApprovalGate(gate_type=ApprovalGateType.CUSTOM, tool_restrictions=["merge_pr"], approval_message="Need human approval")],
+            ),
+            _step(3, "compliance", "compliance", StepStatus.PENDING),
+        ],
+        current_step=2,
+        issue_number="105",
+        project="nexus",
+    )
+    review.metadata.update({
+        "requester_login": "gab",
+        "issue_author": "Gab",
+        "comment_author": "nexus-operator[bot]",
+        "source_platform": "openclaw",
+    })
+
+    workflows = {wf.id: wf for wf in [failed, paused, running, handoff, review]}
     storage = _Storage(
         {
             WorkflowState.FAILED: [failed],
             WorkflowState.PAUSED: [paused],
-            WorkflowState.RUNNING: [running, handoff],
+            WorkflowState.RUNNING: [running, handoff, review],
             WorkflowState.CANCELLED: [],
         }
     )
     plugin = _Plugin(
         _Engine(workflows, storage),
-        issue_map={"101": failed.id, "102": paused.id, "103": running.id, "104": handoff.id},
+        issue_map={"101": failed.id, "102": paused.id, "103": running.id, "104": handoff.id, "105": review.id},
         plugin_status_map={"103": {"current_agent_type": "developer"}},
     )
     monkeypatch.setattr("nexus.core.command_bridge.operator.get_workflow_state_plugin", lambda **kwargs: plugin)
+    monkeypatch.setattr(
+        "nexus.core.integrations.workflow_state_factory.get_workflow_state",
+        lambda: _ApprovalStore({"105": {"step_num": 2, "step_name": "review", "approvers": ["human"], "approval_timeout": 3600}}),
+    )
 
     logs_dir = tmp_path / ".nexus" / "tasks" / "demo" / "logs"
     logs_dir.mkdir(parents=True)
@@ -208,3 +247,54 @@ async def test_workflow_logs_context_returns_summary_plus_recent_log_tail(operat
     assert payload["log_count"] == 1
     assert payload["log_context"][0]["file"] == "20260326_103_developer.log"
     assert any("issue #103" in line for line in payload["log_context"][0]["lines"])
+
+
+@pytest.mark.asyncio
+async def test_workflow_authorship_audit_classifies_bot_vs_human_signals(operator_service: BridgeOperatorService):
+    payload = await operator_service.workflow_authorship_audit(issue_number="105")
+
+    assert payload["ok"] is True
+    assert payload["authorship"]["classification"] == "human_requested"
+    assert any(item["source"] == "comment_author" and item["classification"] == "bot" for item in payload["authorship"]["provenance"])
+    assert any(item["source"] == "requester_login" and item["classification"] == "human" for item in payload["authorship"]["provenance"])
+
+
+@pytest.mark.asyncio
+async def test_routing_validate_explains_nexus_repo_split(operator_service: BridgeOperatorService, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "nexus.core.command_bridge.operator._config",
+        lambda: ({
+            "nexus": {
+                "workflow_definition_path": "nexus/workflows/main.yaml",
+                "git_platform": "github",
+                "git_repo": "Ghabs95/nexus",
+                "git_repos": ["Ghabs95/nexus-os", "Ghabs95/nexus-arc", "Ghabs95/nexus"],
+                "git_branches": {"default": "develop"},
+                "ai_tool_preferences": {"developer": {"profile": "reasoning", "provider": "codex"}},
+                "model_profiles": {"reasoning": {"codex": "gpt-5.4"}},
+                "profile_provider_priority": {"reasoning": ["codex", "gemini"]},
+            }
+        }, "Ghabs95/nexus"),
+    )
+
+    payload = await operator_service.routing_validate(project_key="nexus", task_type="operator")
+
+    assert payload["ok"] is True
+    assert payload["validation"]["recommended_repo"] == "Ghabs95/nexus-os"
+    checks = {item["check"]: item for item in payload["validation"]["checks"]}
+    assert checks["nexus_repo_split"]["status"] == "ok"
+    roles = {item["slug"]: item for item in payload["validation"]["repo_roles"]}
+    assert roles["nexus-os"]["task_type_match"] is True
+    assert roles["nexus-arc"]["role"] == "framework"
+
+
+@pytest.mark.asyncio
+async def test_workflow_blockers_surfaces_approvals_and_pauses(operator_service: BridgeOperatorService):
+    paused_payload = await operator_service.workflow_blockers(issue_number="102")
+    approval_payload = await operator_service.workflow_blockers(issue_number="105")
+
+    assert paused_payload["blocking"] is True
+    assert any(item["type"] == "workflow_paused" for item in paused_payload["blockers"])
+    assert approval_payload["blocking"] is True
+    assert approval_payload["approval"]["pending_approval"]["step_name"] == "review"
+    assert any(item["type"] == "approval_required" for item in approval_payload["blockers"])

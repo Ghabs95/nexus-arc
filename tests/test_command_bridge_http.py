@@ -75,11 +75,20 @@ class _FakeRouter:
     async def get_workflow_diagnosis(self, *, workflow_id=None, issue_number=None):
         return {"ok": True, "diagnosis": "agent_running", "likely_cause": "demo cause", "workflow_id": workflow_id, "issue_number": issue_number}
 
+    async def get_workflow_authorship_audit(self, *, workflow_id=None, issue_number=None):
+        return {"ok": True, "workflow_id": workflow_id, "issue_number": issue_number, "authorship": {"classification": "human_requested"}}
+
+    async def get_workflow_blockers(self, *, workflow_id=None, issue_number=None):
+        return {"ok": True, "workflow_id": workflow_id, "issue_number": issue_number, "blocking": True, "blockers": [{"type": "approval_required"}]}
+
     async def get_workflow_logs_context(self, *, workflow_id=None, issue_number=None):
         return {"ok": True, "workflow_id": workflow_id, "issue_number": issue_number, "log_context": [{"file": "demo.log", "lines": ["hello"]}]}
 
     async def explain_routing(self, **kwargs):
         return {"ok": True, **kwargs}
+
+    async def validate_routing(self, **kwargs):
+        return {"ok": True, "validation": {"recommended_repo": "Ghabs95/nexus-os"}, **kwargs}
 
     async def continue_workflow(self, **kwargs):
         return {"ok": True, "action": "continue", **kwargs}
@@ -625,6 +634,61 @@ def test_operator_workflow_logs_context_endpoint_returns_payload():
 
     assert status.startswith("200")
     assert payload["log_context"][0]["file"] == "demo.log"
+
+
+def test_operator_workflow_authorship_audit_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/authorship-audit",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "workflow_id=demo-42-full"},
+    )
+
+    assert status.startswith("200")
+    assert payload["authorship"]["classification"] == "human_requested"
+
+
+def test_operator_workflow_blockers_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/blockers",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "workflow_id=demo-42-full"},
+    )
+
+    assert status.startswith("200")
+    assert payload["blocking"] is True
+    assert payload["blockers"][0]["type"] == "approval_required"
+
+
+def test_operator_routing_validate_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/routing/validate",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "project_key=nexus&task_type=operator"},
+    )
+
+    assert status.startswith("200")
+    assert payload["validation"]["recommended_repo"] == "Ghabs95/nexus-os"
 
 
 def test_operator_workflow_status_returns_400_when_no_ref():

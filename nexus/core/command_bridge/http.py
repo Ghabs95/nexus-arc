@@ -209,6 +209,26 @@ def create_command_bridge_app(
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
 
+            if method == "GET" and path == "/api/v1/operator/workflows/authorship-audit":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.get_workflow_authorship_audit(
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
+
+            if method == "GET" and path == "/api/v1/operator/workflows/blockers":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.get_workflow_blockers(
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
+
             if method == "GET" and path == "/api/v1/operator/workflows/logs-context":
                 params = _query_params(environ)
                 payload = asyncio.run(
@@ -222,6 +242,32 @@ def create_command_bridge_app(
             if method == "GET" and path == "/api/v1/operator/git/identity":
                 payload = asyncio.run(router.get_git_identity_status())
                 return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
+
+            if method == "GET" and path == "/api/v1/operator/routing/explain":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.explain_routing(
+                        project_key=_str_param(params, "project_key") or "",
+                        task_type=_str_param(params, "task_type") or "feature",
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                        agent_name=_str_param(params, "agent_name"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+
+            if method == "GET" and path == "/api/v1/operator/routing/validate":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.validate_routing(
+                        project_key=_str_param(params, "project_key") or "",
+                        task_type=_str_param(params, "task_type") or "feature",
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                        agent_name=_str_param(params, "agent_name"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
 
             if method == "GET" and path == "/api/v1/operator/routing/explain":
                 params = _query_params(environ)
