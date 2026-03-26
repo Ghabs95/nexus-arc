@@ -2,7 +2,51 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
+
+
+def resolve_automation_token_for_platform(platform: str | None = None) -> str | None:
+    """Return the best automation token for the given git platform using env vars.
+
+    Preference order:
+    1. Platform-specific automation token:
+       - GitHub: NEXUS_AUTOMATION_GITHUB_TOKEN, NEXUS_GITHUB_WRITE_TOKEN, GITHUB_TOKEN, GH_TOKEN
+       - GitLab: NEXUS_AUTOMATION_GITLAB_TOKEN, GITLAB_TOKEN, GLAB_TOKEN
+    2. Generic automation token (any platform): NEXUS_AUTOMATION_GIT_TOKEN
+    3. If platform is unknown/None: all of the above are tried in order.
+
+    For a known platform, only tokens appropriate for that platform are checked.
+    """
+    norm_platform = str(platform or "").strip().lower()
+
+    if norm_platform == "github":
+        for key in ("NEXUS_AUTOMATION_GITHUB_TOKEN", "NEXUS_GITHUB_WRITE_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"):
+            token = str(os.getenv(key, "")).strip()
+            if token:
+                return token
+    elif norm_platform == "gitlab":
+        for key in ("NEXUS_AUTOMATION_GITLAB_TOKEN", "GITLAB_TOKEN", "GLAB_TOKEN"):
+            token = str(os.getenv(key, "")).strip()
+            if token:
+                return token
+    else:
+        # Unknown/None platform — try all platform-specific tokens first
+        for key in (
+            "NEXUS_AUTOMATION_GITHUB_TOKEN",
+            "NEXUS_AUTOMATION_GITLAB_TOKEN",
+            "NEXUS_GITHUB_WRITE_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "GITLAB_TOKEN",
+            "GLAB_TOKEN",
+        ):
+            token = str(os.getenv(key, "")).strip()
+            if token:
+                return token
+
+    # Generic token is the final fallback for any known or unknown platform
+    return str(os.getenv("NEXUS_AUTOMATION_GIT_TOKEN", "")).strip() or None
 
 
 def resolve_repo(config: dict[str, Any] | None, default_repo: str) -> str:

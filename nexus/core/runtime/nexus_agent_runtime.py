@@ -47,53 +47,19 @@ _last_issue_open_error_log_at: dict[tuple[str, str], float] = {}
 
 
 def _runtime_token_override(platform: str | None = None) -> str | None:
-    """Return the best automation token for the given git platform.
+    """Return the best automation token for the given git platform using env vars.
 
-    Preference order:
+    Preference order (from environment variables only):
     - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
     - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
-    - Platform-specific write/service tokens
-    - Requester token as last resort
+    - Platform-specific write/service tokens (e.g. NEXUS_GITHUB_WRITE_TOKEN, GITHUB_TOKEN, GH_TOKEN,
+      GITLAB_TOKEN, GLAB_TOKEN)
+
+    When platform is None or unknown, all token env vars are tried in the order above.
     """
-    norm_platform = str(platform or "").strip().lower()
-    if norm_platform in ("github", ""):
-        github_keys = (
-            "NEXUS_AUTOMATION_GITHUB_TOKEN",
-            "NEXUS_AUTOMATION_GIT_TOKEN",
-            "NEXUS_GITHUB_WRITE_TOKEN",
-            "GITHUB_TOKEN",
-            "GH_TOKEN",
-        )
-        for key in github_keys:
-            token = str(os.getenv(key, "")).strip()
-            if token:
-                return token
-    if norm_platform in ("gitlab", ""):
-        gitlab_keys = (
-            "NEXUS_AUTOMATION_GITLAB_TOKEN",
-            "NEXUS_AUTOMATION_GIT_TOKEN",
-            "GITLAB_TOKEN",
-            "GLAB_TOKEN",
-        )
-        for key in gitlab_keys:
-            token = str(os.getenv(key, "")).strip()
-            if token:
-                return token
-    # Fallback for unknown platform — try all
-    for key in (
-        "NEXUS_AUTOMATION_GITHUB_TOKEN",
-        "NEXUS_AUTOMATION_GITLAB_TOKEN",
-        "NEXUS_AUTOMATION_GIT_TOKEN",
-        "NEXUS_GITHUB_WRITE_TOKEN",
-        "GITHUB_TOKEN",
-        "GH_TOKEN",
-        "GITLAB_TOKEN",
-        "GLAB_TOKEN",
-    ):
-        token = str(os.getenv(key, "")).strip()
-        if token:
-            return token
-    return None
+    from nexus.adapters.git.utils import resolve_automation_token_for_platform
+
+    return resolve_automation_token_for_platform(platform)
 
 
 def _resolve_project_name_for_repo(repo: str) -> str | None:
