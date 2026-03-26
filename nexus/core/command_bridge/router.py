@@ -62,7 +62,12 @@ from nexus.core.handlers.monitoring_command_handlers import (
     tail_handler,
     tailstop_handler,
 )
-from nexus.core.handlers.ops_command_handlers import agents_handler, audit_handler, direct_handler, stats_handler
+from nexus.core.handlers.ops_command_handlers import (
+    agents_handler,
+    audit_handler,
+    direct_handler,
+    stats_handler,
+)
 from nexus.core.handlers.workflow_command_handlers import (
     continue_handler,
     forget_handler,
@@ -75,7 +80,6 @@ from nexus.core.handlers.workflow_command_handlers import (
     wfstate_handler,
 )
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
-from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 from nexus.core.project.catalog import get_project_label, iter_project_keys, single_key
 from nexus.core.telegram.telegram_issue_selection_service import parse_project_issue_args
 from nexus.core.user_manager import get_user_manager
