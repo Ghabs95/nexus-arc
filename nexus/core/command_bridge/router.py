@@ -539,6 +539,11 @@ class CommandRouter:
         payload["issue_number"] = issue_number
         payload["project_key"] = project_key
         payload["usage"] = usage.to_dict() if usage is not None else {}
+        # Preserve backwards compatibility: ensure legacy "status" key is present.
+        if "status" not in payload:
+            plugin_status = payload.get("plugin_status")
+            if isinstance(plugin_status, dict):
+                payload["status"] = plugin_status
         return payload
 
     async def get_runtime_health(self) -> dict[str, Any]:

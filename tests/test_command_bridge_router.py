@@ -476,3 +476,31 @@ async def test_route_maps_workflow_summary_request_to_summary(router: CommandRou
 
     assert result.status == "success"
     assert result.message == "Workflow summary"
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_status_includes_backwards_compat_status_key(
+    router: CommandRouter, monkeypatch: pytest.MonkeyPatch
+):
+    async def _fake_usage(*, project_key=None, issue_number=None, workflow_id=None):
+        del project_key, issue_number, workflow_id
+        return None
+
+    monkeypatch.setattr("nexus.core.command_bridge.router.collect_bridge_usage_payload", _fake_usage)
+
+    class _FakeOperatorService:
+        async def workflow_status(self, *, workflow_id=None, issue_number=None):
+            return {
+                "ok": True,
+                "workflow": {"workflow_id": "demo-42-full", "issue_number": "42", "project_key": None},
+                "plugin_status": {"state": "running", "phase": "executing"},
+            }
+
+    router.operator_service = _FakeOperatorService()
+
+    payload = await router.get_workflow_status("demo-42-full")
+
+    assert payload["ok"] is True
+    # The legacy "status" key must be present and mirror plugin_status.
+    assert "status" in payload
+    assert payload["status"] == {"state": "running", "phase": "executing"}

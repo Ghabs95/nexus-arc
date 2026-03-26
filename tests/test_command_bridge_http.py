@@ -562,3 +562,73 @@ def test_operator_workflow_why_stuck_endpoint_returns_payload():
 
     assert status.startswith("200")
     assert payload["diagnosis"] == "agent_running"
+
+
+def test_operator_workflow_status_returns_400_when_no_ref():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/status",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("400")
+    assert payload["ok"] is False
+    assert "workflow_id" in payload["error"] or "issue_number" in payload["error"]
+
+
+def test_operator_workflow_summary_returns_400_when_no_ref():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/summary",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("400")
+    assert payload["ok"] is False
+
+
+def test_operator_workflow_why_stuck_returns_400_when_no_ref():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/why-stuck",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("400")
+    assert payload["ok"] is False
+
+
+def test_operator_retry_step_returns_400_when_target_agent_missing():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/operator/workflows/retry-step",
+        auth="Bearer secret",
+        payload={"workflow_id": "demo-42-full"},
+    )
+
+    assert status.startswith("400")
+    assert "target_agent" in payload["error"].lower()

@@ -142,30 +142,54 @@ def create_command_bridge_app(
 
             if method == "GET" and path == "/api/v1/operator/workflows/status":
                 params = _query_params(environ)
+                workflow_id = _str_param(params, "workflow_id")
+                issue_number = _str_param(params, "issue_number")
+                if not workflow_id and not issue_number:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "Missing query parameter: provide 'workflow_id' or 'issue_number'."},
+                    )
                 payload = asyncio.run(
                     router.operator_service.workflow_status(
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
+                        workflow_id=workflow_id,
+                        issue_number=issue_number,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
 
             if method == "GET" and path == "/api/v1/operator/workflows/summary":
                 params = _query_params(environ)
+                workflow_id = _str_param(params, "workflow_id")
+                issue_number = _str_param(params, "issue_number")
+                if not workflow_id and not issue_number:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "Missing query parameter: provide 'workflow_id' or 'issue_number'."},
+                    )
                 payload = asyncio.run(
                     router.get_workflow_summary(
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
+                        workflow_id=workflow_id,
+                        issue_number=issue_number,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
 
             if method == "GET" and path == "/api/v1/operator/workflows/why-stuck":
                 params = _query_params(environ)
+                workflow_id = _str_param(params, "workflow_id")
+                issue_number = _str_param(params, "issue_number")
+                if not workflow_id and not issue_number:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "Missing query parameter: provide 'workflow_id' or 'issue_number'."},
+                    )
                 payload = asyncio.run(
                     router.get_workflow_diagnosis(
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
+                        workflow_id=workflow_id,
+                        issue_number=issue_number,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
@@ -200,11 +224,14 @@ def create_command_bridge_app(
 
             if method == "POST" and path == "/api/v1/operator/workflows/retry-step":
                 payload = _load_json_body(environ)
+                target_agent = str(payload.get("target_agent") or "").strip()
+                if not target_agent:
+                    raise ValueError("target_agent is required for retry-step requests")
                 result = asyncio.run(
                     router.retry_workflow_step(
                         workflow_id=str(payload.get("workflow_id") or "").strip() or None,
                         issue_number=str(payload.get("issue_number") or "").strip() or None,
-                        target_agent=str(payload.get("target_agent") or "").strip(),
+                        target_agent=target_agent,
                     )
                 )
                 return _json_response(start_response, 200 if result.get("ok") else 400, result)

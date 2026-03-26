@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 import shutil
@@ -182,6 +183,13 @@ class BridgeOperatorService:
                 "workflow_id": resolved_workflow_id,
                 "issue_number": resolved_issue,
             }
+        # Recover issue_number from workflow metadata when only workflow_id was given.
+        if resolved_issue is None:
+            metadata = getattr(workflow, "metadata", None)
+            if isinstance(metadata, dict):
+                meta_issue = metadata.get("issue_number") or metadata.get("issue")
+                if meta_issue is not None:
+                    resolved_issue = str(meta_issue)
         plugin = self._workflow_plugin()
         plugin_status = None
         if resolved_issue:
@@ -388,8 +396,10 @@ class BridgeOperatorService:
         }
 
     async def git_identity_status(self) -> dict[str, Any]:
-        github = self._cli_identity("gh", ["auth", "status"])
-        gitlab = self._cli_identity("glab", ["auth", "status"])
+        github, gitlab = await asyncio.gather(
+            asyncio.to_thread(self._cli_identity, "gh", ["auth", "status"]),
+            asyncio.to_thread(self._cli_identity, "glab", ["auth", "status"]),
+        )
         env_presence = {
             "github": {
                 "NEXUS_AUTOMATION_GITHUB_TOKEN": bool(str(os.getenv("NEXUS_AUTOMATION_GITHUB_TOKEN") or "").strip()),
@@ -468,17 +478,43 @@ class BridgeOperatorService:
         target_agent: str | None = None,
     ) -> dict[str, Any]:
         plugin = self._workflow_plugin()
-        workflow, resolved_issue, _ = await self._workflow_by_ref(workflow_id=workflow_id, issue_number=issue_number)
-        if workflow is None or resolved_issue is None:
-            return {"ok": False, "error": "Workflow not found", "issue_number": resolved_issue}
+        workflow, resolved_issue, resolved_workflow_id = await self._workflow_by_ref(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+        if workflow is None:
+            return {
+                "ok": False,
+                "error": "Workflow not found",
+                "issue_number": resolved_issue,
+                "workflow_id": resolved_workflow_id,
+            }
+        # Recover issue_number from workflow metadata when only workflow_id was given.
+        if resolved_issue is None:
+            metadata = getattr(workflow, "metadata", None)
+            if isinstance(metadata, dict):
+                meta_issue = metadata.get("issue_number") or metadata.get("issue")
+                if meta_issue is not None:
+                    resolved_issue = str(meta_issue)
         if target_agent:
+            if resolved_issue is None:
+                return {
+                    "ok": False,
+                    "error": "Cannot reset workflow step: issue_number could not be resolved",
+                    "workflow_id": resolved_workflow_id,
+                }
             reset = getattr(plugin, "reset_to_agent_for_issue", None)
             if not callable(reset):
                 return {"ok": False, "error": "Workflow plugin does not support reset_to_agent_for_issue"}
             success = await _maybe_await(reset(str(resolved_issue), str(target_agent)))
             if not success:
-                return {"ok": False, "error": f"Could not reset workflow to agent '{target_agent}'"}
-        return await self.workflow_status(issue_number=resolved_issue)
+                return {
+                    "ok": False,
+                    "error": f"Could not reset workflow to agent '{target_agent}'",
+                    "issue_number": resolved_issue,
+                    "workflow_id": resolved_workflow_id,
+                }
+        return await self.workflow_status(workflow_id=resolved_workflow_id, issue_number=resolved_issue)
 
     async def retry_step(
         self,
