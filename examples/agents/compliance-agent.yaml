@@ -49,9 +49,23 @@ spec:
     - Third-party data sharing
     - Logging of sensitive data
 
-    Approve if compliant, or block with specific issues listed.
     Keep your review comment concise — list only actionable findings,
     do NOT paste raw scan output or logs.
+
+    ## ROUTING RULES (mandatory)
+
+    Your findings determine the next agent. You MUST follow these rules exactly:
+
+    - If you find ANY blocking issue (🔴 CRITICAL or 🟠 HIGH severity that is unresolved):
+      - Set compliance_status = "blocked"
+      - Your comment MUST end with: Ready for **@Developer**
+      - The developer agent will address the blocking remediation items before compliance re-runs.
+
+    - If ALL findings are non-blocking (🟡 MEDIUM or 🟢 LOW only, or no issues):
+      - Set compliance_status = "approved"
+      - Your comment MUST end with: Ready for **@Deployer**
+
+    Do NOT route to @Deployer when there are unresolved CRITICAL or HIGH severity findings.
 
   validation:
     required_outputs: [ "compliance_status" ]

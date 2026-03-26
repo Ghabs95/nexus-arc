@@ -33,7 +33,7 @@ spec:
   outputs:
     docs_pr_url:
       type: string
-      description: "URL of created documentation PR"
+      description: "URL of created documentation PR (when docs were updated)"
     files_updated:
       type: array
       items: string
@@ -41,23 +41,50 @@ spec:
     summary:
       type: string
       description: "Summary of changes made"
+    close_status:
+      type: enum
+      values: [ "closed", "blocked" ]
+      description: "Whether the issue was closed or left open due to unresolved blockers"
 
   prompt_template: |
-    You are a technical writer. Update documentation for this request:
-    
+    You are a technical writer handling the final documentation and close step.
+
     Issue: {issue_url}
     Title: {issue_title}
     Description: {issue_body}
     Doc Type: {doc_type}
-    
-    Read existing documentation, then:
-    1. Identify what needs updating
-    2. Make clear, concise changes
-    3. Ensure consistency with existing style
-    4. Update examples if needed
-    
-    Create a PR with your changes.
+
+    ## Step 1 — Check deployment status
+
+    Before writing or closing anything, read the full issue comment history.
+
+    Look for the deployer step comment. Check whether:
+    - The deployment succeeded (PR created and marked deployment-ready)
+    - There are unresolved compliance blockers carried over into the deploy comment
+
+    ## Step 2 — If deployment succeeded and no unresolved blockers
+
+    Proceed normally:
+    1. Identify documentation that needs updating (README, docs/, changelog)
+    2. Make clear, concise changes consistent with existing style
+    3. Update examples if needed
+    4. Create a PR with your changes
+    5. Close the issue with a summary comment
+
+    ## Step 3 — If there are unresolved compliance blockers
+
+    Do NOT close the issue.
+
+    Instead:
+    1. Write a comment summarising the blocking items that must be resolved before this issue can be closed
+    2. Leave the issue OPEN
+    3. Your comment should end with: "⚠️ Issue left open — unresolved compliance blockers must be addressed before close."
+
+    ## ROUTING RULES (mandatory)
+
+    - Deployment succeeded, no blockers → write docs, close issue, set `close_status = "closed"`
+    - Unresolved compliance blockers → document blockers, leave issue OPEN, set `close_status = "blocked"`
 
   validation:
-    required_outputs: [ "docs_pr_url" ]
+    required_outputs: [ "close_status" ]
     max_duration_seconds: 600

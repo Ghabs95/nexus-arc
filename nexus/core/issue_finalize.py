@@ -10,24 +10,14 @@ import subprocess
 import threading
 from typing import Any
 
+from nexus.core.auth.git_token import resolve_automation_git_token as _automation_git_token
+
 logger = logging.getLogger(__name__)
 _GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/([0-9]+)", re.IGNORECASE)
 _GITLAB_MR_URL_RE = re.compile(r"/-/merge_requests/([0-9]+)", re.IGNORECASE)
 
 
-def _automation_git_token(platform: str | None = None) -> str | None:
-    """Return the best automation token for the given git platform using env vars.
-
-    Preference order (from environment variables only):
-    - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
-    - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
-    - Platform-specific write/service tokens
-    """
-    from nexus.adapters.git.utils import resolve_automation_token_for_platform
-
-    return resolve_automation_token_for_platform(platform)
-
-
+>>>>>>> 008bd2c (refactor(auth): extract shared automation git token helper; platform-aware token selection)
 def _run_sync(awaitable_factory):
     def _close_awaitable_if_needed(candidate: object | None) -> None:
         if candidate is None or not inspect.isawaitable(candidate):
@@ -113,6 +103,7 @@ def get_git_platform(
     )
 
 
+<<<<<<< HEAD
 def _get_project_platform(project_name: str) -> str | None:
     """Return the VCS platform for a project (``github`` or ``gitlab``), or None on failure."""
     try:
@@ -120,6 +111,14 @@ def _get_project_platform(project_name: str) -> str | None:
 
         return get_project_platform(project_name)
     except (ImportError, KeyError, ValueError):
+=======
+def _detect_project_platform(project_name: str | None) -> str | None:
+    """Return 'github' or 'gitlab' for the given project, or None if unresolvable."""
+    try:
+        from nexus.core.config import get_project_platform
+
+        return get_project_platform(project_name) or None
+    except Exception:
         return None
 
 
@@ -356,7 +355,7 @@ def create_pr_from_changes(
     platform = get_git_platform(
         repo,
         project_name=project_name,
-        token_override=(_automation_git_token(_get_project_platform(project_name)) or token_override),
+        token_override=(_automation_git_token(_detect_project_platform(project_name)) or token_override),
     )
     pr_result = _run_sync(
         lambda: platform.create_pr_from_changes(
