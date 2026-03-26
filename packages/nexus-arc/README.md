@@ -90,6 +90,8 @@ Examples:
 - `/nexus wfstate demo-42-full`
 - `/nexus show me the workflow state for demo#42`
 
+The plugin now forwards richer bridge metadata with each request and signs each bridge call with per-request replay headers (`X-Nexus-Timestamp`, `X-Nexus-Nonce`) so the bridge can enforce freshness/non-reuse when replay protection is enabled.
+
 The plugin now forwards richer bridge metadata with each request:
 
 - requester identity: `operator_id`, `session_id`, `roles`
@@ -123,6 +125,17 @@ When the Nexus bridge returns `usage` metadata, the plugin renders provider,
 model, token, and estimated cost details directly in the OpenClaw response.
 The bridge now fills that field on a best-effort basis from recent completion
 storage or the latest agent log for the referenced issue/workflow.
+
+## Hardened reply/control slice
+
+The first issue #6 hardening slice now adds a safer Nexus-side reply/control contract:
+
+- Nexus → OpenClaw workflow notifications include a short-lived signed `reply_token`
+- the reply token is bound to the emitted `correlation_token`, workflow id, target sender, and allowed actions
+- inbound `/api/v1/bridge/openclaw/reply` calls must include both `correlation_id` and `reply_token`
+- stale or replayed reply tokens are rejected explicitly instead of being accepted ambiguously
+- supported reply actions in this slice are: `show_status`, `show_logs`, `continue`, `cancel`, `refresh_state`
+- unsupported actions fail closed with a clear operator-facing message so OpenClaw can fall back to an explicit `/nexus ...` command
 
 Additional bridge-aware behavior:
 

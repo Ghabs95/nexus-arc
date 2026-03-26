@@ -134,5 +134,10 @@ class BridgeReplyRequestPayload(TypedDict, total=False):
     content: str
     sender_id: str
     session_id: str
+    workflow_id: str
+    issue_number: str
+    project_key: str
+    action: str
+    reply_token: str
     status: str
     metadata: dict[str, Any]

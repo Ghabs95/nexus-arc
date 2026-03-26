@@ -234,6 +234,18 @@ const sessionStateStore = new Map<string, SessionState>();
 const workflowSessionBindings = new Map<string, SessionAffinityBinding>();
 const pendingConfirmations = new Map<string, PendingConfirmation>();
 
+function buildRequestReplayHeaders(): Record<string, string> {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const nonce =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return {
+        "x-nexus-timestamp": timestamp,
+        "x-nexus-nonce": nonce
+    };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
@@ -893,6 +905,7 @@ async function fetchJson(
         if (config.authToken) {
             headers.authorization = `Bearer ${config.authToken}`;
         }
+        Object.assign(headers, buildRequestReplayHeaders());
         let response: Response;
         try {
             response = await fetch(`${config.bridgeUrl}${path}`, {
