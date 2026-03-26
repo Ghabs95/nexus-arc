@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 
 @pytest.mark.asyncio
@@ -46,7 +47,7 @@ async def test_openclaw_event_handler_sends_rich_step_failed_notification(monkey
 
 
 @pytest.mark.asyncio
-async def test_openclaw_event_handler_maps_approval_required_to_waiting_human(monkeypatch):
+async def test_openclaw_event_handler_sends_approval_required_notification(monkeypatch):
     from nexus.core.events import ApprovalRequired
     from nexus.plugins.builtin.openclaw_event_handler_plugin import OpenClawEventHandler
 

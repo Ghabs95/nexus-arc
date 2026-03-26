@@ -134,8 +134,23 @@ class OpenClawEventHandler:
     async def _handle(self, event: NexusEvent) -> None:
         data = dict(getattr(event, "data", {}) or {})
         workflow_id = _safe_str(getattr(event, "workflow_id", ""))
-        project_key = _safe_str(data.get("project_key") or data.get("project"))
-        issue_number = _safe_str(data.get("issue_number"))
+        project_key = _safe_str(
+            data.get("project_key")
+            or data.get("project")
+            or (
+                getattr(event, "project_key", "")
+                if isinstance(event, SystemAlert)
+                else ""
+            )
+        )
+        issue_number = _safe_str(
+            data.get("issue_number")
+            or (
+                getattr(event, "issue_number", "")
+                if isinstance(event, SystemAlert)
+                else ""
+            )
+        )
         repo = _safe_str(data.get("repo"))
         pr_number = _safe_str(data.get("pr_number"))
         pr_url = _safe_str(data.get("pr_url"))
