@@ -103,6 +103,23 @@ type SessionState = {
     currentProject: string | null;
     currentIssueRef: string | null;
     currentWorkflowId: string | null;
+    affinitySessionKey: string | null;
+    affinityBoundAt: number | null;
+    lastCorrelationId: string | null;
+    lastMessageId: string | null;
+    lastThreadId: string | null;
+};
+
+export type SessionAffinityBinding = {
+    workflowId: string;
+    sessionId: string;
+    sessionKey: string;
+    issueRef: string | null;
+    projectKey: string | null;
+    boundAt: number;
+    lastCorrelationId: string | null;
+    lastMessageId: string | null;
+    lastThreadId: string | null;
 };
 
 type PendingConfirmation = {
@@ -214,6 +231,7 @@ const CONFIRMATION_TTL_MS = 2 * 60 * 1000;
 const warnedConfigKeys = new Set<string>();
 const capabilitiesCache = new Map<string, BridgeCapabilitiesPayload>();
 const sessionStateStore = new Map<string, SessionState>();
+const workflowSessionBindings = new Map<string, SessionAffinityBinding>();
 const pendingConfirmations = new Map<string, PendingConfirmation>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -326,8 +344,8 @@ export function parseNexusInvocation(
     if (tokens.length === 0) {
         return {command: "", args: [], freeform: "", explicitCommand: false};
     }
-    const supportedCommands = new Set(normalizeSupportedCommands(capabilities));
-    const localCommands = new Set(LOCAL_COMMANDS);
+    const supportedCommands = new Set<string>(normalizeSupportedCommands(capabilities));
+    const localCommands = new Set<string>(LOCAL_COMMANDS as readonly string[]);
     const [first, ...rest] = tokens;
     const normalized = first.toLowerCase();
     if (supportedCommands.has(normalized) || localCommands.has(normalized) || HELP_TOKENS.has(normalized)) {
@@ -445,13 +463,93 @@ function getSessionState(sessionId: string): SessionState {
         sessionStateStore.get(sessionId) ?? {
             currentProject: null,
             currentIssueRef: null,
-            currentWorkflowId: null
+            currentWorkflowId: null,
+            affinitySessionKey: null,
+            affinityBoundAt: null,
+            lastCorrelationId: null,
+            lastMessageId: null,
+            lastThreadId: null
         }
     );
 }
 
 function setSessionState(sessionId: string, nextState: SessionState): void {
     sessionStateStore.set(sessionId, nextState);
+}
+
+export function buildWorkflowSessionKey(workflowId: string | null | undefined): string | null {
+    const normalizedWorkflowId = stringValue(workflowId);
+    return normalizedWorkflowId ? `nexus::workflow:${normalizedWorkflowId}` : null;
+}
+
+function buildFallbackSessionKey(sessionId: string): string {
+    return `nexus::session:${stringValue(sessionId) || "unknown"}`;
+}
+
+export function bindWorkflowSessionAffinity(
+    sessionId: string,
+    state: SessionState,
+    binding: {
+        workflowId: string;
+        issueRef?: string | null;
+        projectKey?: string | null;
+        correlationId?: string | null;
+        messageId?: string | null;
+        threadId?: string | null;
+    }
+): SessionAffinityBinding {
+    const workflowId = stringValue(binding.workflowId);
+    const sessionKey = buildWorkflowSessionKey(workflowId) || buildFallbackSessionKey(sessionId);
+    const boundAt = Date.now();
+    const nextBinding: SessionAffinityBinding = {
+        workflowId,
+        sessionId,
+        sessionKey,
+        issueRef: stringValue(binding.issueRef) || null,
+        projectKey: stringValue(binding.projectKey) || null,
+        boundAt,
+        lastCorrelationId: stringValue(binding.correlationId) || null,
+        lastMessageId: stringValue(binding.messageId) || null,
+        lastThreadId: stringValue(binding.threadId) || null
+    };
+    workflowSessionBindings.set(workflowId, nextBinding);
+    setSessionState(sessionId, {
+        ...state,
+        currentWorkflowId: workflowId || state.currentWorkflowId,
+        currentIssueRef: nextBinding.issueRef || state.currentIssueRef,
+        currentProject: nextBinding.projectKey || state.currentProject,
+        affinitySessionKey: sessionKey,
+        affinityBoundAt: boundAt,
+        lastCorrelationId: nextBinding.lastCorrelationId,
+        lastMessageId: nextBinding.lastMessageId,
+        lastThreadId: nextBinding.lastThreadId
+    });
+    return nextBinding;
+}
+
+function getWorkflowSessionBinding(workflowId: string | null | undefined): SessionAffinityBinding | null {
+    const normalizedWorkflowId = stringValue(workflowId);
+    if (!normalizedWorkflowId) {
+        return null;
+    }
+    return workflowSessionBindings.get(normalizedWorkflowId) ?? null;
+}
+
+export function buildReplyCorrelationId(input: {
+    sourcePlatform?: string;
+    sessionId?: string;
+    workflowId?: string | null;
+    command?: string;
+    messageId?: string;
+}): string {
+    const parts = [
+        stringValue(input.sourcePlatform) || "openclaw",
+        stringValue(input.sessionId) || "session",
+        stringValue(input.workflowId) || "unbound",
+        stringValue(input.command) || "route",
+        stringValue(input.messageId) || "message"
+    ];
+    return parts.join("::");
 }
 
 function normalizeAttachment(value: unknown): Record<string, unknown> {
@@ -512,13 +610,28 @@ export function getRequesterContext(
 export function inferCommandContext(
     parsed: ParsedInvocation,
     sessionState: SessionState,
-    config: Required<PluginConfig>
+    config: Required<PluginConfig>,
+    sessionId = ""
 ): Record<string, unknown> {
+    const boundWorkflow = getWorkflowSessionBinding(sessionState.currentWorkflowId);
     const context: Record<string, unknown> = {
         current_project: sessionState.currentProject || config.defaultProject || null,
         current_workflow_id: sessionState.currentWorkflowId,
         current_issue_ref: sessionState.currentIssueRef,
-        metadata: {}
+        metadata: {
+            affinity: {
+                mode: boundWorkflow ? "workflow-bound" : "session-fallback",
+                session_key:
+                    boundWorkflow?.sessionKey ||
+                    sessionState.affinitySessionKey ||
+                    buildFallbackSessionKey(sessionId),
+                workflow_id: boundWorkflow?.workflowId || sessionState.currentWorkflowId || null,
+                bound_at: boundWorkflow?.boundAt || sessionState.affinityBoundAt || null,
+                last_correlation_id: sessionState.lastCorrelationId || null,
+                last_message_id: sessionState.lastMessageId || null,
+                last_thread_id: sessionState.lastThreadId || null
+            }
+        }
     };
     const firstArg = parsed.args[0] ?? "";
     const secondArg = parsed.args[1] ?? "";
@@ -553,6 +666,10 @@ function renderCurrentState(sessionState: SessionState, config: Required<PluginC
     lines.push(`Project: ${sessionState.currentProject || config.defaultProject || "(unset)"}`);
     lines.push(`Issue: ${sessionState.currentIssueRef || "(unset)"}`);
     lines.push(`Workflow: ${sessionState.currentWorkflowId || "(unset)"}`);
+    lines.push(`Affinity: ${sessionState.affinitySessionKey || "(session-fallback)"}`);
+    if (sessionState.lastCorrelationId) {
+        lines.push(`Last Correlation: ${sessionState.lastCorrelationId}`);
+    }
     return lines.join("\n");
 }
 
@@ -571,9 +688,11 @@ function handleLocalCommand(
             return {text: "Usage: /nexus use <project>"};
         }
         const nextState: SessionState = {
+            ...sessionState,
             currentProject: nextProject,
             currentIssueRef: null,
-            currentWorkflowId: null
+            currentWorkflowId: null,
+            affinitySessionKey: sessionState.affinitySessionKey || buildFallbackSessionKey(sessionId)
         };
         if (config.sessionMemory) {
             setSessionState(sessionId, nextState);
@@ -600,6 +719,13 @@ function buildBridgeRequest(
     capabilities?: BridgeCapabilitiesPayload
 ): PendingConfirmation {
     const bounded = parsed.command && isBoundedBridgeCommand(parsed.command, capabilities);
+    const correlationId = buildReplyCorrelationId({
+        sourcePlatform: requester.source_platform,
+        sessionId: requester.session_id,
+        workflowId: stringValue(context.current_workflow_id),
+        command: parsed.command,
+        messageId: requester.metadata.message_id
+    });
     return bounded
         ? {
             path: "/api/v1/commands/execute",
@@ -610,7 +736,8 @@ function buildBridgeRequest(
                 requester,
                 context,
                 client,
-                attachments
+                attachments,
+                correlation_id: correlationId
             },
             summary: `${parsed.command} ${parsed.args.join(" ")}`.trim(),
             createdAt: Date.now()
@@ -622,7 +749,8 @@ function buildBridgeRequest(
                 requester,
                 context,
                 client,
-                attachments
+                attachments,
+                correlation_id: correlationId
             },
             summary: parsed.freeform,
             createdAt: Date.now()
@@ -659,11 +787,25 @@ function updateSessionStateFromResult(
         stringValue(result.workflow_id) ||
         stringValue(context.current_workflow_id) ||
         currentState.currentWorkflowId;
-    setSessionState(sessionId, {
+    const nextState: SessionState = {
+        ...currentState,
         currentProject: nextProject,
         currentIssueRef: nextIssueRef || null,
-        currentWorkflowId: nextWorkflowId || null
-    });
+        currentWorkflowId: nextWorkflowId || null,
+        lastCorrelationId:
+            stringValue(result.audit?.request_id) || currentState.lastCorrelationId || null
+    };
+    setSessionState(sessionId, nextState);
+    if (nextWorkflowId) {
+        bindWorkflowSessionAffinity(sessionId, nextState, {
+            workflowId: nextWorkflowId,
+            issueRef: nextIssueRef,
+            projectKey: nextProject,
+            correlationId: stringValue(result.audit?.request_id) || currentState.lastCorrelationId,
+            messageId: currentState.lastMessageId,
+            threadId: currentState.lastThreadId
+        });
+    }
 }
 
 function renderHelpText(capabilities?: BridgeCapabilitiesPayload): string {
@@ -1022,7 +1164,12 @@ async function handleNexusCommand(ctx: CommandHandlerContext): Promise<CommandRe
     maybeWarnConfig(config);
     const capabilities = await getBridgeCapabilities(config);
     const requester = getRequesterContext(ctx, config);
-    const sessionState = getSessionState(requester.session_id);
+    const sessionState = {
+        ...getSessionState(requester.session_id),
+        lastMessageId: stringValue(requester.metadata.message_id) || getSessionState(requester.session_id).lastMessageId,
+        lastThreadId: stringValue(requester.metadata.thread_id) || getSessionState(requester.session_id).lastThreadId
+    };
+    setSessionState(requester.session_id, sessionState);
     const parsed = normalizeInvocationArgs(parseNexusInvocation(ctx.args, capabilities ?? undefined), sessionState, config);
 
     if (!parsed.command && !parsed.freeform) {
@@ -1097,7 +1244,7 @@ async function handleNexusCommand(ctx: CommandHandlerContext): Promise<CommandRe
             sessionState,
             config
         );
-        const refreshContext = inferCommandContext(refreshParsed, sessionState, config);
+        const refreshContext = inferCommandContext(refreshParsed, sessionState, config, requester.session_id);
         try {
             const refreshResult = await callBridge(
                 "/api/v1/commands/execute",
@@ -1142,13 +1289,25 @@ async function handleNexusCommand(ctx: CommandHandlerContext): Promise<CommandRe
                 return {text: payload.error || `Workflow '${parsed.args[0]}' was not found.`};
             }
             if (config.sessionMemory) {
-                setSessionState(requester.session_id, {
+                const nextState: SessionState = {
+                    ...sessionState,
                     currentProject: stringValue(payload.project_key) || sessionState.currentProject,
                     currentIssueRef:
                         buildIssueRef(stringValue(payload.project_key), stringValue(payload.issue_number)) ||
                         sessionState.currentIssueRef,
                     currentWorkflowId: stringValue(payload.workflow_id) || sessionState.currentWorkflowId
-                });
+                };
+                setSessionState(requester.session_id, nextState);
+                if (nextState.currentWorkflowId) {
+                    bindWorkflowSessionAffinity(requester.session_id, nextState, {
+                        workflowId: nextState.currentWorkflowId,
+                        issueRef: nextState.currentIssueRef,
+                        projectKey: nextState.currentProject,
+                        correlationId: sessionState.lastCorrelationId,
+                        messageId: nextState.lastMessageId,
+                        threadId: nextState.lastThreadId
+                    });
+                }
             }
             return {text: renderWorkflowStatus(payload)};
         } catch (error) {
@@ -1156,7 +1315,7 @@ async function handleNexusCommand(ctx: CommandHandlerContext): Promise<CommandRe
         }
     }
 
-    const context = inferCommandContext(parsed, sessionState, config);
+    const context = inferCommandContext(parsed, sessionState, config, requester.session_id);
     const client = {
         plugin_version: PLUGIN_VERSION,
         render_mode: config.renderMode,
@@ -1226,9 +1385,14 @@ async function handleExplicitBridgeCommand(
     maybeWarnConfig(config);
     const capabilities = await getBridgeCapabilities(config);
     const requester = getRequesterContext(ctx, config);
-    const sessionState = getSessionState(requester.session_id);
+    const sessionState = {
+        ...getSessionState(requester.session_id),
+        lastMessageId: stringValue(requester.metadata.message_id) || getSessionState(requester.session_id).lastMessageId,
+        lastThreadId: stringValue(requester.metadata.thread_id) || getSessionState(requester.session_id).lastThreadId
+    };
+    setSessionState(requester.session_id, sessionState);
     const parsed = normalizeInvocationArgs(buildExplicitInvocation(command, ctx.args), sessionState, config);
-    const context = inferCommandContext(parsed, sessionState, config);
+    const context = inferCommandContext(parsed, sessionState, config, requester.session_id);
     const client = {
         plugin_version: PLUGIN_VERSION,
         render_mode: config.renderMode,
