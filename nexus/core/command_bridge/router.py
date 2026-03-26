@@ -648,7 +648,7 @@ class CommandRouter:
         self,
         *,
         project_key: str,
-        task_type: str = 'feature',
+        task_type: str = "feature",
         workflow_id: str | None = None,
         issue_number: str | None = None,
         agent_name: str | None = None,

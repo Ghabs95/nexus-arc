@@ -42,16 +42,6 @@ def _trim_error_summary(error: Any, *, max_len: int = 240) -> str | None:
     return compact[: max_len - 3].rstrip() + "..."
 
 
-def _safe_text(value: Any, *, max_len: int = 240) -> str | None:
-    text = str(value or '').strip()
-    if not text:
-        return None
-    compact = re.sub(r'\s+', ' ', text)
-    if len(compact) <= max_len:
-        return compact
-    return compact[: max_len - 3].rstrip() + '...'
-
-
 async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
@@ -365,11 +355,11 @@ class BridgeOperatorService:
         max_files: int = 2,
         max_lines_per_file: int = 15,
     ) -> list[dict[str, Any]]:
-        issue_ref = str(issue_number or "").strip()
+        issue_ref = re.sub(r"[^\d]", "", str(issue_number or "").strip())
         logs_dir = self._resolve_logs_dir(project_key)
         if not issue_ref or not logs_dir or not os.path.isdir(logs_dir):
             return []
-        pattern = os.path.join(logs_dir, "**", f"*_{issue_ref}_*.log")
+        pattern = os.path.join(glob.escape(logs_dir), "**", f"*_{glob.escape(issue_ref)}_*.log")
         candidates = sorted(glob.glob(pattern, recursive=True), key=os.path.getmtime, reverse=True)
         results: list[dict[str, Any]] = []
         for path in candidates[:max_files]:
@@ -383,7 +373,6 @@ class BridgeOperatorService:
                 continue
             results.append(
                 {
-                    "path": path,
                     "file": os.path.basename(path),
                     "updated_at": _iso(datetime.fromtimestamp(os.path.getmtime(path), tz=UTC)),
                     "lines": tail,
@@ -462,6 +451,8 @@ class BridgeOperatorService:
 
         workflow = timeline_payload.get("workflow") if isinstance(timeline_payload.get("workflow"), dict) else {}
         payload = await self.workflow_status(workflow_id=workflow_id, issue_number=issue_number)
+        if not payload.get("ok"):
+            return payload
         plugin_status = payload.get("plugin_status") if isinstance(payload.get("plugin_status"), dict) else {}
         state = str(workflow.get("state") or "unknown")
         current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}

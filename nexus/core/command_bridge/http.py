@@ -183,10 +183,18 @@ def create_command_bridge_app(
 
             if method == "GET" and path == "/api/v1/operator/workflows/timeline":
                 params = _query_params(environ)
+                workflow_id = _str_param(params, "workflow_id")
+                issue_number = _str_param(params, "issue_number")
+                if not workflow_id and not issue_number:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "Missing query parameter: provide 'workflow_id' or 'issue_number'."},
+                    )
                 payload = asyncio.run(
                     router.get_workflow_timeline(
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
+                        workflow_id=workflow_id,
+                        issue_number=issue_number,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
@@ -211,30 +219,54 @@ def create_command_bridge_app(
 
             if method == "GET" and path == "/api/v1/operator/workflows/authorship-audit":
                 params = _query_params(environ)
+                workflow_id = _str_param(params, "workflow_id")
+                issue_number = _str_param(params, "issue_number")
+                if not workflow_id and not issue_number:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "Missing query parameter: provide 'workflow_id' or 'issue_number'."},
+                    )
                 payload = asyncio.run(
                     router.get_workflow_authorship_audit(
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
+                        workflow_id=workflow_id,
+                        issue_number=issue_number,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
 
             if method == "GET" and path == "/api/v1/operator/workflows/blockers":
                 params = _query_params(environ)
+                workflow_id = _str_param(params, "workflow_id")
+                issue_number = _str_param(params, "issue_number")
+                if not workflow_id and not issue_number:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "Missing query parameter: provide 'workflow_id' or 'issue_number'."},
+                    )
                 payload = asyncio.run(
                     router.get_workflow_blockers(
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
+                        workflow_id=workflow_id,
+                        issue_number=issue_number,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
 
             if method == "GET" and path == "/api/v1/operator/workflows/logs-context":
                 params = _query_params(environ)
+                workflow_id = _str_param(params, "workflow_id")
+                issue_number = _str_param(params, "issue_number")
+                if not workflow_id and not issue_number:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "Missing query parameter: provide 'workflow_id' or 'issue_number'."},
+                    )
                 payload = asyncio.run(
                     router.get_workflow_logs_context(
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
+                        workflow_id=workflow_id,
+                        issue_number=issue_number,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
