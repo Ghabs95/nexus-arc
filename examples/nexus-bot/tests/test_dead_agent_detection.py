@@ -413,6 +413,10 @@ class TestNexusAgentRuntimePostCompletionComment:
                 return_value="requester-token",
             ),
             patch(
+                "nexus.core.runtime.nexus_agent_runtime._runtime_token_override",
+                return_value=None,
+            ),
+            patch(
                 "nexus.core.orchestration.nexus_core_helpers.get_git_platform",
                 return_value=mock_platform,
             ) as mock_get_platform,
@@ -438,6 +442,41 @@ class TestNexusAgentRuntimePostCompletionComment:
             result = runtime.post_completion_comment("44", "owner/repo", "body")
 
         assert result is True
+
+    def test_prefers_automation_git_token_for_completion_comments(self):
+        from nexus.core.runtime.nexus_agent_runtime import NexusAgentRuntime
+
+        runtime = NexusAgentRuntime(finalize_fn=lambda *a, **kw: None)
+        mock_platform = MagicMock()
+        mock_platform.add_comment = AsyncMock(return_value=True)
+        mock_platform.get_comments = AsyncMock(return_value=[])
+
+        with (
+            patch(
+                "nexus.core.runtime.nexus_agent_runtime._resolve_project_name_for_repo",
+                return_value="nexus",
+            ),
+            patch(
+                "nexus.core.runtime.nexus_agent_runtime._runtime_token_override",
+                return_value="bot-token",
+            ),
+            patch(
+                "nexus.core.runtime.nexus_agent_runtime._resolve_requester_token_override",
+                return_value="requester-token",
+            ),
+            patch(
+                "nexus.core.orchestration.nexus_core_helpers.get_git_platform",
+                return_value=mock_platform,
+            ) as mock_get_platform,
+        ):
+            result = runtime.post_completion_comment("44", "owner/repo", "body")
+
+        assert result is True
+        mock_get_platform.assert_called_once_with(
+            "owner/repo",
+            project_name="nexus",
+            token_override="bot-token",
+        )
 
     def test_normalizes_double_escaped_markdown_before_posting(self):
         from nexus.core.runtime.nexus_agent_runtime import NexusAgentRuntime

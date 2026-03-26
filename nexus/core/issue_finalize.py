@@ -15,6 +15,19 @@ _GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/([0-9]+)", re.IGNO
 _GITLAB_MR_URL_RE = re.compile(r"/-/merge_requests/([0-9]+)", re.IGNORECASE)
 
 
+def _automation_git_token(platform: str | None = None) -> str | None:
+    """Return the best automation token for the given git platform using env vars.
+
+    Preference order (from environment variables only):
+    - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
+    - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
+    - Platform-specific write/service tokens
+    """
+    from nexus.adapters.git.utils import resolve_automation_token_for_platform
+
+    return resolve_automation_token_for_platform(platform)
+
+
 def _run_sync(awaitable_factory):
     def _close_awaitable_if_needed(candidate: object | None) -> None:
         if candidate is None or not inspect.isawaitable(candidate):
@@ -98,6 +111,16 @@ def get_git_platform(
         project_name=project_name,
         token_override=token_override,
     )
+
+
+def _get_project_platform(project_name: str) -> str | None:
+    """Return the VCS platform for a project (``github`` or ``gitlab``), or None on failure."""
+    try:
+        from nexus.core.config import get_project_platform
+
+        return get_project_platform(project_name)
+    except (ImportError, KeyError, ValueError):
+        return None
 
 
 def _is_git_repo(path: str) -> bool:
@@ -333,7 +356,7 @@ def create_pr_from_changes(
     platform = get_git_platform(
         repo,
         project_name=project_name,
-        token_override=token_override,
+        token_override=(_automation_git_token(_get_project_platform(project_name)) or token_override),
     )
     pr_result = _run_sync(
         lambda: platform.create_pr_from_changes(

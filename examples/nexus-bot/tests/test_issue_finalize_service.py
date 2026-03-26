@@ -194,6 +194,35 @@ def test_create_pr_from_changes_prefers_issue_worktree(tmp_path):
     assert create_call[1]["repo_dir"] == str(worktree)
 
 
+def test_create_pr_from_changes_prefers_automation_git_token(tmp_path):
+    platform = _FakePlatform()
+    repo_dir = tmp_path / "repo"
+    worktree = repo_dir / ".nexus" / "worktrees" / "issue-42"
+    worktree.mkdir(parents=True)
+
+    with (
+        patch.object(svc, "_automation_git_token", return_value="bot-token"),
+        patch.object(svc, "get_git_platform", return_value=platform) as mock_get_platform,
+    ):
+        pr_url = svc.create_pr_from_changes(
+            project_name="proj-a",
+            repo="acme/repo",
+            repo_dir=str(repo_dir),
+            issue_number="42",
+            title="PR",
+            body="Body",
+            token_override="requester-token",
+            base_branch="develop",
+        )
+
+    assert pr_url.endswith("/pull/1")
+    mock_get_platform.assert_called_once_with(
+        "acme/repo",
+        project_name="proj-a",
+        token_override="bot-token",
+    )
+
+
 def test_validate_pr_non_empty_diff_blocks_when_worktree_missing(tmp_path):
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir(parents=True)

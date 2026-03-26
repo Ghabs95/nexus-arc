@@ -119,7 +119,7 @@ nexus:
   git_repos:
     - Ghabs95/nexus-arc
   git_branches:
-    default: main
+    default: develop
   git_sync:
     on_workflow_start: true
     bootstrap_missing_workspace: false
