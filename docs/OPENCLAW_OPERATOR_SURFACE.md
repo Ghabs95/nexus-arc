@@ -244,6 +244,27 @@ curl -s -X POST http://127.0.0.1:8091/api/v1/operator/workflows/refresh-state \
   -d '{"issue_number":"123"}'
 ```
 
+## Rich Nexus → OpenClaw Notifications (current runtime slice)
+
+The OpenClaw notification adapter now emits a richer workflow envelope alongside
+mobile-friendly text rendering for workflow events.
+
+Current payload shape (first concrete runtime slice):
+- `metadata.kind = workflow_notification`
+- `metadata.schema_version = workflow_notification.v1`
+- `metadata.event_type`
+- `metadata.workflow.{id, issue_number, project_key, state}`
+- `metadata.payload.{repo, pr_number, pr_url, current_step, step_id, step_num, step_name, workflow_phase, agent_type, severity, summary, blocked_reason, key_findings, suggested_actions, timestamp_utc}`
+- `metadata.actions[]` as action-oriented hints for clients/surfaces that can render them
+- `metadata.routing.{session_key, correlation_token, reply_hint}` for correlation-safe reply routing
+
+Current behavior:
+- text remains concise and mobile-friendly for chat delivery
+- session affinity defaults to deterministic workflow-bound keys like `nexus:<project>:workflow:<workflow_id>` when no explicit session key is configured
+- action hints are advisory metadata today; they are not yet a full authenticated reply-button flow
+
+This keeps Nexus as workflow truth while giving OpenClaw stronger workflow context for notification rendering and future reply routing.
+
 ## Notes
 
 - These endpoints are intentionally operator-oriented and best-effort.

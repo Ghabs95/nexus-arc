@@ -1812,6 +1812,16 @@ class TestOpenClawNotificationChannel:
         payload = channel._build_payload("Hi")
         assert payload["to"] == "12345"
 
+    def test_build_payload_includes_metadata_and_session_key_override(self):
+        channel = self._make_channel()
+        payload = channel._build_payload(
+            "Hi",
+            metadata={"source": "nexus", "kind": "workflow_notification"},
+            session_key="nexus:nexus:workflow:nexus-123-full",
+        )
+        assert payload["metadata"]["kind"] == "workflow_notification"
+        assert payload["sessionKey"] == "nexus:nexus:workflow:nexus-123-full"
+
     def test_build_payload_omits_to_when_no_recipient(self):
         channel = self._make_channel()
         channel._sender_id = ""
@@ -1872,6 +1882,36 @@ class TestOpenClawNotificationChannel:
         with patch.object(channel, "_post", new=AsyncMock(return_value=True)):
             result = await channel.request_input("user1", "Please confirm?")
         assert result == ""
+
+    async def test_send_workflow_notification_includes_rich_metadata(self):
+        channel = self._make_channel()
+        with patch.object(channel, "_post", new=AsyncMock(return_value=True)) as mock_post:
+            ok = await channel.send_workflow_notification(
+                event_type="step.failed",
+                workflow_id="nexus-123-full",
+                project_key="nexus",
+                repo="ghabs-org/nexus-arc",
+                issue_number="123",
+                current_step="reviewer waiting",
+                step_num=4,
+                step_name="reviewer",
+                agent_type="reviewer",
+                severity="warning",
+                summary="Review requested for OpenClaw notification payload updates.",
+                blocked_reason="Waiting on human review.",
+                suggested_actions=["approve", "show_logs"],
+                correlation_token="corr-123",
+            )
+        assert ok is True
+        payload = mock_post.call_args[0][0]
+        assert payload["sessionKey"] == "nexus:nexus:workflow:nexus-123-full"
+        assert payload["metadata"]["payload"]["summary"] == (
+            "Review requested for OpenClaw notification payload updates."
+        )
+        assert payload["metadata"]["routing"]["reply_hint"]["correlation_token"] == "corr-123"
+        assert payload["metadata"]["actions"][0]["name"] == "approve"
+        assert "Workflow #123" in payload["message"]
+        assert "Actions: approve, show logs" in payload["message"]
 
     def test_require_aiohttp_raises_when_unavailable(self):
         import nexus.adapters.notifications.openclaw as _mod

@@ -12,9 +12,9 @@ Uses the existing :class:`OpenClawNotificationChannel` adapter.
 import logging
 from typing import Any
 
-from nexus.adapters.notifications.base import Message
 from nexus.core.events import (
     AgentTimeout,
+    ApprovalRequired,
     EventBus,
     NexusEvent,
     StepCompleted,
@@ -25,36 +25,78 @@ from nexus.core.events import (
     WorkflowFailed,
     WorkflowStarted,
 )
-from nexus.core.models import Severity
 from nexus.plugins.base import PluginHealthStatus
 
 logger = logging.getLogger(__name__)
 
-_EVENT_FORMAT: dict[str, tuple[str, str]] = {
-    "workflow.started": ("🚀", "Workflow Started"),
-    "workflow.completed": ("✅", "Workflow Completed"),
-    "workflow.failed": ("❌", "Workflow Failed"),
-    "workflow.cancelled": ("🛑", "Workflow Cancelled"),
-    "step.completed": ("✔️", "Step Completed"),
-    "step.failed": ("⚠️", "Step Failed"),
-    "agent.timeout": ("⏰", "Agent Timeout"),
-    "system.alert": ("🔔", "Alert"),
-}
 
-_SEVERITY_MAP: dict[str, Severity] = {
-    "info": Severity.INFO,
-    "warning": Severity.WARNING,
-    "error": Severity.ERROR,
-    "critical": Severity.ERROR,
-}
+def _safe_str(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _event_severity(event: NexusEvent) -> str:
+    if isinstance(event, SystemAlert):
+        return _safe_str(getattr(event, "severity", "info")).lower() or "info"
+    if isinstance(event, (WorkflowFailed, StepFailed)):
+        return "error"
+    if isinstance(event, (WorkflowCancelled, AgentTimeout, ApprovalRequired)):
+        return "warning"
+    return "info"
+
+
+def _event_summary(event: NexusEvent) -> str:
+    if isinstance(event, WorkflowStarted):
+        return "Workflow execution started in Nexus."
+    if isinstance(event, WorkflowCompleted):
+        return "Workflow completed successfully in Nexus."
+    if isinstance(event, WorkflowFailed):
+        return _safe_str(event.error) or "Workflow failed in Nexus."
+    if isinstance(event, WorkflowCancelled):
+        return "Workflow was cancelled."
+    if isinstance(event, StepCompleted):
+        return f"{event.step_name or 'step'} completed; workflow advanced."
+    if isinstance(event, StepFailed):
+        return _safe_str(event.error) or f"{event.step_name or 'step'} failed."
+    if isinstance(event, AgentTimeout):
+        agent = _safe_str(event.agent_name) or "agent"
+        return f"{agent} timed out; manual attention may be required."
+    if isinstance(event, ApprovalRequired):
+        step_name = _safe_str(event.step_name) or "workflow step"
+        return f"Human approval is required for {step_name}."
+    if isinstance(event, SystemAlert):
+        return _safe_str(event.message)
+    return event.event_type.replace(".", " ")
+
+
+def _event_findings(event: NexusEvent) -> list[str]:
+    findings: list[str] = []
+    if isinstance(event, StepFailed) and _safe_str(event.error):
+        findings.append(_safe_str(event.error))
+    if isinstance(event, WorkflowFailed) and _safe_str(event.error):
+        findings.append(_safe_str(event.error))
+    if isinstance(event, SystemAlert) and _safe_str(event.source):
+        findings.append(f"source={_safe_str(event.source)}")
+    if isinstance(event, ApprovalRequired) and event.approvers:
+        findings.append("approvers=" + ", ".join(str(a) for a in event.approvers if str(a).strip()))
+    return findings[:3]
+
+
+def _suggested_actions(event: NexusEvent) -> list[str]:
+    if isinstance(event, WorkflowCompleted):
+        return ["show_status", "open_issue"]
+    if isinstance(event, ApprovalRequired):
+        return ["approve", "reject", "show_logs"]
+    if isinstance(event, (WorkflowFailed, StepFailed, AgentTimeout, WorkflowCancelled)):
+        return ["show_status", "show_logs", "continue"]
+    if isinstance(event, SystemAlert):
+        sev = _safe_str(getattr(event, "severity", "info")).lower()
+        if sev in {"warning", "error", "critical"}:
+            return ["show_status", "show_logs"]
+    return ["show_status"]
 
 
 class OpenClawEventHandler:
-    """Sends workflow event notifications to OpenClaw via the hooks bridge.
-
-    Wraps :class:`OpenClawNotificationChannel` and subscribes to the EventBus
-    for reactive dispatch.  Implements ``PluginLifecycle`` for health checks.
-    """
+    """Sends workflow event notifications to OpenClaw via the hooks bridge."""
 
     def __init__(self, config: dict[str, Any]):
         from nexus.adapters.notifications.openclaw import OpenClawNotificationChannel
@@ -69,14 +111,12 @@ class OpenClawEventHandler:
         self._subscriptions: list[str] = []
         self._last_send_ok: bool = True
 
-    # -- EventBus wiring ---------------------------------------------------
-
     def attach(self, bus: EventBus) -> None:
-        """Subscribe to relevant events on *bus*."""
         self._subscriptions.append(bus.subscribe("workflow.started", self._handle))
         self._subscriptions.append(bus.subscribe("workflow.completed", self._handle))
         self._subscriptions.append(bus.subscribe("workflow.failed", self._handle))
         self._subscriptions.append(bus.subscribe("workflow.cancelled", self._handle))
+        self._subscriptions.append(bus.subscribe("workflow.approval_required", self._handle))
         self._subscriptions.append(bus.subscribe("step.completed", self._handle))
         self._subscriptions.append(bus.subscribe("step.failed", self._handle))
         self._subscriptions.append(bus.subscribe("agent.timeout", self._handle))
@@ -87,72 +127,65 @@ class OpenClawEventHandler:
         )
 
     def detach(self, bus: EventBus) -> None:
-        """Unsubscribe all subscriptions from *bus*."""
         for sub_id in self._subscriptions:
             bus.unsubscribe(sub_id)
         self._subscriptions.clear()
 
-    # -- Handler -----------------------------------------------------------
-
     async def _handle(self, event: NexusEvent) -> None:
-        emoji, label = _EVENT_FORMAT.get(event.event_type, ("📌", event.event_type))
-        lines: list[str] = []
-        severity = Severity.INFO
+        data = dict(getattr(event, "data", {}) or {})
+        workflow_id = _safe_str(getattr(event, "workflow_id", ""))
+        project_key = _safe_str(data.get("project_key") or data.get("project"))
+        issue_number = _safe_str(data.get("issue_number"))
+        repo = _safe_str(data.get("repo"))
+        pr_number = _safe_str(data.get("pr_number"))
+        pr_url = _safe_str(data.get("pr_url"))
+        workflow_phase = _safe_str(data.get("workflow_phase") or data.get("state"))
+        current_step = _safe_str(data.get("current_step"))
+        blocked_reason = _safe_str(data.get("blocked_reason"))
+        correlation_token = _safe_str(data.get("correlation_token"))
 
-        if isinstance(event, SystemAlert):
-            severity = _SEVERITY_MAP.get(str(event.severity or "info").lower(), Severity.INFO)
-            lines.append(event.message)
-            if event.source:
-                lines.append(f"Source: {event.source}")
-            if event.workflow_id:
-                lines.append(f"Workflow: `{event.workflow_id}`")
-            if event.project_key:
-                lines.append(f"Project: `{event.project_key}`")
-            if event.issue_number:
-                lines.append(f"Issue: `#{event.issue_number}`")
-        else:
-            if event.workflow_id:
-                lines.append(f"Workflow: `{event.workflow_id}`")
+        step_num = 0
+        step_name = ""
+        step_id = _safe_str(data.get("step_id"))
+        agent_type = _safe_str(data.get("agent_type"))
 
-            if isinstance(event, WorkflowStarted):
-                severity = Severity.INFO
-            elif isinstance(event, WorkflowCompleted):
-                severity = Severity.INFO
-            elif isinstance(event, WorkflowFailed):
-                lines.append(f"Error: {event.error}")
-                severity = Severity.ERROR
-            elif isinstance(event, WorkflowCancelled):
-                severity = Severity.WARNING
-            elif isinstance(event, StepCompleted):
-                lines.append(f"Step: {event.step_name} (#{event.step_num})")
-                severity = Severity.INFO
-            elif isinstance(event, StepFailed):
-                lines.append(f"Step: {event.step_name} (#{event.step_num})")
-                lines.append(f"Error: {event.error}")
-                severity = Severity.WARNING
-            elif isinstance(event, AgentTimeout):
-                lines.append(f"Agent: {event.agent_name}")
-                if event.pid:
-                    lines.append(f"PID: {event.pid}")
-                severity = Severity.WARNING
-
-            if event.data:
-                for k, v in event.data.items():
-                    lines.append(f"{k}: `{v}`")
-
-        description = "\n".join(lines) if lines else ""
-        text = f"{emoji} **{label}**"
-        if description:
-            text = f"{text}\n{description}"
+        if isinstance(event, (StepCompleted, StepFailed, ApprovalRequired)):
+            step_num = int(getattr(event, "step_num", 0) or 0)
+            step_name = _safe_str(getattr(event, "step_name", ""))
+            current_step = current_step or step_name
+        if isinstance(event, ApprovalRequired):
+            agent_type = agent_type or _safe_str(getattr(event, "agent", ""))
+        elif isinstance(event, (StepCompleted, StepFailed)):
+            agent_type = agent_type or _safe_str(getattr(event, "agent_type", ""))
+        elif isinstance(event, AgentTimeout):
+            agent_type = agent_type or _safe_str(getattr(event, "agent_name", ""))
 
         try:
-            await self._channel.send_alert(text, severity)
-            self._last_send_ok = True
+            ok = await self._channel.send_workflow_notification(
+                event_type=event.event_type,
+                workflow_id=workflow_id,
+                project_key=project_key,
+                repo=repo,
+                issue_number=issue_number,
+                pr_number=pr_number,
+                pr_url=pr_url,
+                current_step=current_step,
+                step_id=step_id,
+                step_num=step_num,
+                step_name=step_name,
+                workflow_phase=workflow_phase,
+                agent_type=agent_type,
+                severity=_event_severity(event),
+                summary=_event_summary(event),
+                blocked_reason=blocked_reason,
+                key_findings=_event_findings(event),
+                suggested_actions=_suggested_actions(event),
+                correlation_token=correlation_token or None,
+            )
+            self._last_send_ok = bool(ok)
         except Exception as exc:
             self._last_send_ok = False
             logger.error("OpenClawEventHandler send failed: %s", exc)
-
-    # -- PluginLifecycle ---------------------------------------------------
 
     async def on_load(self, registry: Any) -> None:
         logger.info("OpenClawEventHandler loaded")
@@ -169,11 +202,7 @@ class OpenClawEventHandler:
         )
 
 
-# -- Plugin registration ---------------------------------------------------
-
-
 def register_plugins(registry: Any) -> None:
-    """Register OpenClaw event handler plugin."""
     from nexus.plugins.base import PluginKind
 
     registry.register_factory(
