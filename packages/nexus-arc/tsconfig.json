@@ -8,9 +8,13 @@
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"]
   },
   "include": [
-    "src/**/*.ts"
+    "src/index.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

@@ -95,12 +95,24 @@ The plugin now forwards richer bridge metadata with each request:
 - requester identity: `operator_id`, `session_id`, `roles`
 - requester metadata: raw args, message id, thread id, attachment summaries
 - session hints: `context.current_project`, `context.current_issue_ref`, `context.current_workflow_id`
+- affinity metadata: `context.metadata.affinity.{mode,session_key,workflow_id,bound_at,last_correlation_id,last_message_id,last_thread_id}`
 - client metadata: `client.plugin_version`, `client.render_mode`
+- reply correlation: request `correlation_id` values are deterministic per `source/session/workflow/command/message`
 
 It also keeps per-session local context in memory so `/nexus use <project>` and
 `/nexus current` work without needing the bridge to be available.
 OpenClaw chat turns can also go straight through `/chat <message>` while using
 the same Nexus workspace chat memory and project context.
+
+## Workflow-bound session affinity
+
+This slice introduces the first stable affinity layer needed for nexus-os issue #1:
+
+- deterministic workflow session keys use `nexus::workflow:<workflow_id>`
+- before a workflow is known, the plugin falls back to `nexus::session:<openclaw_session_id>`
+- once a bridge result resolves a workflow id, the plugin binds that workflow to the active OpenClaw conversation in memory
+- follow-up turns include affinity metadata and the latest reply-correlation hints so the bridge can reason about workflow-bound replies without making Nexus subordinate to chat state
+- if a binding is missing or the workflow has not been resolved yet, commands still execute using the current session/issue/project hints instead of failing hard
 
 Risky commands can require local confirmation before they hit the bridge.
 By default this covers `implement`, `respond`, `stop`, `kill`, and `reprocess`, and operators can
