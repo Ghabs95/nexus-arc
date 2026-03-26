@@ -220,6 +220,9 @@ from nexus.core.startup_recovery import (
 from nexus.core.startup_recovery import (
     reconcile_completion_signals_on_startup as _startup_reconcile_completion_signals,
 )
+from nexus.core.startup_recovery import (
+    reconcile_openclaw_affinity_on_startup as _startup_reconcile_openclaw_affinity,
+)
 from nexus.core.state_manager import HostStateManager
 from nexus.core.task_archive import (
     archive_closed_task_files as _svc_archive_closed_task_files,
@@ -551,10 +554,11 @@ def reconcile_completion_signals_on_startup() -> None:
     Safe startup check only: emits alerts when signals diverge, does not mutate
     workflow state or completion files.
     """
+    mappings_loader = lambda: _get_wf_state().load_all_mappings()
     _startup_reconcile_completion_signals(
         logger=logger,
         emit_alert=emit_alert,
-        get_workflow_state_mappings=lambda: _get_wf_state().load_all_mappings(),
+        get_workflow_state_mappings=mappings_loader,
         nexus_core_storage_dir=NEXUS_CORE_STORAGE_DIR,
         load_workflow_payload=_build_startup_workflow_payload_loader(
             db_only_task_mode=lambda: is_postgres_backend(NEXUS_STORAGE_BACKEND),
@@ -569,6 +573,12 @@ def reconcile_completion_signals_on_startup() -> None:
         is_terminal_agent_reference=_is_terminal_agent_reference,
         complete_step_for_issue=complete_step_for_issue,
         local_completions_enabled=lambda: not is_postgres_backend(NEXUS_STORAGE_BACKEND),
+    )
+    _startup_reconcile_openclaw_affinity(
+        logger=logger,
+        emit_alert=emit_alert,
+        get_workflow_state_mappings=mappings_loader,
+        nexus_core_storage_dir=NEXUS_CORE_STORAGE_DIR,
     )
 
 
