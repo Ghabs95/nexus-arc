@@ -159,7 +159,7 @@ steps:
 
   - id: "close_loop"
     name: "Document & Close"
-    description: "Update docs, write changelog entry, and close the issue"
+    description: "Check compliance status, update docs if clear, close issue only if no unresolved blockers"
     agent_type: "writer"
     context_policy: "standard"          # writer reads recent history for changelog and docs
     audit_limit: 10
@@ -173,6 +173,7 @@ steps:
     outputs:
       - documentation_url: "string"
       - changelog_entry: "string"
+      - close_status: "enum[closed,blocked]"
     final_step: true
 
   - id: "close_rejected"
