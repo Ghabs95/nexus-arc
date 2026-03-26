@@ -15,6 +15,9 @@ The operator surface adds a read/control layer so OpenClaw can also:
 - explain routing decisions
 - perform safe workflow control actions
 
+Where supported, workflow-oriented endpoints accept either `workflow_id` or
+`issue_number` so operators can use whichever reference they have handy.
+
 ## Authentication
 
 All `/api/v1/operator/*` endpoints use the same bearer-token protection as the
@@ -59,7 +62,7 @@ curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/recent-failures?limit=2
 
 ### Workflow status
 
-By workflow id:
+By workflow ID:
 
 ```bash
 curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/status?workflow_id=nexus-123-full" \
@@ -148,7 +151,7 @@ curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/blockers?issue_number=1
   -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
 ```
 
-### Logs-context shortcut
+### Logs context
 
 Returns the current workflow summary together with recent relevant task-log
 context when issue-scoped logs are available.

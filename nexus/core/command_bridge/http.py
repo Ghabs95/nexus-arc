@@ -269,19 +269,6 @@ def create_command_bridge_app(
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
 
-            if method == "GET" and path == "/api/v1/operator/routing/explain":
-                params = _query_params(environ)
-                payload = asyncio.run(
-                    router.explain_routing(
-                        project_key=_str_param(params, "project_key") or "",
-                        task_type=_str_param(params, "task_type") or "feature",
-                        workflow_id=_str_param(params, "workflow_id"),
-                        issue_number=_str_param(params, "issue_number"),
-                        agent_name=_str_param(params, "agent_name"),
-                    )
-                )
-                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
-
             if method == "POST" and path == "/api/v1/operator/workflows/continue":
                 payload = _load_json_body(environ)
                 result = asyncio.run(
