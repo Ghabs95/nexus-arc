@@ -579,7 +579,7 @@ def test_operator_workflow_status_returns_400_when_no_ref():
 
     assert status.startswith("400")
     assert payload["ok"] is False
-    assert "workflow_id" in payload["error"] or "issue_number" in payload["error"]
+    assert payload["error"] == "Missing query parameter: provide 'workflow_id' or 'issue_number'."
 
 
 def test_operator_workflow_summary_returns_400_when_no_ref():
@@ -597,6 +597,7 @@ def test_operator_workflow_summary_returns_400_when_no_ref():
 
     assert status.startswith("400")
     assert payload["ok"] is False
+    assert payload["error"] == "Missing query parameter: provide 'workflow_id' or 'issue_number'."
 
 
 def test_operator_workflow_why_stuck_returns_400_when_no_ref():
@@ -614,6 +615,7 @@ def test_operator_workflow_why_stuck_returns_400_when_no_ref():
 
     assert status.startswith("400")
     assert payload["ok"] is False
+    assert payload["error"] == "Missing query parameter: provide 'workflow_id' or 'issue_number'."
 
 
 def test_operator_retry_step_returns_400_when_target_agent_missing():
@@ -631,4 +633,4 @@ def test_operator_retry_step_returns_400_when_target_agent_missing():
     )
 
     assert status.startswith("400")
-    assert "target_agent" in payload["error"].lower()
+    assert payload["error"] == "target_agent is required for retry-step requests"

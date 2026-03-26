@@ -95,6 +95,15 @@ class BridgeOperatorService:
         workflow = await _maybe_await(engine.get_workflow(resolved_workflow_id))
         return workflow, resolved_issue, resolved_workflow_id
 
+    @staticmethod
+    def _issue_from_metadata(workflow: Any) -> str | None:
+        """Return the issue_number embedded in *workflow* metadata, or None."""
+        metadata = getattr(workflow, "metadata", None)
+        if not isinstance(metadata, dict):
+            return None
+        meta_issue = metadata.get("issue_number") or metadata.get("issue")
+        return str(meta_issue) if meta_issue is not None else None
+
     def _workflow_summary(self, workflow: Any, *, issue_number: str | None = None) -> dict[str, Any]:
         metadata = getattr(workflow, "metadata", {}) or {}
         current_step_num = int(getattr(workflow, "current_step", 0) or 0)
@@ -185,11 +194,7 @@ class BridgeOperatorService:
             }
         # Recover issue_number from workflow metadata when only workflow_id was given.
         if resolved_issue is None:
-            metadata = getattr(workflow, "metadata", None)
-            if isinstance(metadata, dict):
-                meta_issue = metadata.get("issue_number") or metadata.get("issue")
-                if meta_issue is not None:
-                    resolved_issue = str(meta_issue)
+            resolved_issue = self._issue_from_metadata(workflow)
         plugin = self._workflow_plugin()
         plugin_status = None
         if resolved_issue:
@@ -491,11 +496,7 @@ class BridgeOperatorService:
             }
         # Recover issue_number from workflow metadata when only workflow_id was given.
         if resolved_issue is None:
-            metadata = getattr(workflow, "metadata", None)
-            if isinstance(metadata, dict):
-                meta_issue = metadata.get("issue_number") or metadata.get("issue")
-                if meta_issue is not None:
-                    resolved_issue = str(meta_issue)
+            resolved_issue = self._issue_from_metadata(workflow)
         if target_agent:
             if resolved_issue is None:
                 return {
