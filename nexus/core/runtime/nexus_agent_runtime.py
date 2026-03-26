@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 
 from nexus.adapters.git.utils import build_issue_url
 from nexus.core.auth.execution_env_resolver import resolve_requester_git_token_for_issue
+from nexus.core.auth.git_token import resolve_automation_git_token as _runtime_token_override
 from nexus.core.completion import normalize_completion_comment_markdown
 from nexus.core.process_orchestrator import AgentRuntime
 
@@ -46,6 +47,7 @@ _ISSUE_OPEN_ERROR_LOG_COOLDOWN_SECONDS = 300
 _last_issue_open_error_log_at: dict[tuple[str, str], float] = {}
 
 
+<<<<<<< HEAD
 def _runtime_token_override(platform: str | None = None) -> str | None:
     """Return the best automation token for the given git platform using env vars.
 
@@ -61,6 +63,8 @@ def _runtime_token_override(platform: str | None = None) -> str | None:
 
     return resolve_automation_token_for_platform(platform)
 
+=======
+>>>>>>> 008bd2c (refactor(auth): extract shared automation git token helper; platform-aware token selection)
 
 def _resolve_project_name_for_repo(repo: str) -> str | None:
     try:
@@ -76,6 +80,16 @@ def _resolve_project_name_for_repo(repo: str) -> str | None:
         get_repo=get_repo,
         get_project_repos=get_repos,
     )
+
+
+def _resolve_platform_for_project(project_name: str | None) -> str | None:
+    """Return 'github' or 'gitlab' for the given project, or None if unresolvable."""
+    try:
+        from nexus.core.config import get_project_platform
+
+        return get_project_platform(project_name) or None
+    except Exception:
+        return None
 
 
 def _resolve_requester_token_override(
@@ -694,11 +708,12 @@ class NexusAgentRuntime(AgentRuntime):
         try:
             normalized_body = normalize_completion_comment_markdown(body)
             project_name = _resolve_project_name_for_repo(str(repo))
+            repo_platform = _resolve_platform_for_project(project_name)
             platform = get_git_platform(
                 repo,
                 project_name=project_name,
                 token_override=(
-                    _runtime_token_override()
+                    _runtime_token_override(repo_platform)
                     or _resolve_requester_token_override(
                         str(issue_number),
                         str(repo),
