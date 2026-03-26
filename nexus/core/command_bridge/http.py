@@ -140,6 +140,11 @@ def create_command_bridge_app(
                 payload = asyncio.run(router.get_recent_failures(limit=_int_param(params, "limit", 20)))
                 return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
 
+            if method == "GET" and path == "/api/v1/operator/workflows/recent-incidents":
+                params = _query_params(environ)
+                payload = asyncio.run(router.get_recent_incidents(limit=_int_param(params, "limit", 20)))
+                return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
+
             if method == "GET" and path == "/api/v1/operator/workflows/status":
                 params = _query_params(environ)
                 workflow_id = _str_param(params, "workflow_id")
@@ -176,6 +181,16 @@ def create_command_bridge_app(
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
 
+            if method == "GET" and path == "/api/v1/operator/workflows/timeline":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.get_workflow_timeline(
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
+
             if method == "GET" and path == "/api/v1/operator/workflows/why-stuck":
                 params = _query_params(environ)
                 workflow_id = _str_param(params, "workflow_id")
@@ -190,6 +205,16 @@ def create_command_bridge_app(
                     router.get_workflow_diagnosis(
                         workflow_id=workflow_id,
                         issue_number=issue_number,
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
+
+            if method == "GET" and path == "/api/v1/operator/workflows/logs-context":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.get_workflow_logs_context(
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)

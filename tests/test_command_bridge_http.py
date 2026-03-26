@@ -60,14 +60,23 @@ class _FakeRouter:
     async def get_recent_failures(self, *, limit: int = 20):
         return {"ok": True, "count": 1, "items": [{"workflow_id": "demo-99-full"}], "limit": limit}
 
+    async def get_recent_incidents(self, *, limit: int = 20):
+        return {"ok": True, "count": 1, "items": [{"workflow_id": "demo-88-full", "severity": "high"}], "limit": limit}
+
     async def get_git_identity_status(self):
         return {"ok": True, "github": {"installed": True}}
 
     async def get_workflow_summary(self, *, workflow_id=None, issue_number=None):
         return {"ok": True, "summary": "demo summary", "workflow_id": workflow_id, "issue_number": issue_number}
 
+    async def get_workflow_timeline(self, *, workflow_id=None, issue_number=None):
+        return {"ok": True, "workflow_id": workflow_id, "issue_number": issue_number, "timeline": [{"step_num": 1, "name": "triage"}]}
+
     async def get_workflow_diagnosis(self, *, workflow_id=None, issue_number=None):
         return {"ok": True, "diagnosis": "agent_running", "likely_cause": "demo cause", "workflow_id": workflow_id, "issue_number": issue_number}
+
+    async def get_workflow_logs_context(self, *, workflow_id=None, issue_number=None):
+        return {"ok": True, "workflow_id": workflow_id, "issue_number": issue_number, "log_context": [{"file": "demo.log", "lines": ["hello"]}]}
 
     async def explain_routing(self, **kwargs):
         return {"ok": True, **kwargs}
@@ -546,6 +555,24 @@ def test_operator_workflow_summary_endpoint_returns_payload():
     assert payload["summary"] == "demo summary"
 
 
+def test_operator_workflow_timeline_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/timeline",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "workflow_id=demo-42-full"},
+    )
+
+    assert status.startswith("200")
+    assert payload["timeline"][0]["name"] == "triage"
+
+
 def test_operator_workflow_why_stuck_endpoint_returns_payload():
     app = create_command_bridge_app(
         _FakeRouter(),
@@ -562,6 +589,42 @@ def test_operator_workflow_why_stuck_endpoint_returns_payload():
 
     assert status.startswith("200")
     assert payload["diagnosis"] == "agent_running"
+
+
+def test_operator_recent_incidents_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/recent-incidents",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "limit=3"},
+    )
+
+    assert status.startswith("200")
+    assert payload["items"][0]["severity"] == "high"
+
+
+def test_operator_workflow_logs_context_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/logs-context",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "workflow_id=demo-42-full"},
+    )
+
+    assert status.startswith("200")
+    assert payload["log_context"][0]["file"] == "demo.log"
 
 
 def test_operator_workflow_status_returns_400_when_no_ref():

@@ -87,6 +87,57 @@ curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/summary?workflow_id=nex
   -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
 ```
 
+### Workflow timeline / step history
+
+Returns a step-by-step execution view including:
+- step number
+- step name
+- agent
+- status
+- started/completed timestamps
+- retry count
+- error summary when present
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/timeline?workflow_id=nexus-123-full" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Why stuck
+
+This extends the original summary-style diagnosis so operators can distinguish:
+- failed step
+- paused workflow
+- agent still running
+- handoff pending
+- cancelled/completed workflow
+- unclear state that needs deeper inspection
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/why-stuck?workflow_id=nexus-123-full" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Recent incidents digest
+
+Returns a compact digest of recent problematic workflows across failed, paused,
+and retrying/running states.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/recent-incidents?limit=20" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Logs-context shortcut
+
+Returns the current workflow summary together with recent relevant task-log
+context when issue-scoped logs are available.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/logs-context?issue_number=123" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
 ### Git identity status
 
 ```bash

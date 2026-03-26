@@ -560,6 +560,17 @@ class CommandRouter:
             issue_number=issue_number,
         )
 
+    async def get_workflow_timeline(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_timeline(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
     async def get_workflow_diagnosis(
         self,
         *,
@@ -571,11 +582,25 @@ class CommandRouter:
             issue_number=issue_number,
         )
 
+    async def get_workflow_logs_context(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_logs_context(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
     async def get_active_workflows(self, *, limit: int = 20) -> dict[str, Any]:
         return await self.operator_service.active_workflows(limit=limit)
 
     async def get_recent_failures(self, *, limit: int = 20) -> dict[str, Any]:
         return await self.operator_service.recent_failures(limit=limit)
+
+    async def get_recent_incidents(self, *, limit: int = 20) -> dict[str, Any]:
+        return await self.operator_service.recent_incidents(limit=limit)
 
     async def get_git_identity_status(self) -> dict[str, Any]:
         return await self.operator_service.git_identity_status()

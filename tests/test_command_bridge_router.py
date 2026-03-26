@@ -397,6 +397,9 @@ async def test_router_operator_helpers_delegate_to_service(router: CommandRouter
         async def recent_failures(self, *, limit: int = 20):
             return {"ok": True, "limit": limit}
 
+        async def recent_incidents(self, *, limit: int = 20):
+            return {"ok": True, "limit": limit}
+
         async def git_identity_status(self):
             return {"ok": True, "github": {"installed": True}}
 
@@ -420,6 +423,7 @@ async def test_router_operator_helpers_delegate_to_service(router: CommandRouter
     assert (await router.get_runtime_health())["runtime"] == "ok"
     assert (await router.get_active_workflows(limit=5))["limit"] == 5
     assert (await router.get_recent_failures(limit=3))["limit"] == 3
+    assert (await router.get_recent_incidents(limit=4))["limit"] == 4
     assert (await router.get_git_identity_status())["github"]["installed"] is True
     assert (await router.explain_routing(project_key="nexus"))["project_key"] == "nexus"
     assert (await router.continue_workflow(issue_number="42"))["action"] == "continue"
@@ -434,13 +438,23 @@ async def test_router_workflow_summary_helper_delegates_to_service(router: Comma
         async def workflow_summary(self, **kwargs):
             return {"ok": True, "summary": "demo", **kwargs}
 
+        async def workflow_timeline(self, **kwargs):
+            return {"ok": True, "timeline": [{"step_num": 1}], **kwargs}
+
+        async def workflow_logs_context(self, **kwargs):
+            return {"ok": True, "log_context": [{"file": "demo.log"}], **kwargs}
+
     router.operator_service = _FakeOperatorService()
 
     payload = await router.get_workflow_summary(workflow_id="demo-42-full")
+    timeline = await router.get_workflow_timeline(workflow_id="demo-42-full")
+    logs_context = await router.get_workflow_logs_context(workflow_id="demo-42-full")
 
     assert payload["ok"] is True
     assert payload["summary"] == "demo"
     assert payload["workflow_id"] == "demo-42-full"
+    assert timeline["timeline"][0]["step_num"] == 1
+    assert logs_context["log_context"][0]["file"] == "demo.log"
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import glob
 import inspect
 import os
+import re
 import shutil
 import subprocess
 from datetime import UTC, datetime
@@ -19,6 +21,24 @@ def _iso(value: Any) -> str | None:
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+def _status_value(value: Any) -> str:
+    return str(getattr(value, "value", value) or "").strip().lower()
+
+
+def _step_agent_name(step: Any) -> str | None:
+    return getattr(getattr(step, "agent", None), "name", None)
+
+
+def _trim_error_summary(error: Any, *, max_len: int = 240) -> str | None:
+    text = str(error or "").strip()
+    if not text:
+        return None
+    compact = re.sub(r"\s+", " ", text)
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 3].rstrip() + "..."
 
 
 async def _maybe_await(value: Any) -> Any:
@@ -104,6 +124,19 @@ class BridgeOperatorService:
         meta_issue = metadata.get("issue_number") or metadata.get("issue")
         return str(meta_issue) if meta_issue is not None else None
 
+    def _step_summary(self, step: Any) -> dict[str, Any]:
+        return {
+            "step_num": getattr(step, "step_num", None),
+            "name": getattr(step, "name", None),
+            "agent": _step_agent_name(step),
+            "status": _status_value(getattr(step, "status", None)),
+            "started_at": _iso(getattr(step, "started_at", None)),
+            "completed_at": _iso(getattr(step, "completed_at", None)),
+            "retry_count": int(getattr(step, "retry_count", 0) or 0),
+            "error": getattr(step, "error", None),
+            "error_summary": _trim_error_summary(getattr(step, "error", None)),
+        }
+
     def _workflow_summary(self, workflow: Any, *, issue_number: str | None = None) -> dict[str, Any]:
         metadata = getattr(workflow, "metadata", {}) or {}
         current_step_num = int(getattr(workflow, "current_step", 0) or 0)
@@ -115,15 +148,13 @@ class BridgeOperatorService:
                 break
         if current_step is None:
             for step in steps:
-                status_value = getattr(getattr(step, "status", None), "value", getattr(step, "status", None))
-                if str(status_value or "") == "running":
+                if _status_value(getattr(step, "status", None)) == "running":
                     current_step = step
                     break
 
         last_completed = None
         for step in steps:
-            status_value = getattr(getattr(step, "status", None), "value", getattr(step, "status", None))
-            if str(status_value or "") == "completed":
+            if _status_value(getattr(step, "status", None)) == "completed":
                 if last_completed is None or int(getattr(step, "step_num", 0) or 0) > int(getattr(last_completed, "step_num", 0) or 0):
                     last_completed = step
 
@@ -131,12 +162,11 @@ class BridgeOperatorService:
         if current_step is not None:
             for step in steps:
                 if int(getattr(step, "step_num", 0) or 0) > int(getattr(current_step, "step_num", 0) or 0):
-                    status_value = getattr(getattr(step, "status", None), "value", getattr(step, "status", None))
-                    if str(status_value or "") in {"pending", "running"}:
+                    if _status_value(getattr(step, "status", None)) in {"pending", "running"}:
                         next_step = step
                         break
 
-        state_value = getattr(getattr(workflow, "state", None), "value", getattr(workflow, "state", None))
+        state_value = _status_value(getattr(workflow, "state", None))
         return {
             "workflow_id": str(getattr(workflow, "id", "") or ""),
             "issue_number": str(issue_number or metadata.get("issue_number") or "") or None,
@@ -145,19 +175,11 @@ class BridgeOperatorService:
             "task_type": str(metadata.get("task_type") or "") or None,
             "state": str(state_value or ""),
             "active_agent": getattr(workflow, "active_agent_type", None),
-            "current_step": {
-                "step_num": getattr(current_step, "step_num", None),
-                "name": getattr(current_step, "name", None),
-                "agent": getattr(getattr(current_step, "agent", None), "name", None),
-                "status": getattr(getattr(current_step, "status", None), "value", getattr(current_step, "status", None)),
-                "error": getattr(current_step, "error", None),
-            }
-            if current_step is not None
-            else None,
+            "current_step": self._step_summary(current_step) if current_step is not None else None,
             "last_completed_step": {
                 "step_num": getattr(last_completed, "step_num", None),
                 "name": getattr(last_completed, "name", None),
-                "agent": getattr(getattr(last_completed, "agent", None), "name", None),
+                "agent": _step_agent_name(last_completed),
                 "completed_at": _iso(getattr(last_completed, "completed_at", None)),
             }
             if last_completed is not None
@@ -165,8 +187,8 @@ class BridgeOperatorService:
             "next_step": {
                 "step_num": getattr(next_step, "step_num", None),
                 "name": getattr(next_step, "name", None),
-                "agent": getattr(getattr(next_step, "agent", None), "name", None),
-                "status": getattr(getattr(next_step, "status", None), "value", getattr(next_step, "status", None)),
+                "agent": _step_agent_name(next_step),
+                "status": _status_value(getattr(next_step, "status", None)),
             }
             if next_step is not None
             else None,
@@ -174,6 +196,129 @@ class BridgeOperatorService:
             "updated_at": _iso(getattr(workflow, "updated_at", None)),
             "completed_at": _iso(getattr(workflow, "completed_at", None)),
         }
+
+    def _timeline_items(self, workflow: Any) -> list[dict[str, Any]]:
+        steps = list(getattr(workflow, "steps", []) or [])
+        items = [self._step_summary(step) for step in steps]
+        items.sort(key=lambda item: int(item.get("step_num") or 0))
+        return items
+
+    def _infer_diagnosis(
+        self,
+        *,
+        workflow: dict[str, Any],
+        plugin_status: dict[str, Any],
+        fallback_reason: str | None,
+        fallback_actions: list[str],
+    ) -> tuple[str, str | None, list[str]]:
+        state = str(workflow.get("state") or "unknown")
+        current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
+        next_step = workflow.get("next_step") if isinstance(workflow.get("next_step"), dict) else {}
+        timeline = workflow.get("timeline") if isinstance(workflow.get("timeline"), list) else []
+        active_agent = str(workflow.get("active_agent") or plugin_status.get("current_agent_type") or "").strip() or None
+        actions = list(fallback_actions or [])
+
+        if state == "failed":
+            return "step_failed", current_step.get("error_summary") or fallback_reason or "Current step failed", [
+                "inspect logs-context",
+                "retry-step",
+                "refresh-state",
+            ]
+        if state == "paused":
+            return "workflow_paused", "Workflow is paused and waiting for operator action", [
+                "continue",
+                "inspect logs-context",
+                "refresh-state",
+            ]
+        if state == "cancelled":
+            return "workflow_cancelled", "Workflow was cancelled", ["refresh-state"]
+        if state == "completed":
+            return "workflow_completed", "Workflow already completed", ["inspect workflow status"]
+
+        for step in timeline:
+            if str(step.get("status") or "") == "failed":
+                return "step_failed", step.get("error_summary") or f"Step {step.get('step_num')} failed", [
+                    "inspect logs-context",
+                    "retry-step",
+                    "refresh-state",
+                ]
+
+        if current_step.get("status") == "running":
+            agent = current_step.get("agent") or active_agent or "unknown"
+            return "agent_running", f"Current step is still running under @{agent}", [
+                "inspect logs-context",
+                "refresh-state",
+            ]
+
+        if next_step.get("agent"):
+            return "handoff_pending", f"Next handoff should go to @{next_step.get('agent')}", [
+                "continue",
+                "refresh-state",
+            ]
+
+        if active_agent:
+            return "agent_running", f"Workflow still expects activity from @{active_agent}", [
+                "inspect logs-context",
+                "refresh-state",
+            ]
+
+        return "state_unclear", fallback_reason or "Workflow state exists but no clear next handoff was inferred", actions or [
+            "inspect workflow status",
+            "inspect logs-context",
+            "refresh-state",
+        ]
+
+    def _resolve_logs_dir(self, project_key: str | None) -> str | None:
+        if not project_key:
+            return None
+        try:
+            from nexus.core.config import PROJECT_CONFIG, get_tasks_logs_dir
+        except Exception:
+            return None
+        cfg = PROJECT_CONFIG.get(project_key) if isinstance(PROJECT_CONFIG, dict) else None
+        if not isinstance(cfg, dict):
+            return None
+        workspace = str(cfg.get("workspace") or "").strip()
+        if not workspace:
+            return None
+        try:
+            return get_tasks_logs_dir(workspace, project_key)
+        except Exception:
+            return None
+
+    def _collect_log_context(
+        self,
+        *,
+        issue_number: str | None,
+        project_key: str | None,
+        max_files: int = 2,
+        max_lines_per_file: int = 15,
+    ) -> list[dict[str, Any]]:
+        issue_ref = str(issue_number or "").strip()
+        logs_dir = self._resolve_logs_dir(project_key)
+        if not issue_ref or not logs_dir or not os.path.isdir(logs_dir):
+            return []
+        pattern = os.path.join(logs_dir, "**", f"*_{issue_ref}_*.log")
+        candidates = sorted(glob.glob(pattern, recursive=True), key=os.path.getmtime, reverse=True)
+        results: list[dict[str, Any]] = []
+        for path in candidates[:max_files]:
+            try:
+                with open(path, encoding="utf-8", errors="ignore") as handle:
+                    lines = [line.rstrip() for line in handle.readlines()]
+            except Exception:
+                continue
+            tail = [line for line in lines[-max_lines_per_file:] if str(line).strip()]
+            if not tail:
+                continue
+            results.append(
+                {
+                    "path": path,
+                    "file": os.path.basename(path),
+                    "updated_at": _iso(datetime.fromtimestamp(os.path.getmtime(path), tz=UTC)),
+                    "lines": tail,
+                }
+            )
+        return results
 
     async def workflow_status(
         self,
@@ -208,17 +353,44 @@ class BridgeOperatorService:
             "plugin_status": plugin_status,
         }
 
+    async def workflow_timeline(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        workflow, resolved_issue, resolved_workflow_id = await self._workflow_by_ref(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+        if workflow is None:
+            return {
+                "ok": False,
+                "error": "Workflow not found",
+                "workflow_id": resolved_workflow_id,
+                "issue_number": resolved_issue,
+            }
+        summary = self._workflow_summary(workflow, issue_number=resolved_issue)
+        timeline = self._timeline_items(workflow)
+        return {
+            "ok": True,
+            "workflow": {**summary, "timeline": timeline},
+            "timeline": timeline,
+            "count": len(timeline),
+        }
+
     async def workflow_summary(
         self,
         *,
         workflow_id: str | None = None,
         issue_number: str | None = None,
     ) -> dict[str, Any]:
-        payload = await self.workflow_status(workflow_id=workflow_id, issue_number=issue_number)
-        if not payload.get("ok"):
-            return payload
+        timeline_payload = await self.workflow_timeline(workflow_id=workflow_id, issue_number=issue_number)
+        if not timeline_payload.get("ok"):
+            return timeline_payload
 
-        workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+        workflow = timeline_payload.get("workflow") if isinstance(timeline_payload.get("workflow"), dict) else {}
+        payload = await self.workflow_status(workflow_id=workflow_id, issue_number=issue_number)
         plugin_status = payload.get("plugin_status") if isinstance(payload.get("plugin_status"), dict) else {}
         state = str(workflow.get("state") or "unknown")
         current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
@@ -228,11 +400,11 @@ class BridgeOperatorService:
         reason = None
         actions: list[str] = []
         if state == "failed":
-            reason = str(current_step.get("error") or "Workflow is in failed state")
-            actions = ["inspect recent failures", "retry-step", "refresh-state"]
+            reason = str(current_step.get("error_summary") or current_step.get("error") or "Workflow is in failed state")
+            actions = ["inspect logs-context", "retry-step", "refresh-state"]
         elif state == "paused":
             reason = "Workflow is paused and needs a continue/resume action"
-            actions = ["continue", "refresh-state"]
+            actions = ["continue", "inspect logs-context", "refresh-state"]
         elif state == "cancelled":
             reason = "Workflow has been cancelled"
             actions = ["refresh-state"]
@@ -241,13 +413,13 @@ class BridgeOperatorService:
             actions = ["inspect workflow status"]
         elif current_step.get("status") == "running":
             reason = f"Waiting for @{current_step.get('agent') or workflow.get('active_agent') or 'unknown'} to finish current step"
-            actions = ["inspect logs", "refresh-state"]
+            actions = ["inspect logs-context", "refresh-state"]
         elif next_step.get("agent"):
             reason = f"Next expected handoff is @{next_step.get('agent')}"
             actions = ["continue", "refresh-state"]
         else:
             reason = "Workflow state is available but the next handoff is unclear"
-            actions = ["inspect workflow status", "refresh-state"]
+            actions = ["inspect workflow status", "inspect logs-context", "refresh-state"]
 
         summary_lines = [
             f"Workflow {workflow.get('workflow_id') or workflow_id or ''}".strip(),
@@ -290,34 +462,13 @@ class BridgeOperatorService:
             return payload
 
         workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
-        state = str(workflow.get("state") or "unknown")
-        current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
-        next_step = workflow.get("next_step") if isinstance(workflow.get("next_step"), dict) else {}
-        diagnosis = "unknown"
-        likely_cause = payload.get("reason")
-        actions = list(payload.get("suggested_actions") or [])
-
-        if state == "failed":
-            diagnosis = "step_failed"
-            likely_cause = current_step.get("error") or "Current step failed"
-        elif state == "paused":
-            diagnosis = "workflow_paused"
-            likely_cause = "Workflow is paused and waiting for operator action"
-        elif state == "cancelled":
-            diagnosis = "workflow_cancelled"
-            likely_cause = "Workflow was cancelled"
-        elif state == "completed":
-            diagnosis = "workflow_completed"
-            likely_cause = "Workflow already completed"
-        elif current_step.get("status") == "running":
-            diagnosis = "agent_running"
-            likely_cause = f"Current step is still running under @{current_step.get('agent') or workflow.get('active_agent') or 'unknown'}"
-        elif next_step.get("agent"):
-            diagnosis = "handoff_pending"
-            likely_cause = f"Next handoff should go to @{next_step.get('agent')}"
-        else:
-            diagnosis = "state_unclear"
-            likely_cause = "Workflow state exists but no clear next handoff was inferred"
+        plugin_status = payload.get("plugin_status") if isinstance(payload.get("plugin_status"), dict) else {}
+        diagnosis, likely_cause, actions = self._infer_diagnosis(
+            workflow=workflow,
+            plugin_status=plugin_status,
+            fallback_reason=payload.get("reason"),
+            fallback_actions=list(payload.get("suggested_actions") or []),
+        )
 
         return {
             "ok": True,
@@ -326,6 +477,7 @@ class BridgeOperatorService:
             "summary": payload.get("summary"),
             "suggested_actions": actions,
             "workflow": workflow,
+            "plugin_status": plugin_status,
         }
 
     async def active_workflows(self, *, limit: int = 20) -> dict[str, Any]:
@@ -349,6 +501,95 @@ class BridgeOperatorService:
         items = [self._workflow_summary(wf) for wf in list(failed or []) + list(cancelled or [])]
         items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
         return {"ok": True, "items": items[: int(limit)], "count": len(items[: int(limit)])}
+
+    async def recent_incidents(self, *, limit: int = 20) -> dict[str, Any]:
+        engine = await self._engine()
+        storage = getattr(engine, "storage", None)
+        if storage is None or not hasattr(storage, "list_workflows"):
+            return {"ok": False, "error": "Workflow storage backend does not support listing workflows"}
+
+        states_to_scan = [WorkflowState.FAILED, WorkflowState.PAUSED, WorkflowState.RUNNING]
+        workflows: list[Any] = []
+        seen_ids: set[str] = set()
+        for state in states_to_scan:
+            for workflow in list(await _maybe_await(storage.list_workflows(state, int(limit))) or []):
+                workflow_id = str(getattr(workflow, "id", "") or "")
+                if workflow_id in seen_ids:
+                    continue
+                seen_ids.add(workflow_id)
+                workflows.append(workflow)
+
+        incidents: list[dict[str, Any]] = []
+        for workflow in workflows:
+            summary = self._workflow_summary(workflow)
+            summary["timeline"] = self._timeline_items(workflow)
+            diagnosis, likely_cause, actions = self._infer_diagnosis(
+                workflow=summary,
+                plugin_status={},
+                fallback_reason=None,
+                fallback_actions=[],
+            )
+            if diagnosis == "workflow_completed":
+                continue
+            severity = "warning"
+            if diagnosis == "step_failed":
+                severity = "critical"
+            elif diagnosis == "workflow_paused":
+                severity = "high"
+            elif any(int(step.get("retry_count") or 0) > 0 for step in summary.get("timeline") or []):
+                severity = "medium"
+            incidents.append(
+                {
+                    "workflow_id": summary.get("workflow_id"),
+                    "issue_number": summary.get("issue_number"),
+                    "project_key": summary.get("project_key"),
+                    "state": summary.get("state"),
+                    "diagnosis": diagnosis,
+                    "severity": severity,
+                    "likely_cause": likely_cause,
+                    "current_step": summary.get("current_step"),
+                    "retrying_steps": [
+                        step for step in summary.get("timeline") or [] if int(step.get("retry_count") or 0) > 0
+                    ],
+                    "suggested_actions": actions,
+                    "updated_at": summary.get("updated_at"),
+                }
+            )
+
+        severity_rank = {"critical": 0, "high": 1, "medium": 2, "warning": 3}
+        incidents.sort(
+            key=lambda item: (
+                severity_rank.get(str(item.get("severity") or "warning"), 99),
+                str(item.get("updated_at") or ""),
+            ),
+            reverse=False,
+        )
+        incidents = incidents[: int(limit)]
+        return {"ok": True, "items": incidents, "count": len(incidents)}
+
+    async def workflow_logs_context(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        summary = await self.workflow_summary(workflow_id=workflow_id, issue_number=issue_number)
+        if not summary.get("ok"):
+            return summary
+        workflow = summary.get("workflow") if isinstance(summary.get("workflow"), dict) else {}
+        logs = self._collect_log_context(
+            issue_number=workflow.get("issue_number"),
+            project_key=workflow.get("project_key"),
+        )
+        return {
+            "ok": True,
+            "summary": summary.get("summary"),
+            "reason": summary.get("reason"),
+            "suggested_actions": summary.get("suggested_actions") or [],
+            "workflow": workflow,
+            "log_context": logs,
+            "log_count": len(logs),
+        }
 
     async def runtime_health(self) -> dict[str, Any]:
         engine = await self._engine()
