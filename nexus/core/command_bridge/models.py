@@ -10,6 +10,7 @@ from nexus.core.command_bridge.schemas import (
     BridgeClientPayload,
     BridgeCommandResultPayload,
     BridgeExecuteRequestPayload,
+    BridgeReplyRequestPayload,
     BridgeRequesterPayload,
     BridgeSessionContextPayload,
     BridgeUiFieldPayload,
@@ -340,6 +341,40 @@ class CommandResult:
             "audit": self.audit.to_dict() if self.audit is not None else {},
             "data": dict(self.data or {}),
             "suggested_next_commands": list(self.suggested_next_commands or []),
+        }
+
+
+@dataclass
+class ReplyRequest:
+    """Normalized inbound reply from an OpenClaw plugin."""
+
+    correlation_id: str = ""
+    content: str = ""
+    sender_id: str = ""
+    session_id: str = ""
+    status: str = "ok"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, payload: BridgeReplyRequestPayload | dict[str, Any] | None) -> "ReplyRequest":
+        data = payload if isinstance(payload, dict) else {}
+        return cls(
+            correlation_id=str(data.get("correlation_id", "") or ""),
+            content=str(data.get("content", "") or ""),
+            sender_id=str(data.get("sender_id", "") or ""),
+            session_id=str(data.get("session_id", "") or ""),
+            status=str(data.get("status", "ok") or "ok"),
+            metadata=dict(data.get("metadata", {}) or {}),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "correlation_id": self.correlation_id,
+            "content": self.content,
+            "sender_id": self.sender_id,
+            "session_id": self.session_id,
+            "status": self.status,
+            "metadata": dict(self.metadata or {}),
         }
 
 

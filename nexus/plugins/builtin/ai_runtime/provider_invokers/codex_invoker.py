@@ -186,13 +186,17 @@ def invoke_codex_cli(
 
     _cleanup_empty_rollout_files(logger=logger)
 
-    # Only retry with danger-full-access when the operator has explicitly opted in.
-    # An unset or empty value keeps the safe default of workspace-write only.
+    # Only retry with danger-full-access when the operator has explicitly opted
+    # in via NEXUS_CODEX_ALLOW_DANGER_SANDBOX=1/true/on/yes *and* the first
+    # launch fails specifically because of a bubblewrap namespace restriction.
+    # The flag is intentionally opt-in (default: off) to prevent an unintended
+    # privilege escalation on hosts where workspace-write is unavailable.
     effective_env = {**os.environ, **(env or {})}
     raw_allow_danger_sandbox = str(
         effective_env.get("NEXUS_CODEX_ALLOW_DANGER_SANDBOX") or ""
     ).strip().lower()
     allow_danger_sandbox = raw_allow_danger_sandbox in {"1", "true", "on", "yes"}
+<<<<<<< HEAD
     if not allow_danger_sandbox and raw_allow_danger_sandbox:
         logger.info(
             "NEXUS_CODEX_ALLOW_DANGER_SANDBOX=%r is not a recognised truthy value; "
@@ -200,6 +204,8 @@ def invoke_codex_cli(
             "Set to '1' or 'true' to enable.",
             raw_allow_danger_sandbox,
         )
+=======
+>>>>>>> 257ccfc (feat: address PR review – security and reliability hardening for OpenClaw command bridge)
     sandbox_modes = ["workspace-write", "danger-full-access"] if allow_danger_sandbox else ["workspace-write"]
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
