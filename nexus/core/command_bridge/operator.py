@@ -266,6 +266,55 @@ class BridgeOperatorService:
             "summary": "; ".join(summary_lines),
         }
 
+    async def workflow_diagnosis(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        payload = await self.workflow_summary(workflow_id=workflow_id, issue_number=issue_number)
+        if not payload.get("ok"):
+            return payload
+
+        workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+        state = str(workflow.get("state") or "unknown")
+        current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
+        next_step = workflow.get("next_step") if isinstance(workflow.get("next_step"), dict) else {}
+        diagnosis = "unknown"
+        likely_cause = payload.get("reason")
+        actions = list(payload.get("suggested_actions") or [])
+
+        if state == "failed":
+            diagnosis = "step_failed"
+            likely_cause = current_step.get("error") or "Current step failed"
+        elif state == "paused":
+            diagnosis = "workflow_paused"
+            likely_cause = "Workflow is paused and waiting for operator action"
+        elif state == "cancelled":
+            diagnosis = "workflow_cancelled"
+            likely_cause = "Workflow was cancelled"
+        elif state == "completed":
+            diagnosis = "workflow_completed"
+            likely_cause = "Workflow already completed"
+        elif current_step.get("status") == "running":
+            diagnosis = "agent_running"
+            likely_cause = f"Current step is still running under @{current_step.get('agent') or workflow.get('active_agent') or 'unknown'}"
+        elif next_step.get("agent"):
+            diagnosis = "handoff_pending"
+            likely_cause = f"Next handoff should go to @{next_step.get('agent')}"
+        else:
+            diagnosis = "state_unclear"
+            likely_cause = "Workflow state exists but no clear next handoff was inferred"
+
+        return {
+            "ok": True,
+            "diagnosis": diagnosis,
+            "likely_cause": likely_cause,
+            "summary": payload.get("summary"),
+            "suggested_actions": actions,
+            "workflow": workflow,
+        }
+
     async def active_workflows(self, *, limit: int = 20) -> dict[str, Any]:
         engine = await self._engine()
         storage = getattr(engine, "storage", None)

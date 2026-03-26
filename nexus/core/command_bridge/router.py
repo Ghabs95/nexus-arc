@@ -390,6 +390,7 @@ class CommandRouter:
         plugin.register_command("audit", self._plugin_callback(plugin, "audit"))
         plugin.register_command("direct", self._plugin_callback(plugin, "direct"))
         plugin.register_command("stats", self._plugin_callback(plugin, "stats"))
+        plugin.register_command("summary", self._plugin_callback(plugin, "summary"))
         plugin.register_command("continue", self._plugin_callback(plugin, "continue"))
         plugin.register_command("forget", self._plugin_callback(plugin, "forget"))
         plugin.register_command("kill", self._plugin_callback(plugin, "kill"))
@@ -546,6 +547,17 @@ class CommandRouter:
         issue_number: str | None = None,
     ) -> dict[str, Any]:
         return await self.operator_service.workflow_summary(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
+    async def get_workflow_diagnosis(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_diagnosis(
             workflow_id=workflow_id,
             issue_number=issue_number,
         )
@@ -707,6 +719,7 @@ class CommandRouter:
         self.register_command("audit", self._wrap_command_handler(audit_handler, self.ops_deps))
         self.register_command("direct", self._wrap_command_handler(direct_handler, self.ops_deps), bridge_enabled=False)
         self.register_command("stats", self._wrap_command_handler(stats_handler, self.ops_deps))
+        self.register_command("summary", self._summary_callback())
         self.register_command("continue", self._wrap_command_handler(continue_handler, self.workflow_deps))
         self.register_command("forget", self._wrap_command_handler(forget_handler, self.workflow_deps), bridge_enabled=False)
         self.register_command("kill", self._wrap_command_handler(kill_handler, self.workflow_deps))
@@ -786,6 +799,50 @@ class CommandRouter:
                 attachments=attachments,
             )
             await chat_menu_handler(ctx)
+
+        return _callback
+
+    def _summary_callback(self) -> Callable[..., Awaitable[None]]:
+        async def _callback(
+            *,
+            client: InteractiveClientPlugin,
+            user_id: str,
+            text: str,
+            args: list[str] | None = None,
+            raw_event: Any = None,
+            attachments: list[Any] | None = None,
+            user_state: dict[str, Any] | None = None,
+        ) -> None:
+            del text, attachments, user_state
+            ctx = self.build_context(
+                client=client,
+                user_id=user_id,
+                text="summary",
+                args=args,
+                raw_event=raw_event,
+            )
+            normalized_args = self._normalize_arg_tokens(ctx.args or [])
+            project_key, issue_number = self._extract_project_and_issue("summary", normalized_args)
+            workflow_id = None
+            if not issue_number and len(normalized_args) == 1:
+                token = str(normalized_args[0] or "").strip()
+                if token and not _ISSUE_REF_RE.fullmatch(token) and not _ISSUE_TOKEN_RE.fullmatch(token):
+                    workflow_id = token
+            if not workflow_id and issue_number:
+                workflow_id = self._lookup_workflow_id(issue_number) or None
+
+            payload = await self.get_workflow_summary(workflow_id=workflow_id, issue_number=issue_number)
+            if not payload.get("ok"):
+                await ctx.reply_text(str(payload.get("error") or "Workflow summary unavailable"), parse_mode=None)
+                return
+            diagnosis = await self.get_workflow_diagnosis(workflow_id=workflow_id, issue_number=issue_number)
+            lines = [str(payload.get("summary") or "Workflow summary unavailable")]
+            if diagnosis.get("likely_cause"):
+                lines.append(f"Likely cause: {diagnosis.get('likely_cause')}")
+            actions = diagnosis.get("suggested_actions") or payload.get("suggested_actions") or []
+            if actions:
+                lines.append("Suggested actions: " + ", ".join(str(item) for item in actions))
+            await ctx.reply_text("\n".join(lines), parse_mode=None)
 
         return _callback
 
@@ -983,7 +1040,9 @@ class CommandRouter:
 
         lowered = text.lower()
         command = ""
-        if "workflow state" in lowered or "wfstate" in lowered:
+        if re.search(r"\b(summary|summarize|summarise)\b.*\bworkflow\b", lowered) or re.search(r"\bworkflow\b.*\b(summary|summarize|summarise)\b", lowered) or re.search(r"\bwhy\b.*\bstuck\b", lowered):
+            command = "summary"
+        elif "workflow state" in lowered or "wfstate" in lowered:
             command = "wfstate"
         elif re.search(r"\bshow\b.*\blogs\b", lowered) or re.search(r"\blogs\b", lowered):
             command = "logs"

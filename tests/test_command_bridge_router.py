@@ -441,3 +441,38 @@ async def test_router_workflow_summary_helper_delegates_to_service(router: Comma
     assert payload["ok"] is True
     assert payload["summary"] == "demo"
     assert payload["workflow_id"] == "demo-42-full"
+
+
+@pytest.mark.asyncio
+async def test_router_workflow_diagnosis_helper_delegates_to_service(router: CommandRouter):
+    class _FakeOperatorService:
+        async def workflow_diagnosis(self, **kwargs):
+            return {"ok": True, "diagnosis": "handoff_pending", **kwargs}
+
+    router.operator_service = _FakeOperatorService()
+
+    payload = await router.get_workflow_diagnosis(workflow_id="demo-42-full")
+
+    assert payload["ok"] is True
+    assert payload["diagnosis"] == "handoff_pending"
+    assert payload["workflow_id"] == "demo-42-full"
+
+
+@pytest.mark.asyncio
+async def test_route_maps_workflow_summary_request_to_summary(router: CommandRouter):
+    async def _summary_handler(*, client, user_id, text, args, raw_event=None, attachments=None):
+        del user_id, text, raw_event, attachments
+        ctx = router.build_context(client=client, user_id="alice", text="summary", args=args)
+        await ctx.reply_text("Workflow summary")
+
+    router.register_command("summary", _summary_handler)
+
+    result = await router.route(
+        CommandRequest(
+            raw_text="why is workflow demo#42 stuck?",
+            requester=RequesterContext(source_platform="openclaw", sender_id="alice"),
+        )
+    )
+
+    assert result.status == "success"
+    assert result.message == "Workflow summary"

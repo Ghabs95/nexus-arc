@@ -160,6 +160,16 @@ def create_command_bridge_app(
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
 
+            if method == "GET" and path == "/api/v1/operator/workflows/why-stuck":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.get_workflow_diagnosis(
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
+
             if method == "GET" and path == "/api/v1/operator/git/identity":
                 payload = asyncio.run(router.get_git_identity_status())
                 return _json_response(start_response, 200 if payload.get("ok") else 500, payload)

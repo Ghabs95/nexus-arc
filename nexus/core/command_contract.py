@@ -144,6 +144,7 @@ OPENCLAW_BRIDGE_COMMANDS: set[str] = {
     "stats",
     "status",
     "stop",
+    "summary",
     "track",
     "tracked",
     "untrack",

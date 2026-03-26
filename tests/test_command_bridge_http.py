@@ -66,6 +66,9 @@ class _FakeRouter:
     async def get_workflow_summary(self, *, workflow_id=None, issue_number=None):
         return {"ok": True, "summary": "demo summary", "workflow_id": workflow_id, "issue_number": issue_number}
 
+    async def get_workflow_diagnosis(self, *, workflow_id=None, issue_number=None):
+        return {"ok": True, "diagnosis": "agent_running", "likely_cause": "demo cause", "workflow_id": workflow_id, "issue_number": issue_number}
+
     async def explain_routing(self, **kwargs):
         return {"ok": True, **kwargs}
 
@@ -541,3 +544,21 @@ def test_operator_workflow_summary_endpoint_returns_payload():
 
     assert status.startswith("200")
     assert payload["summary"] == "demo summary"
+
+
+def test_operator_workflow_why_stuck_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/why-stuck",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "workflow_id=demo-42-full"},
+    )
+
+    assert status.startswith("200")
+    assert payload["diagnosis"] == "agent_running"
