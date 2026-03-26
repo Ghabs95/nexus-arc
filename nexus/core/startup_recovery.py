@@ -6,6 +6,8 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from nexus.core.openclaw_affinity_state import OpenClawAffinityStateStore, scan_and_repair_affinity_state
+
 _INSTRUCTION_TEMPLATE_MARKERS = (
     "<agent_type from workflow steps",
     "<step name>",
@@ -87,6 +89,37 @@ def build_startup_workflow_payload_loader(
         return payload if isinstance(payload, dict) else None
 
     return _load_startup_workflow_payload
+
+
+def reconcile_openclaw_affinity_on_startup(
+    *,
+    logger,
+    emit_alert: Callable[..., Any],
+    get_workflow_state_mappings: Callable[[], dict[str, Any]],
+    nexus_core_storage_dir: str | None = None,
+) -> None:
+    """Repair missing persisted OpenClaw affinity state from workflow mappings."""
+    try:
+        repaired = scan_and_repair_affinity_state(
+            workflow_mappings=get_workflow_state_mappings() or {},
+            store=OpenClawAffinityStateStore(base_dir=nexus_core_storage_dir) if nexus_core_storage_dir else None,
+        )
+    except Exception as exc:
+        logger.debug("OpenClaw affinity startup reconciliation failed: %s", exc)
+        return
+
+    for record in repaired:
+        emit_alert(
+            (
+                f"ℹ️ Restored OpenClaw affinity for workflow `{record.workflow_id}`"
+                f" (issue #{record.issue_number or 'n/a'}, session `{record.session_key or 'n/a'}`)"
+            ),
+            severity="info",
+            source="openclaw-affinity-startup",
+            workflow_id=record.workflow_id,
+            issue_number=record.issue_number or None,
+            project_key=record.project_key or None,
+        )
 
 
 def reconcile_completion_signals_on_startup(

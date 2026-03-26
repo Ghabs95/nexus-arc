@@ -33,6 +33,11 @@ from typing import Any
 
 from nexus.adapters.notifications.base import Message, NotificationChannel
 from nexus.core.models import Severity
+from nexus.core.openclaw_affinity_state import (
+    OpenClawAffinityRecord,
+    OpenClawAffinityStateStore,
+    resolve_affinity_binding,
+)
 
 try:
     import aiohttp
@@ -77,6 +82,9 @@ class WorkflowNotificationPayload:
     suggested_actions: list[str] = field(default_factory=list)
     session_key: str = ""
     correlation_token: str = field(default_factory=lambda: f"ocwf-{uuid.uuid4().hex}")
+    binding_status: str = "active"
+    binding_source: str = "deterministic"
+    lifecycle_reason: str = ""
     timestamp_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_metadata(self) -> dict[str, Any]:
@@ -118,6 +126,9 @@ class WorkflowNotificationPayload:
             "routing": {
                 "session_key": self.session_key,
                 "correlation_token": self.correlation_token,
+                "binding_status": self.binding_status,
+                "binding_source": self.binding_source,
+                "lifecycle_reason": self.lifecycle_reason,
                 "reply_hint": {
                     "workflow_id": self.workflow_id,
                     "session_key": self.session_key,
@@ -223,6 +234,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         self._session_key = session_key or os.getenv("NEXUS_OPENCLAW_SESSION_KEY") or ""
         self._timeout_seconds = timeout
         self._sessions_by_loop: dict[object, aiohttp.ClientSession] = {}
+        self._affinity_store = OpenClawAffinityStateStore()
 
     @property
     def name(self) -> str:
@@ -286,12 +298,41 @@ class OpenClawNotificationChannel(NotificationChannel):
         """Send a rich workflow notification envelope to OpenClaw."""
         resolved_project = _infer_project_key(workflow_id, project_key)
         resolved_issue = str(issue_number or "").strip() or _extract_issue_number(workflow_id)
-        resolved_session_key = _resolve_session_key(
-            workflow_id,
-            resolved_project,
-            configured_session_key=session_key or self._session_key,
-            issue_number=resolved_issue,
-        )
+        affinity_store = getattr(self, "_affinity_store", None) or OpenClawAffinityStateStore()
+        try:
+            affinity = resolve_affinity_binding(
+                workflow_id=str(workflow_id or "").strip(),
+                project_key=resolved_project,
+                issue_number=resolved_issue,
+                configured_session_key=session_key or self._session_key,
+                correlation_token=str(correlation_token or "").strip() or f"ocwf-{uuid.uuid4().hex}",
+                event_type=_normalize_event_type(event_type),
+                store=affinity_store,
+            )
+        except Exception as exc:  # pragma: no cover - defensive fallback for I/O failures
+            logger.warning(
+                "Failed to resolve OpenClaw affinity binding; "
+                "falling back to deterministic session key and generated correlation token",
+                exc_info=exc,
+            )
+            fallback_session_key_raw = session_key or getattr(self, "_session_key", "") or ""
+            fallback_session_key = str(fallback_session_key_raw).strip()
+            if not fallback_session_key:
+                fallback_session_key = _resolve_session_key(
+                    str(workflow_id or "").strip(),
+                    resolved_project,
+                    issue_number=resolved_issue,
+                )
+            affinity = OpenClawAffinityRecord(
+                workflow_id=str(workflow_id or "").strip(),
+                project_key=resolved_project,
+                issue_number=resolved_issue,
+                session_key=fallback_session_key,
+                correlation_token=str(correlation_token or "").strip() or f"ocwf-{uuid.uuid4().hex}",
+                binding_status="ephemeral",
+                binding_source="fallback",
+                lifecycle_reason="persistence_failure",
+            )
         payload_model = WorkflowNotificationPayload(
             event_type=_normalize_event_type(event_type),
             workflow_id=str(workflow_id or "").strip(),
@@ -313,16 +354,18 @@ class OpenClawNotificationChannel(NotificationChannel):
             suggested_actions=[
                 str(item).strip() for item in (suggested_actions or []) if str(item).strip()
             ],
-            session_key=resolved_session_key,
-            correlation_token=str(correlation_token or "").strip()
-            or f"ocwf-{uuid.uuid4().hex}",
+            session_key=affinity.session_key,
+            correlation_token=affinity.correlation_token,
+            binding_status=affinity.binding_status,
+            binding_source=affinity.binding_source,
+            lifecycle_reason=affinity.lifecycle_reason,
         )
         text = self._render_workflow_notification(payload_model)
         payload = self._build_payload(
             text,
             target_user=target_user or self._sender_id,
             metadata=payload_model.to_metadata(),
-            session_key=resolved_session_key,
+            session_key=affinity.session_key,
         )
         return await self._post(payload)
 
