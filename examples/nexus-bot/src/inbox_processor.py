@@ -216,11 +216,7 @@ from nexus.core.runtime.agent_launcher import (
 from nexus.core.runtime_mode import is_issue_process_running, is_postgres_backend
 from nexus.core.startup_recovery import (
     build_startup_workflow_payload_loader as _build_startup_workflow_payload_loader,
-)
-from nexus.core.startup_recovery import (
     reconcile_completion_signals_on_startup as _startup_reconcile_completion_signals,
-)
-from nexus.core.startup_recovery import (
     reconcile_openclaw_affinity_on_startup as _startup_reconcile_openclaw_affinity,
 )
 from nexus.core.state_manager import HostStateManager

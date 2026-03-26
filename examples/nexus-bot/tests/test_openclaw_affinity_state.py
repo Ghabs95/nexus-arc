@@ -68,14 +68,12 @@ def test_resolve_affinity_binding_marks_configured_drift(tmp_path):
 
 def test_scan_and_repair_affinity_state_restores_missing_session_key(tmp_path):
     store = OpenClawAffinityStateStore(base_dir=tmp_path)
-    store.upsert(
-        resolve_affinity_binding(
-            workflow_id="nexus-50-full",
-            project_key="nexus",
-            issue_number="50",
-            correlation_token="ocwf-50",
-            store=store,
-        )
+    resolve_affinity_binding(
+        workflow_id="nexus-50-full",
+        project_key="nexus",
+        issue_number="50",
+        correlation_token="ocwf-50",
+        store=store,
     )
     records = store.load_all()
     records["nexus-50-full"].session_key = ""

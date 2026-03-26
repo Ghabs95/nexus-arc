@@ -16,6 +16,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+try:
+    import fcntl as _fcntl
+
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover - Windows
+    _HAS_FCNTL = False
+
 logger = logging.getLogger(__name__)
 
 _STATE_DIRNAME = "openclaw"
@@ -82,7 +89,20 @@ class OpenClawAffinityStateStore:
             with open(self.state_file, encoding="utf-8") as handle:
                 payload = json.load(handle)
         except Exception as exc:
-            logger.warning("Failed to load OpenClaw affinity state: %s", exc)
+            logger.error("Failed to load OpenClaw affinity state from %s: %s", self.state_file, exc)
+            try:
+                backup_suffix = datetime.now(UTC).isoformat().replace(":", "-")
+                backup_path = self.state_file.with_suffix(
+                    f"{self.state_file.suffix}.corrupt-{backup_suffix}"
+                )
+                os.replace(self.state_file, backup_path)
+                logger.error("Backed up corrupt OpenClaw affinity state file to %s", backup_path)
+            except Exception as backup_exc:  # pragma: no cover - best-effort backup
+                logger.error(
+                    "Failed to back up corrupt OpenClaw affinity state file %s: %s",
+                    self.state_file,
+                    backup_exc,
+                )
             return {}
         workflows = payload.get("workflows", {}) if isinstance(payload, dict) else {}
         if not isinstance(workflows, dict):
@@ -111,9 +131,18 @@ class OpenClawAffinityStateStore:
         workflow_id = str(record.workflow_id or "").strip()
         if not workflow_id:
             raise ValueError("workflow_id is required for OpenClaw affinity persistence")
-        records = self.load_all()
-        records[workflow_id] = record
-        self.save_all(records)
+        self._ensure_dir()
+        lock_path = self.state_file.with_suffix(".json.lock")
+        with open(lock_path, "w") as lock_handle:
+            if _HAS_FCNTL:
+                _fcntl.flock(lock_handle, _fcntl.LOCK_EX)
+            try:
+                records = self.load_all()
+                records[workflow_id] = record
+                self.save_all(records)
+            finally:
+                if _HAS_FCNTL:
+                    _fcntl.flock(lock_handle, _fcntl.LOCK_UN)
         return record
 
 
@@ -129,6 +158,19 @@ def deterministic_session_key(
     if str(issue_number or "").strip():
         prefix = f"nexus:{project_key}:issue" if str(project_key or "").strip() else "nexus:issue"
         return f"{prefix}:{str(issue_number).strip()}"
+    return ""
+
+
+def _infer_project_key(workflow_id: str) -> str:
+    """Infer a project key from a workflow ID by splitting on the first dash.
+
+    Mirrors the same heuristic used by the OpenClaw notification adapter so
+    that session keys produced during startup reconciliation match those used
+    during normal notification delivery (e.g. ``nexus-50-full`` → ``nexus``).
+    """
+    candidate = str(workflow_id or "").strip()
+    if candidate and "-" in candidate:
+        return candidate.split("-", 1)[0]
     return ""
 
 
@@ -228,6 +270,7 @@ def scan_and_repair_affinity_state(
             repaired.append(
                 resolve_affinity_binding(
                     workflow_id=workflow_id,
+                    project_key=_infer_project_key(workflow_id),
                     issue_number=issue_number,
                     store=store,
                     event_type="startup.reconcile",
