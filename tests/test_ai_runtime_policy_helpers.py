@@ -832,6 +832,7 @@ def test_codex_invoker_falls_back_when_workspace_write_hits_bwrap_namespace_fail
             self.messages.append(("error", msg % args if args else msg))
 
     monkeypatch.setenv("NEXUS_CLI_AUTH_MODE", "account")
+    monkeypatch.setenv("NEXUS_CODEX_ALLOW_DANGER_SANDBOX", "1")
     monkeypatch.setattr(codex_mod.time, "strftime", lambda fmt: "20260101_120000")
 
     popen_calls: list[list[str]] = []
@@ -944,6 +945,7 @@ def test_codex_invoker_retries_when_bwrap_failure_appears_while_process_stays_al
             self.messages.append(("error", msg % args if args else msg))
 
     monkeypatch.setenv("NEXUS_CLI_AUTH_MODE", "account")
+    monkeypatch.setenv("NEXUS_CODEX_ALLOW_DANGER_SANDBOX", "1")
     monkeypatch.setattr(codex_mod.time, "strftime", lambda fmt: "20260101_120000")
 
     popen_calls: list[list[str]] = []

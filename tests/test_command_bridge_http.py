@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import io
 import json
+import time
 
 from nexus.core.command_bridge.http import CommandBridgeConfig, create_command_bridge_app
-from nexus.core.command_bridge.models import CommandResult
+from nexus.core.command_bridge.models import CommandResult, ReplyRequest
 
 
 class _FakeRouter:
@@ -34,8 +35,23 @@ class _FakeRouter:
             return {"ok": True, "workflow_id": workflow_id, "status": {"state": "running"}}
         return {"ok": False, "error": "missing"}
 
+    async def receive_reply(self, reply: ReplyRequest):
+        return CommandResult(
+            status="success",
+            message="Reply received",
+            data={"correlation_id": reply.correlation_id, "received": True},
+        )
 
-def _call_app(app, *, method: str, path: str, payload: dict | None = None, auth: str | None = None):
+
+def _call_app(
+    app,
+    *,
+    method: str,
+    path: str,
+    payload: dict | None = None,
+    auth: str | None = None,
+    extra_headers: dict | None = None,
+):
     body = json.dumps(payload or {}).encode("utf-8")
     status_holder: dict[str, object] = {}
 
@@ -51,6 +67,8 @@ def _call_app(app, *, method: str, path: str, payload: dict | None = None, auth:
     }
     if auth is not None:
         environ["HTTP_AUTHORIZATION"] = auth
+    for header_name, header_value in (extra_headers or {}).items():
+        environ[header_name] = header_value
     response = b"".join(app(environ, _start_response))
     return status_holder["status"], json.loads(response.decode("utf-8"))
 
@@ -203,3 +221,187 @@ def test_workflow_status_endpoint_returns_payload():
 
     assert status.startswith("200")
     assert payload["status"]["state"] == "running"
+
+
+def test_500_does_not_leak_exception_details(monkeypatch):
+    class _BrokenRouter:
+        def get_capabilities(self):
+            raise RuntimeError("secret internal path: /etc/nexus/tokens.json")
+
+    app = create_command_bridge_app(
+        _BrokenRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/capabilities",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("500")
+    assert payload["error"] == "Internal server error"
+    assert payload["error_code"] == "internal_error"
+    assert "secret" not in payload["error"]
+    assert "/etc" not in payload["error"]
+
+
+def test_tls_enforcement_rejects_non_https():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret", require_tls=True),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/capabilities",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("403")
+    assert payload["error_code"] == "tls_required"
+
+
+def test_tls_enforcement_allows_https_via_forwarded_proto():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret", require_tls=True),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/capabilities",
+        auth="Bearer secret",
+        extra_headers={"HTTP_X_FORWARDED_PROTO": "https"},
+    )
+
+    assert status.startswith("200")
+    assert payload["supported_commands"] == ["plan", "wfstate"]
+
+
+def test_replay_protection_rejects_missing_timestamp():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret", replay_protection_enabled=True),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/capabilities",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("401")
+    assert payload["error_code"] == "missing_timestamp"
+
+
+def test_replay_protection_rejects_stale_timestamp():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret", replay_protection_enabled=True),
+    )
+
+    stale_ts = str(time.time() - 400)
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/capabilities",
+        auth="Bearer secret",
+        extra_headers={"HTTP_X_NEXUS_TIMESTAMP": stale_ts, "HTTP_X_NEXUS_NONCE": "abc123"},
+    )
+
+    assert status.startswith("401")
+    assert payload["error_code"] == "timestamp_out_of_window"
+
+
+def test_replay_protection_rejects_duplicate_nonce():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret", replay_protection_enabled=True),
+    )
+
+    import uuid
+    fresh_ts = str(time.time())
+    nonce = f"unique-nonce-{uuid.uuid4().hex}"
+
+    first_status, _ = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/capabilities",
+        auth="Bearer secret",
+        extra_headers={"HTTP_X_NEXUS_TIMESTAMP": fresh_ts, "HTTP_X_NEXUS_NONCE": nonce},
+    )
+    assert first_status.startswith("200"), f"First request should succeed, got {first_status}"
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/capabilities",
+        auth="Bearer secret",
+        extra_headers={"HTTP_X_NEXUS_TIMESTAMP": fresh_ts, "HTTP_X_NEXUS_NONCE": nonce},
+    )
+
+    assert status.startswith("401")
+    assert payload["error_code"] == "replay_detected"
+
+
+def test_reply_endpoint_accepts_valid_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/bridge/openclaw/reply",
+        auth="Bearer secret",
+        payload={
+            "correlation_id": "corr-001",
+            "content": "Done!",
+            "sender_id": "alice",
+        },
+    )
+
+    assert status.startswith("200")
+    assert payload["status"] == "success"
+    assert payload["data"]["correlation_id"] == "corr-001"
+    assert payload["data"]["received"] is True
+
+
+def test_reply_endpoint_rejects_missing_correlation_id():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/bridge/openclaw/reply",
+        auth="Bearer secret",
+        payload={"content": "No correlation id here"},
+    )
+
+    assert status.startswith("400")
+    assert payload["error_code"] == "invalid_request"
+
+
+def test_reply_endpoint_requires_auth():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/bridge/openclaw/reply",
+        payload={"correlation_id": "corr-001", "content": "hi"},
+    )
+
+    assert status.startswith("401")

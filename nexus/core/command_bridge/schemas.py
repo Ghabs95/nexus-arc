@@ -125,3 +125,14 @@ class BridgeCommandResultPayload(TypedDict, total=False):
     audit: BridgeAuditPayload
     data: dict[str, Any]
     suggested_next_commands: list[str]
+
+
+class BridgeReplyRequestPayload(TypedDict, total=False):
+    """Inbound reply payload sent by an OpenClaw plugin to Nexus."""
+
+    correlation_id: str
+    content: str
+    sender_id: str
+    session_id: str
+    status: str
+    metadata: dict[str, Any]
