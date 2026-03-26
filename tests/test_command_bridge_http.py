@@ -8,7 +8,23 @@ from nexus.core.command_bridge.http import CommandBridgeConfig, create_command_b
 from nexus.core.command_bridge.models import CommandResult, ReplyRequest
 
 
+class _FakeOperatorService:
+    async def workflow_status(self, *, workflow_id=None, issue_number=None):
+        return {
+            "ok": True,
+            "workflow": {
+                "workflow_id": workflow_id or "demo-42-full",
+                "issue_number": issue_number or "42",
+                "project_key": "demo",
+                "state": "running",
+            },
+        }
+
+
 class _FakeRouter:
+    def __init__(self):
+        self.operator_service = _FakeOperatorService()
+
     def get_capabilities(self):
         return {
             "ok": True,
@@ -34,6 +50,39 @@ class _FakeRouter:
         if workflow_id == "demo-42-full":
             return {"ok": True, "workflow_id": workflow_id, "status": {"state": "running"}}
         return {"ok": False, "error": "missing"}
+
+    async def get_runtime_health(self):
+        return {"ok": True, "runtime_mode": "openclaw"}
+
+    async def get_active_workflows(self, *, limit: int = 20):
+        return {"ok": True, "count": 1, "items": [{"workflow_id": "demo-42-full"}], "limit": limit}
+
+    async def get_recent_failures(self, *, limit: int = 20):
+        return {"ok": True, "count": 1, "items": [{"workflow_id": "demo-99-full"}], "limit": limit}
+
+    async def get_git_identity_status(self):
+        return {"ok": True, "github": {"installed": True}}
+
+    async def get_workflow_summary(self, *, workflow_id=None, issue_number=None):
+        return {"ok": True, "summary": "demo summary", "workflow_id": workflow_id, "issue_number": issue_number}
+
+    async def get_workflow_diagnosis(self, *, workflow_id=None, issue_number=None):
+        return {"ok": True, "diagnosis": "agent_running", "likely_cause": "demo cause", "workflow_id": workflow_id, "issue_number": issue_number}
+
+    async def explain_routing(self, **kwargs):
+        return {"ok": True, **kwargs}
+
+    async def continue_workflow(self, **kwargs):
+        return {"ok": True, "action": "continue", **kwargs}
+
+    async def retry_workflow_step(self, **kwargs):
+        return {"ok": True, "action": "retry-step", **kwargs}
+
+    async def cancel_workflow(self, **kwargs):
+        return {"ok": True, "action": "cancel", **kwargs}
+
+    async def refresh_workflow_state(self, **kwargs):
+        return {"ok": True, "action": "refresh-state", **kwargs}
 
     async def receive_reply(self, reply: ReplyRequest):
         return CommandResult(
@@ -405,3 +454,183 @@ def test_reply_endpoint_requires_auth():
     )
 
     assert status.startswith("401")
+
+
+def test_operator_runtime_health_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/runtime-health",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("200")
+    assert payload["runtime_mode"] == "openclaw"
+
+
+def test_operator_active_workflows_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/active",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "limit=5"},
+    )
+
+    assert status.startswith("200")
+    assert payload["count"] == 1
+
+
+def test_operator_continue_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/operator/workflows/continue",
+        auth="Bearer secret",
+        payload={"issue_number": "42", "target_agent": "developer"},
+    )
+
+    assert status.startswith("200")
+    assert payload["action"] == "continue"
+    assert payload["issue_number"] == "42"
+
+
+def test_operator_routing_explain_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/routing/explain",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "project_key=nexus&task_type=feature"},
+    )
+
+    assert status.startswith("200")
+    assert payload["project_key"] == "nexus"
+
+
+def test_operator_workflow_summary_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/summary",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "workflow_id=demo-42-full"},
+    )
+
+    assert status.startswith("200")
+    assert payload["summary"] == "demo summary"
+
+
+def test_operator_workflow_why_stuck_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/why-stuck",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "workflow_id=demo-42-full"},
+    )
+
+    assert status.startswith("200")
+    assert payload["diagnosis"] == "agent_running"
+
+
+def test_operator_workflow_status_returns_400_when_no_ref():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/status",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("400")
+    assert payload["ok"] is False
+    assert payload["error"] == "Missing query parameter: provide 'workflow_id' or 'issue_number'."
+
+
+def test_operator_workflow_summary_returns_400_when_no_ref():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/summary",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("400")
+    assert payload["ok"] is False
+    assert payload["error"] == "Missing query parameter: provide 'workflow_id' or 'issue_number'."
+
+
+def test_operator_workflow_why_stuck_returns_400_when_no_ref():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/workflows/why-stuck",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("400")
+    assert payload["ok"] is False
+    assert payload["error"] == "Missing query parameter: provide 'workflow_id' or 'issue_number'."
+
+
+def test_operator_retry_step_returns_400_when_target_agent_missing():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/operator/workflows/retry-step",
+        auth="Bearer secret",
+        payload={"workflow_id": "demo-42-full"},
+    )
+
+    assert status.startswith("400")
+    assert payload["error"] == "target_agent is required for retry-step requests"

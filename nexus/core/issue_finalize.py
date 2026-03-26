@@ -17,7 +17,6 @@ _GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/([0-9]+)", re.IGNO
 _GITLAB_MR_URL_RE = re.compile(r"/-/merge_requests/([0-9]+)", re.IGNORECASE)
 
 
->>>>>>> 008bd2c (refactor(auth): extract shared automation git token helper; platform-aware token selection)
 def _run_sync(awaitable_factory):
     def _close_awaitable_if_needed(candidate: object | None) -> None:
         if candidate is None or not inspect.isawaitable(candidate):
@@ -103,15 +102,6 @@ def get_git_platform(
     )
 
 
-<<<<<<< HEAD
-def _get_project_platform(project_name: str) -> str | None:
-    """Return the VCS platform for a project (``github`` or ``gitlab``), or None on failure."""
-    try:
-        from nexus.core.config import get_project_platform
-
-        return get_project_platform(project_name)
-    except (ImportError, KeyError, ValueError):
-=======
 def _detect_project_platform(project_name: str | None) -> str | None:
     """Return 'github' or 'gitlab' for the given project, or None if unresolvable."""
     try:
@@ -120,6 +110,11 @@ def _detect_project_platform(project_name: str | None) -> str | None:
         return get_project_platform(project_name) or None
     except Exception:
         return None
+
+
+def _get_project_platform(project_name: str | None) -> str | None:
+    """Backward-compatible alias for project platform detection."""
+    return _detect_project_platform(project_name)
 
 
 def _is_git_repo(path: str) -> bool:

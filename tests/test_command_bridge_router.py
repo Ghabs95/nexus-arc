@@ -259,21 +259,27 @@ async def test_get_workflow_status_includes_usage(
         )
 
     monkeypatch.setattr("nexus.core.command_bridge.router.collect_bridge_usage_payload", _fake_usage)
-    router.workflow_deps.workflow_state_plugin_kwargs = {}
 
-    class _WorkflowPlugin:
-        async def get_workflow_status(self, issue_number):
-            assert issue_number == "42"
-            return {"state": "running"}
+    class _FakeOperatorService:
+        async def workflow_status(self, *, workflow_id=None, issue_number=None):
+            assert workflow_id == "demo-42-full"
+            assert issue_number is None
+            return {
+                "ok": True,
+                "workflow": {
+                    "workflow_id": "demo-42-full",
+                    "issue_number": "42",
+                    "project_key": None,
+                },
+                "plugin_status": {"state": "running"},
+            }
 
-    monkeypatch.setattr(
-        "nexus.core.command_bridge.router.get_workflow_state_plugin",
-        lambda **_kwargs: _WorkflowPlugin(),
-    )
+    router.operator_service = _FakeOperatorService()
 
     payload = await router.get_workflow_status("demo-42-full")
 
     assert payload["ok"] is True
+    assert payload["plugin_status"] == {"state": "running"}
     assert payload["usage"]["provider"] == "openai"
     assert payload["usage"]["input_tokens"] == 90
 
@@ -377,3 +383,124 @@ async def test_route_maps_spend_request_to_usage(
     assert result.status == "success"
     assert result.usage is not None
     assert result.usage.provider == "openai"
+
+
+@pytest.mark.asyncio
+async def test_router_operator_helpers_delegate_to_service(router: CommandRouter):
+    class _FakeOperatorService:
+        async def runtime_health(self):
+            return {"ok": True, "runtime": "ok"}
+
+        async def active_workflows(self, *, limit: int = 20):
+            return {"ok": True, "limit": limit}
+
+        async def recent_failures(self, *, limit: int = 20):
+            return {"ok": True, "limit": limit}
+
+        async def git_identity_status(self):
+            return {"ok": True, "github": {"installed": True}}
+
+        async def routing_explain(self, **kwargs):
+            return {"ok": True, **kwargs}
+
+        async def continue_workflow(self, **kwargs):
+            return {"ok": True, "action": "continue", **kwargs}
+
+        async def retry_step(self, **kwargs):
+            return {"ok": True, "action": "retry", **kwargs}
+
+        async def cancel_workflow(self, **kwargs):
+            return {"ok": True, "action": "cancel", **kwargs}
+
+        async def refresh_state(self, **kwargs):
+            return {"ok": True, "action": "refresh", **kwargs}
+
+    router.operator_service = _FakeOperatorService()
+
+    assert (await router.get_runtime_health())["runtime"] == "ok"
+    assert (await router.get_active_workflows(limit=5))["limit"] == 5
+    assert (await router.get_recent_failures(limit=3))["limit"] == 3
+    assert (await router.get_git_identity_status())["github"]["installed"] is True
+    assert (await router.explain_routing(project_key="nexus"))["project_key"] == "nexus"
+    assert (await router.continue_workflow(issue_number="42"))["action"] == "continue"
+    assert (await router.retry_workflow_step(issue_number="42", target_agent="developer"))["action"] == "retry"
+    assert (await router.cancel_workflow(issue_number="42"))["action"] == "cancel"
+    assert (await router.refresh_workflow_state(issue_number="42"))["action"] == "refresh"
+
+
+@pytest.mark.asyncio
+async def test_router_workflow_summary_helper_delegates_to_service(router: CommandRouter):
+    class _FakeOperatorService:
+        async def workflow_summary(self, **kwargs):
+            return {"ok": True, "summary": "demo", **kwargs}
+
+    router.operator_service = _FakeOperatorService()
+
+    payload = await router.get_workflow_summary(workflow_id="demo-42-full")
+
+    assert payload["ok"] is True
+    assert payload["summary"] == "demo"
+    assert payload["workflow_id"] == "demo-42-full"
+
+
+@pytest.mark.asyncio
+async def test_router_workflow_diagnosis_helper_delegates_to_service(router: CommandRouter):
+    class _FakeOperatorService:
+        async def workflow_diagnosis(self, **kwargs):
+            return {"ok": True, "diagnosis": "handoff_pending", **kwargs}
+
+    router.operator_service = _FakeOperatorService()
+
+    payload = await router.get_workflow_diagnosis(workflow_id="demo-42-full")
+
+    assert payload["ok"] is True
+    assert payload["diagnosis"] == "handoff_pending"
+    assert payload["workflow_id"] == "demo-42-full"
+
+
+@pytest.mark.asyncio
+async def test_route_maps_workflow_summary_request_to_summary(router: CommandRouter):
+    async def _summary_handler(*, client, user_id, text, args, raw_event=None, attachments=None):
+        del user_id, text, raw_event, attachments
+        ctx = router.build_context(client=client, user_id="alice", text="summary", args=args)
+        await ctx.reply_text("Workflow summary")
+
+    router.register_command("summary", _summary_handler)
+
+    result = await router.route(
+        CommandRequest(
+            raw_text="why is workflow demo#42 stuck?",
+            requester=RequesterContext(source_platform="openclaw", sender_id="alice"),
+        )
+    )
+
+    assert result.status == "success"
+    assert result.message == "Workflow summary"
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_status_includes_backwards_compat_status_key(
+    router: CommandRouter, monkeypatch: pytest.MonkeyPatch
+):
+    async def _fake_usage(*, project_key=None, issue_number=None, workflow_id=None):
+        del project_key, issue_number, workflow_id
+        return None
+
+    monkeypatch.setattr("nexus.core.command_bridge.router.collect_bridge_usage_payload", _fake_usage)
+
+    class _FakeOperatorService:
+        async def workflow_status(self, *, workflow_id=None, issue_number=None):
+            return {
+                "ok": True,
+                "workflow": {"workflow_id": "demo-42-full", "issue_number": "42", "project_key": None},
+                "plugin_status": {"state": "running", "phase": "executing"},
+            }
+
+    router.operator_service = _FakeOperatorService()
+
+    payload = await router.get_workflow_status("demo-42-full")
+
+    assert payload["ok"] is True
+    # The legacy "status" key must be present and mirror plugin_status.
+    assert "status" in payload
+    assert payload["status"] == {"state": "running", "phase": "executing"}

@@ -23,6 +23,7 @@ from nexus.core.command_bridge.models import (
     UiPayload,
     WorkflowRef,
 )
+from nexus.core.command_bridge.operator import BridgeOperatorService
 from nexus.core.command_bridge.usage import (
     collect_bridge_usage_payload,
     usage_payload_from_bridge_event,
@@ -61,7 +62,12 @@ from nexus.core.handlers.monitoring_command_handlers import (
     tail_handler,
     tailstop_handler,
 )
-from nexus.core.handlers.ops_command_handlers import agents_handler, audit_handler, direct_handler, stats_handler
+from nexus.core.handlers.ops_command_handlers import (
+    agents_handler,
+    audit_handler,
+    direct_handler,
+    stats_handler,
+)
 from nexus.core.handlers.workflow_command_handlers import (
     continue_handler,
     forget_handler,
@@ -74,7 +80,6 @@ from nexus.core.handlers.workflow_command_handlers import (
     wfstate_handler,
 )
 from nexus.core.integrations.workflow_state_factory import get_workflow_state
-from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 from nexus.core.project.catalog import get_project_label, iter_project_keys, single_key
 from nexus.core.telegram.telegram_issue_selection_service import parse_project_issue_args
 from nexus.core.user_manager import get_user_manager
@@ -279,6 +284,9 @@ class CommandRouter:
             )
         )
         self._override_requester_builders()
+        self.operator_service = BridgeOperatorService(
+            workflow_state_plugin_kwargs=self.workflow_deps.workflow_state_plugin_kwargs,
+        )
         self._register_default_commands()
 
     def _build_requester_context_builder(self, platform_name: str) -> Callable[[int], dict[str, Any]]:
@@ -386,6 +394,7 @@ class CommandRouter:
         plugin.register_command("audit", self._plugin_callback(plugin, "audit"))
         plugin.register_command("direct", self._plugin_callback(plugin, "direct"))
         plugin.register_command("stats", self._plugin_callback(plugin, "stats"))
+        plugin.register_command("summary", self._plugin_callback(plugin, "summary"))
         plugin.register_command("continue", self._plugin_callback(plugin, "continue"))
         plugin.register_command("forget", self._plugin_callback(plugin, "forget"))
         plugin.register_command("kill", self._plugin_callback(plugin, "kill"))
@@ -515,29 +524,126 @@ class CommandRouter:
         workflow_id = str(workflow_id or "").strip()
         if not workflow_id:
             return {"ok": False, "error": "workflow_id is required"}
-        issue_number = self._issue_number_for_workflow_id(workflow_id)
-        if not issue_number:
-            return {"ok": False, "error": f"Unknown workflow_id '{workflow_id}'"}
-        workflow_plugin = get_workflow_state_plugin(
-            **self.workflow_deps.workflow_state_plugin_kwargs,
-            cache_key="workflow:state-engine:command-bridge:http",
-        )
-        status = await _maybe_await(workflow_plugin.get_workflow_status(issue_number))
-        project_key = self._project_key_from_workflow_id(workflow_id)
+        payload = await self.operator_service.workflow_status(workflow_id=workflow_id)
+        if not payload.get("ok"):
+            return payload
+        workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+        issue_number = workflow.get("issue_number")
+        project_key = workflow.get("project_key")
         usage = await collect_bridge_usage_payload(
             project_key=project_key,
             issue_number=issue_number,
             workflow_id=workflow_id,
         )
-        payload = {
-            "ok": True,
-            "workflow_id": workflow_id,
-            "issue_number": issue_number,
-            "project_key": project_key,
-            "status": status if isinstance(status, dict) else {"raw": status},
-            "usage": usage.to_dict() if usage is not None else {},
-        }
+        payload["workflow_id"] = workflow_id
+        payload["issue_number"] = issue_number
+        payload["project_key"] = project_key
+        payload["usage"] = usage.to_dict() if usage is not None else {}
+        # Preserve backwards compatibility: ensure legacy "status" key is present.
+        if "status" not in payload:
+            plugin_status = payload.get("plugin_status")
+            if isinstance(plugin_status, dict):
+                payload["status"] = plugin_status
         return payload
+
+    async def get_runtime_health(self) -> dict[str, Any]:
+        return await self.operator_service.runtime_health()
+
+    async def get_workflow_summary(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_summary(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
+    async def get_workflow_diagnosis(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_diagnosis(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
+    async def get_active_workflows(self, *, limit: int = 20) -> dict[str, Any]:
+        return await self.operator_service.active_workflows(limit=limit)
+
+    async def get_recent_failures(self, *, limit: int = 20) -> dict[str, Any]:
+        return await self.operator_service.recent_failures(limit=limit)
+
+    async def get_git_identity_status(self) -> dict[str, Any]:
+        return await self.operator_service.git_identity_status()
+
+    async def explain_routing(
+        self,
+        *,
+        project_key: str,
+        task_type: str = "feature",
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        agent_name: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.routing_explain(
+            project_key=project_key,
+            task_type=task_type,
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            agent_name=agent_name,
+        )
+
+    async def continue_workflow(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        target_agent: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.continue_workflow(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            target_agent=target_agent,
+        )
+
+    async def retry_workflow_step(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        target_agent: str,
+    ) -> dict[str, Any]:
+        return await self.operator_service.retry_step(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            target_agent=target_agent,
+        )
+
+    async def cancel_workflow(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.cancel_workflow(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
+    async def refresh_workflow_state(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.refresh_state(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
 
     async def receive_reply(self, reply: ReplyRequest) -> CommandResult:
         """Accept an inbound reply forwarded by an OpenClaw plugin."""
@@ -622,6 +728,7 @@ class CommandRouter:
         self.register_command("audit", self._wrap_command_handler(audit_handler, self.ops_deps))
         self.register_command("direct", self._wrap_command_handler(direct_handler, self.ops_deps), bridge_enabled=False)
         self.register_command("stats", self._wrap_command_handler(stats_handler, self.ops_deps))
+        self.register_command("summary", self._summary_callback())
         self.register_command("continue", self._wrap_command_handler(continue_handler, self.workflow_deps))
         self.register_command("forget", self._wrap_command_handler(forget_handler, self.workflow_deps), bridge_enabled=False)
         self.register_command("kill", self._wrap_command_handler(kill_handler, self.workflow_deps))
@@ -701,6 +808,50 @@ class CommandRouter:
                 attachments=attachments,
             )
             await chat_menu_handler(ctx)
+
+        return _callback
+
+    def _summary_callback(self) -> Callable[..., Awaitable[None]]:
+        async def _callback(
+            *,
+            client: InteractiveClientPlugin,
+            user_id: str,
+            text: str,
+            args: list[str] | None = None,
+            raw_event: Any = None,
+            attachments: list[Any] | None = None,
+            user_state: dict[str, Any] | None = None,
+        ) -> None:
+            del text, attachments, user_state
+            ctx = self.build_context(
+                client=client,
+                user_id=user_id,
+                text="summary",
+                args=args,
+                raw_event=raw_event,
+            )
+            normalized_args = self._normalize_arg_tokens(ctx.args or [])
+            project_key, issue_number = self._extract_project_and_issue("summary", normalized_args)
+            workflow_id = None
+            if not issue_number and len(normalized_args) == 1:
+                token = str(normalized_args[0] or "").strip()
+                if token and not _ISSUE_REF_RE.fullmatch(token) and not _ISSUE_TOKEN_RE.fullmatch(token):
+                    workflow_id = token
+            if not workflow_id and issue_number:
+                workflow_id = self._lookup_workflow_id(issue_number) or None
+
+            payload = await self.get_workflow_summary(workflow_id=workflow_id, issue_number=issue_number)
+            if not payload.get("ok"):
+                await ctx.reply_text(str(payload.get("error") or "Workflow summary unavailable"), parse_mode=None)
+                return
+            diagnosis = await self.get_workflow_diagnosis(workflow_id=workflow_id, issue_number=issue_number)
+            lines = [str(payload.get("summary") or "Workflow summary unavailable")]
+            if diagnosis.get("likely_cause"):
+                lines.append(f"Likely cause: {diagnosis.get('likely_cause')}")
+            actions = diagnosis.get("suggested_actions") or payload.get("suggested_actions") or []
+            if actions:
+                lines.append("Suggested actions: " + ", ".join(str(item) for item in actions))
+            await ctx.reply_text("\n".join(lines), parse_mode=None)
 
         return _callback
 
@@ -898,7 +1049,9 @@ class CommandRouter:
 
         lowered = text.lower()
         command = ""
-        if "workflow state" in lowered or "wfstate" in lowered:
+        if re.search(r"\b(summary|summarize|summarise)\b.*\bworkflow\b", lowered) or re.search(r"\bworkflow\b.*\b(summary|summarize|summarise)\b", lowered) or re.search(r"\bwhy\b.*\bstuck\b", lowered):
+            command = "summary"
+        elif "workflow state" in lowered or "wfstate" in lowered:
             command = "wfstate"
         elif re.search(r"\bshow\b.*\blogs\b", lowered) or re.search(r"\blogs\b", lowered):
             command = "logs"
