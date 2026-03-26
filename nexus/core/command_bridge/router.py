@@ -23,6 +23,7 @@ from nexus.core.command_bridge.models import (
     UiPayload,
     WorkflowRef,
 )
+from nexus.core.command_bridge.operator import BridgeOperatorService
 from nexus.core.command_bridge.usage import (
     collect_bridge_usage_payload,
     usage_payload_from_bridge_event,
@@ -279,6 +280,9 @@ class CommandRouter:
             )
         )
         self._override_requester_builders()
+        self.operator_service = BridgeOperatorService(
+            workflow_state_plugin_kwargs=self.workflow_deps.workflow_state_plugin_kwargs,
+        )
         self._register_default_commands()
 
     def _build_requester_context_builder(self, platform_name: str) -> Callable[[int], dict[str, Any]]:
@@ -515,29 +519,99 @@ class CommandRouter:
         workflow_id = str(workflow_id or "").strip()
         if not workflow_id:
             return {"ok": False, "error": "workflow_id is required"}
-        issue_number = self._issue_number_for_workflow_id(workflow_id)
-        if not issue_number:
-            return {"ok": False, "error": f"Unknown workflow_id '{workflow_id}'"}
-        workflow_plugin = get_workflow_state_plugin(
-            **self.workflow_deps.workflow_state_plugin_kwargs,
-            cache_key="workflow:state-engine:command-bridge:http",
-        )
-        status = await _maybe_await(workflow_plugin.get_workflow_status(issue_number))
-        project_key = self._project_key_from_workflow_id(workflow_id)
+        payload = await self.operator_service.workflow_status(workflow_id=workflow_id)
+        if not payload.get("ok"):
+            return payload
+        workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+        issue_number = workflow.get("issue_number")
+        project_key = workflow.get("project_key")
         usage = await collect_bridge_usage_payload(
             project_key=project_key,
             issue_number=issue_number,
             workflow_id=workflow_id,
         )
-        payload = {
-            "ok": True,
-            "workflow_id": workflow_id,
-            "issue_number": issue_number,
-            "project_key": project_key,
-            "status": status if isinstance(status, dict) else {"raw": status},
-            "usage": usage.to_dict() if usage is not None else {},
-        }
+        payload["workflow_id"] = workflow_id
+        payload["issue_number"] = issue_number
+        payload["project_key"] = project_key
+        payload["usage"] = usage.to_dict() if usage is not None else {}
         return payload
+
+    async def get_runtime_health(self) -> dict[str, Any]:
+        return await self.operator_service.runtime_health()
+
+    async def get_active_workflows(self, *, limit: int = 20) -> dict[str, Any]:
+        return await self.operator_service.active_workflows(limit=limit)
+
+    async def get_recent_failures(self, *, limit: int = 20) -> dict[str, Any]:
+        return await self.operator_service.recent_failures(limit=limit)
+
+    async def get_git_identity_status(self) -> dict[str, Any]:
+        return await self.operator_service.git_identity_status()
+
+    async def explain_routing(
+        self,
+        *,
+        project_key: str,
+        task_type: str = "feature",
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        agent_name: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.routing_explain(
+            project_key=project_key,
+            task_type=task_type,
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            agent_name=agent_name,
+        )
+
+    async def continue_workflow(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        target_agent: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.continue_workflow(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            target_agent=target_agent,
+        )
+
+    async def retry_workflow_step(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        target_agent: str,
+    ) -> dict[str, Any]:
+        return await self.operator_service.retry_step(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            target_agent=target_agent,
+        )
+
+    async def cancel_workflow(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.cancel_workflow(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
+    async def refresh_workflow_state(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.refresh_state(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
 
     async def receive_reply(self, reply: ReplyRequest) -> CommandResult:
         """Accept an inbound reply forwarded by an OpenClaw plugin."""

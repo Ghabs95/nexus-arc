@@ -47,25 +47,6 @@ _ISSUE_OPEN_ERROR_LOG_COOLDOWN_SECONDS = 300
 _last_issue_open_error_log_at: dict[tuple[str, str], float] = {}
 
 
-<<<<<<< HEAD
-def _runtime_token_override(platform: str | None = None) -> str | None:
-    """Return the best automation token for the given git platform using env vars.
-
-    Preference order (from environment variables only):
-    - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
-    - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
-    - Platform-specific write/service tokens (e.g. NEXUS_GITHUB_WRITE_TOKEN, GITHUB_TOKEN, GH_TOKEN,
-      GITLAB_TOKEN, GLAB_TOKEN)
-
-    When platform is None or unknown, all token env vars are tried in the order above.
-    """
-    from nexus.adapters.git.utils import resolve_automation_token_for_platform
-
-    return resolve_automation_token_for_platform(platform)
-
-=======
->>>>>>> 008bd2c (refactor(auth): extract shared automation git token helper; platform-aware token selection)
-
 def _resolve_project_name_for_repo(repo: str) -> str | None:
     try:
         from nexus.core.config import PROJECT_CONFIG, get_default_project, get_repo, get_repos

@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server
 
 from nexus.core.command_bridge.models import CommandRequest, CommandResult, ReplyRequest
@@ -27,6 +28,7 @@ class CommandBridgeConfig:
     auth_token: str = ""
     allowed_sources: list[str] | None = None
     allowed_sender_ids: list[str] | None = None
+    require_authorized_sender: bool = False
     require_tls: bool = False
     replay_protection_enabled: bool = False
     replay_window_seconds: int = _DEFAULT_REPLAY_WINDOW
@@ -123,6 +125,89 @@ def create_command_bridge_app(
                 payload = asyncio.run(router.get_workflow_status(workflow_id))
                 status_code = 200 if payload.get("ok") else 404
                 return _json_response(start_response, status_code, payload)
+
+            if method == "GET" and path == "/api/v1/operator/runtime-health":
+                payload = asyncio.run(router.get_runtime_health())
+                return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
+
+            if method == "GET" and path == "/api/v1/operator/workflows/active":
+                params = _query_params(environ)
+                payload = asyncio.run(router.get_active_workflows(limit=_int_param(params, "limit", 20)))
+                return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
+
+            if method == "GET" and path == "/api/v1/operator/workflows/recent-failures":
+                params = _query_params(environ)
+                payload = asyncio.run(router.get_recent_failures(limit=_int_param(params, "limit", 20)))
+                return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
+
+            if method == "GET" and path == "/api/v1/operator/workflows/status":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.operator_service.workflow_status(
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 404, payload)
+
+            if method == "GET" and path == "/api/v1/operator/git/identity":
+                payload = asyncio.run(router.get_git_identity_status())
+                return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
+
+            if method == "GET" and path == "/api/v1/operator/routing/explain":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.explain_routing(
+                        project_key=_str_param(params, "project_key") or "",
+                        task_type=_str_param(params, "task_type") or "feature",
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                        agent_name=_str_param(params, "agent_name"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+
+            if method == "POST" and path == "/api/v1/operator/workflows/continue":
+                payload = _load_json_body(environ)
+                result = asyncio.run(
+                    router.continue_workflow(
+                        workflow_id=str(payload.get("workflow_id") or "").strip() or None,
+                        issue_number=str(payload.get("issue_number") or "").strip() or None,
+                        target_agent=str(payload.get("target_agent") or "").strip() or None,
+                    )
+                )
+                return _json_response(start_response, 200 if result.get("ok") else 400, result)
+
+            if method == "POST" and path == "/api/v1/operator/workflows/retry-step":
+                payload = _load_json_body(environ)
+                result = asyncio.run(
+                    router.retry_workflow_step(
+                        workflow_id=str(payload.get("workflow_id") or "").strip() or None,
+                        issue_number=str(payload.get("issue_number") or "").strip() or None,
+                        target_agent=str(payload.get("target_agent") or "").strip(),
+                    )
+                )
+                return _json_response(start_response, 200 if result.get("ok") else 400, result)
+
+            if method == "POST" and path == "/api/v1/operator/workflows/cancel":
+                payload = _load_json_body(environ)
+                result = asyncio.run(
+                    router.cancel_workflow(
+                        workflow_id=str(payload.get("workflow_id") or "").strip() or None,
+                        issue_number=str(payload.get("issue_number") or "").strip() or None,
+                    )
+                )
+                return _json_response(start_response, 200 if result.get("ok") else 400, result)
+
+            if method == "POST" and path == "/api/v1/operator/workflows/refresh-state":
+                payload = _load_json_body(environ)
+                result = asyncio.run(
+                    router.refresh_workflow_state(
+                        workflow_id=str(payload.get("workflow_id") or "").strip() or None,
+                        issue_number=str(payload.get("issue_number") or "").strip() or None,
+                    )
+                )
+                return _json_response(start_response, 200 if result.get("ok") else 400, result)
 
             if method == "POST" and path == "/api/v1/bridge/openclaw/reply":
                 payload = _load_json_body(environ)
@@ -240,6 +325,30 @@ def _validate_requester(
         if sender_id not in allowed_sender_ids:
             return f"Sender '{sender_id}' is not allowed", "sender_not_allowed"
     return None
+
+
+
+def _query_params(environ: dict[str, Any]) -> dict[str, list[str]]:
+    raw = str(environ.get("QUERY_STRING", "") or "")
+    return parse_qs(raw, keep_blank_values=False)
+
+
+def _str_param(params: dict[str, list[str]], name: str) -> str | None:
+    values = params.get(name) or []
+    if not values:
+        return None
+    value = str(values[0] or "").strip()
+    return value or None
+
+
+def _int_param(params: dict[str, list[str]], name: str, default: int) -> int:
+    raw = _str_param(params, name)
+    if raw is None:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"Query parameter '{name}' must be an integer") from exc
 
 
 def _validate_reply_payload(payload: dict[str, Any]) -> None:
