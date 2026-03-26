@@ -15,6 +15,21 @@ _GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/([0-9]+)", re.IGNO
 _GITLAB_MR_URL_RE = re.compile(r"/-/merge_requests/([0-9]+)", re.IGNORECASE)
 
 
+def _automation_git_token() -> str | None:
+    for key in (
+        "NEXUS_AUTOMATION_GIT_TOKEN",
+        "NEXUS_GITHUB_WRITE_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "GITLAB_TOKEN",
+        "GLAB_TOKEN",
+    ):
+        token = str(os.getenv(key, "")).strip()
+        if token:
+            return token
+    return None
+
+
 def _run_sync(awaitable_factory):
     def _close_awaitable_if_needed(candidate: object | None) -> None:
         if candidate is None or not inspect.isawaitable(candidate):
@@ -328,7 +343,7 @@ def create_pr_from_changes(
     platform = get_git_platform(
         repo,
         project_name=project_name,
-        token_override=token_override,
+        token_override=(_automation_git_token() or token_override),
     )
     pr_result = _run_sync(
         lambda: platform.create_pr_from_changes(

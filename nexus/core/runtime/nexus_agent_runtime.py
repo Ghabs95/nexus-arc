@@ -47,7 +47,14 @@ _last_issue_open_error_log_at: dict[tuple[str, str], float] = {}
 
 
 def _runtime_token_override() -> str | None:
-    for key in ("GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GLAB_TOKEN"):
+    for key in (
+        "NEXUS_AUTOMATION_GIT_TOKEN",
+        "NEXUS_GITHUB_WRITE_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "GITLAB_TOKEN",
+        "GLAB_TOKEN",
+    ):
         token = str(os.getenv(key, "")).strip()
         if token:
             return token
@@ -689,10 +696,13 @@ class NexusAgentRuntime(AgentRuntime):
             platform = get_git_platform(
                 repo,
                 project_name=project_name,
-                token_override=_resolve_requester_token_override(
-                    str(issue_number),
-                    str(repo),
-                    project_name,
+                token_override=(
+                    _runtime_token_override()
+                    or _resolve_requester_token_override(
+                        str(issue_number),
+                        str(repo),
+                        project_name,
+                    )
                 ),
             )
             import asyncio
