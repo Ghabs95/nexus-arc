@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 
 from nexus.adapters.git.utils import build_issue_url
 from nexus.core.auth.execution_env_resolver import resolve_requester_git_token_for_issue
+from nexus.core.auth.git_token import resolve_automation_git_token as _runtime_token_override
 from nexus.core.completion import normalize_completion_comment_markdown
 from nexus.core.process_orchestrator import AgentRuntime
 
@@ -46,55 +47,6 @@ _ISSUE_OPEN_ERROR_LOG_COOLDOWN_SECONDS = 300
 _last_issue_open_error_log_at: dict[tuple[str, str], float] = {}
 
 
-def _runtime_token_override(platform: str | None = None) -> str | None:
-    """Return the best automation token for the given git platform.
-
-    Preference order:
-    - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
-    - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
-    - Platform-specific write/service tokens
-    - Requester token as last resort
-    """
-    norm_platform = str(platform or "").strip().lower()
-    if norm_platform in ("github", ""):
-        github_keys = (
-            "NEXUS_AUTOMATION_GITHUB_TOKEN",
-            "NEXUS_AUTOMATION_GIT_TOKEN",
-            "NEXUS_GITHUB_WRITE_TOKEN",
-            "GITHUB_TOKEN",
-            "GH_TOKEN",
-        )
-        for key in github_keys:
-            token = str(os.getenv(key, "")).strip()
-            if token:
-                return token
-    if norm_platform in ("gitlab", ""):
-        gitlab_keys = (
-            "NEXUS_AUTOMATION_GITLAB_TOKEN",
-            "NEXUS_AUTOMATION_GIT_TOKEN",
-            "GITLAB_TOKEN",
-            "GLAB_TOKEN",
-        )
-        for key in gitlab_keys:
-            token = str(os.getenv(key, "")).strip()
-            if token:
-                return token
-    # Fallback for unknown platform — try all
-    for key in (
-        "NEXUS_AUTOMATION_GITHUB_TOKEN",
-        "NEXUS_AUTOMATION_GITLAB_TOKEN",
-        "NEXUS_AUTOMATION_GIT_TOKEN",
-        "NEXUS_GITHUB_WRITE_TOKEN",
-        "GITHUB_TOKEN",
-        "GH_TOKEN",
-        "GITLAB_TOKEN",
-        "GLAB_TOKEN",
-    ):
-        token = str(os.getenv(key, "")).strip()
-        if token:
-            return token
-    return None
-
 
 def _resolve_project_name_for_repo(repo: str) -> str | None:
     try:
@@ -110,6 +62,16 @@ def _resolve_project_name_for_repo(repo: str) -> str | None:
         get_repo=get_repo,
         get_project_repos=get_repos,
     )
+
+
+def _resolve_platform_for_project(project_name: str | None) -> str | None:
+    """Return 'github' or 'gitlab' for the given project, or None if unresolvable."""
+    try:
+        from nexus.core.config import get_project_platform
+
+        return get_project_platform(project_name) or None
+    except Exception:
+        return None
 
 
 def _resolve_requester_token_override(
@@ -728,11 +690,12 @@ class NexusAgentRuntime(AgentRuntime):
         try:
             normalized_body = normalize_completion_comment_markdown(body)
             project_name = _resolve_project_name_for_repo(str(repo))
+            repo_platform = _resolve_platform_for_project(project_name)
             platform = get_git_platform(
                 repo,
                 project_name=project_name,
                 token_override=(
-                    _runtime_token_override()
+                    _runtime_token_override(repo_platform)
                     or _resolve_requester_token_override(
                         str(issue_number),
                         str(repo),

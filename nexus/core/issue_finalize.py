@@ -10,59 +10,11 @@ import subprocess
 import threading
 from typing import Any
 
+from nexus.core.auth.git_token import resolve_automation_git_token as _automation_git_token
+
 logger = logging.getLogger(__name__)
 _GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/([0-9]+)", re.IGNORECASE)
 _GITLAB_MR_URL_RE = re.compile(r"/-/merge_requests/([0-9]+)", re.IGNORECASE)
-
-
-def _automation_git_token(platform: str | None = None) -> str | None:
-    """Return the best automation token for the given git platform.
-
-    Preference order:
-    - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
-    - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
-    - Platform-specific write/service tokens
-    - Requester token as last resort
-    """
-    norm_platform = str(platform or "").strip().lower()
-    if norm_platform in ("github", ""):
-        github_keys = (
-            "NEXUS_AUTOMATION_GITHUB_TOKEN",
-            "NEXUS_AUTOMATION_GIT_TOKEN",
-            "NEXUS_GITHUB_WRITE_TOKEN",
-            "GITHUB_TOKEN",
-            "GH_TOKEN",
-        )
-        for key in github_keys:
-            token = str(os.getenv(key, "")).strip()
-            if token:
-                return token
-    if norm_platform in ("gitlab", ""):
-        gitlab_keys = (
-            "NEXUS_AUTOMATION_GITLAB_TOKEN",
-            "NEXUS_AUTOMATION_GIT_TOKEN",
-            "GITLAB_TOKEN",
-            "GLAB_TOKEN",
-        )
-        for key in gitlab_keys:
-            token = str(os.getenv(key, "")).strip()
-            if token:
-                return token
-    # Fallback for unknown platform — try all
-    for key in (
-        "NEXUS_AUTOMATION_GITHUB_TOKEN",
-        "NEXUS_AUTOMATION_GITLAB_TOKEN",
-        "NEXUS_AUTOMATION_GIT_TOKEN",
-        "NEXUS_GITHUB_WRITE_TOKEN",
-        "GITHUB_TOKEN",
-        "GH_TOKEN",
-        "GITLAB_TOKEN",
-        "GLAB_TOKEN",
-    ):
-        token = str(os.getenv(key, "")).strip()
-        if token:
-            return token
-    return None
 
 
 def _run_sync(awaitable_factory):
@@ -143,6 +95,16 @@ def get_git_platform(
         project_name=project_name,
         token_override=token_override,
     )
+
+
+def _detect_project_platform(project_name: str | None) -> str | None:
+    """Return 'github' or 'gitlab' for the given project, or None if unresolvable."""
+    try:
+        from nexus.core.config import get_project_platform
+
+        return get_project_platform(project_name) or None
+    except Exception:
+        return None
 
 
 def _is_git_repo(path: str) -> bool:
@@ -378,7 +340,7 @@ def create_pr_from_changes(
     platform = get_git_platform(
         repo,
         project_name=project_name,
-        token_override=(_automation_git_token() or token_override),
+        token_override=(_automation_git_token(_detect_project_platform(project_name)) or token_override),
     )
     pr_result = _run_sync(
         lambda: platform.create_pr_from_changes(
