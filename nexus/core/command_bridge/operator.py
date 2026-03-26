@@ -195,6 +195,77 @@ class BridgeOperatorService:
             "plugin_status": plugin_status,
         }
 
+    async def workflow_summary(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        payload = await self.workflow_status(workflow_id=workflow_id, issue_number=issue_number)
+        if not payload.get("ok"):
+            return payload
+
+        workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+        plugin_status = payload.get("plugin_status") if isinstance(payload.get("plugin_status"), dict) else {}
+        state = str(workflow.get("state") or "unknown")
+        current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
+        next_step = workflow.get("next_step") if isinstance(workflow.get("next_step"), dict) else {}
+        last_completed = workflow.get("last_completed_step") if isinstance(workflow.get("last_completed_step"), dict) else {}
+
+        reason = None
+        actions: list[str] = []
+        if state == "failed":
+            reason = str(current_step.get("error") or "Workflow is in failed state")
+            actions = ["inspect recent failures", "retry-step", "refresh-state"]
+        elif state == "paused":
+            reason = "Workflow is paused and needs a continue/resume action"
+            actions = ["continue", "refresh-state"]
+        elif state == "cancelled":
+            reason = "Workflow has been cancelled"
+            actions = ["refresh-state"]
+        elif state == "completed":
+            reason = "Workflow completed successfully"
+            actions = ["inspect workflow status"]
+        elif current_step.get("status") == "running":
+            reason = f"Waiting for @{current_step.get('agent') or workflow.get('active_agent') or 'unknown'} to finish current step"
+            actions = ["inspect logs", "refresh-state"]
+        elif next_step.get("agent"):
+            reason = f"Next expected handoff is @{next_step.get('agent')}"
+            actions = ["continue", "refresh-state"]
+        else:
+            reason = "Workflow state is available but the next handoff is unclear"
+            actions = ["inspect workflow status", "refresh-state"]
+
+        summary_lines = [
+            f"Workflow {workflow.get('workflow_id') or workflow_id or ''}".strip(),
+            f"state={state}",
+        ]
+        if workflow.get("issue_number"):
+            summary_lines.append(f"issue=#{workflow.get('issue_number')}")
+        if workflow.get("project_key"):
+            summary_lines.append(f"project={workflow.get('project_key')}")
+        if current_step.get("name"):
+            summary_lines.append(
+                f"current_step={current_step.get('step_num')}:{current_step.get('name')}@{current_step.get('agent') or 'unknown'}"
+            )
+        if last_completed.get("name"):
+            summary_lines.append(
+                f"last_completed={last_completed.get('step_num')}:{last_completed.get('name')}@{last_completed.get('agent') or 'unknown'}"
+            )
+        if next_step.get("name"):
+            summary_lines.append(
+                f"next_step={next_step.get('step_num')}:{next_step.get('name')}@{next_step.get('agent') or 'unknown'}"
+            )
+
+        return {
+            "ok": True,
+            "workflow": workflow,
+            "plugin_status": plugin_status,
+            "reason": reason,
+            "suggested_actions": actions,
+            "summary": "; ".join(summary_lines),
+        }
+
     async def active_workflows(self, *, limit: int = 20) -> dict[str, Any]:
         engine = await self._engine()
         storage = getattr(engine, "storage", None)

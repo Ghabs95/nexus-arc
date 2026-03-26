@@ -426,3 +426,18 @@ async def test_router_operator_helpers_delegate_to_service(router: CommandRouter
     assert (await router.retry_workflow_step(issue_number="42", target_agent="developer"))["action"] == "retry"
     assert (await router.cancel_workflow(issue_number="42"))["action"] == "cancel"
     assert (await router.refresh_workflow_state(issue_number="42"))["action"] == "refresh"
+
+
+@pytest.mark.asyncio
+async def test_router_workflow_summary_helper_delegates_to_service(router: CommandRouter):
+    class _FakeOperatorService:
+        async def workflow_summary(self, **kwargs):
+            return {"ok": True, "summary": "demo", **kwargs}
+
+    router.operator_service = _FakeOperatorService()
+
+    payload = await router.get_workflow_summary(workflow_id="demo-42-full")
+
+    assert payload["ok"] is True
+    assert payload["summary"] == "demo"
+    assert payload["workflow_id"] == "demo-42-full"

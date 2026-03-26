@@ -539,6 +539,17 @@ class CommandRouter:
     async def get_runtime_health(self) -> dict[str, Any]:
         return await self.operator_service.runtime_health()
 
+    async def get_workflow_summary(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.operator_service.workflow_summary(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+        )
+
     async def get_active_workflows(self, *, limit: int = 20) -> dict[str, Any]:
         return await self.operator_service.active_workflows(limit=limit)
 
