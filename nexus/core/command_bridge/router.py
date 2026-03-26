@@ -16,6 +16,7 @@ from nexus.core.command_bridge.models import (
     AuditPayload,
     CommandRequest,
     CommandResult,
+    ReplyRequest,
     RequesterContext,
     SessionContext,
     UiField,
@@ -501,6 +502,24 @@ class CommandRouter:
             "usage": usage.to_dict() if usage is not None else {},
         }
         return payload
+
+    async def receive_reply(self, reply: ReplyRequest) -> CommandResult:
+        """Accept an inbound reply forwarded by an OpenClaw plugin."""
+        correlation_id = reply.correlation_id
+        logger.info(
+            "Received OpenClaw reply: correlation_id=%r sender_id=%r content_len=%d",
+            correlation_id,
+            reply.sender_id,
+            len(reply.content),
+        )
+        return CommandResult(
+            status="success",
+            message="Reply received",
+            data={
+                "correlation_id": correlation_id,
+                "received": True,
+            },
+        )
 
     def get_capabilities(self) -> dict[str, Any]:
         supported = sorted(

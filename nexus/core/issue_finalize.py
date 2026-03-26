@@ -43,6 +43,11 @@ def _run_sync(awaitable_factory):
             _close_awaitable_if_needed(candidate)
             raise
 
+    # A 28-second inner timeout leaves headroom before the 30-second join
+    # deadline, and ensures the coroutine is actually cancelled rather than
+    # abandoned in a detached daemon thread.
+    _INNER_TIMEOUT = 28
+
     holder: dict[str, object | BaseException | None] = {"value": None, "error": None}
 
     def _runner() -> None:
@@ -52,7 +57,7 @@ def _run_sync(awaitable_factory):
             if not inspect.isawaitable(candidate):
                 holder["value"] = candidate
                 return
-            holder["value"] = asyncio.run(candidate)
+            holder["value"] = asyncio.run(asyncio.wait_for(candidate, timeout=_INNER_TIMEOUT))
         except BaseException as exc:
             _close_awaitable_if_needed(candidate)
             holder["error"] = exc
