@@ -15,8 +15,43 @@ _GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/([0-9]+)", re.IGNO
 _GITLAB_MR_URL_RE = re.compile(r"/-/merge_requests/([0-9]+)", re.IGNORECASE)
 
 
-def _automation_git_token() -> str | None:
+def _automation_git_token(platform: str | None = None) -> str | None:
+    """Return the best automation token for the given git platform.
+
+    Preference order:
+    - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
+    - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
+    - Platform-specific write/service tokens
+    - Requester token as last resort
+    """
+    norm_platform = str(platform or "").strip().lower()
+    if norm_platform in ("github", ""):
+        github_keys = (
+            "NEXUS_AUTOMATION_GITHUB_TOKEN",
+            "NEXUS_AUTOMATION_GIT_TOKEN",
+            "NEXUS_GITHUB_WRITE_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+        )
+        for key in github_keys:
+            token = str(os.getenv(key, "")).strip()
+            if token:
+                return token
+    if norm_platform in ("gitlab", ""):
+        gitlab_keys = (
+            "NEXUS_AUTOMATION_GITLAB_TOKEN",
+            "NEXUS_AUTOMATION_GIT_TOKEN",
+            "GITLAB_TOKEN",
+            "GLAB_TOKEN",
+        )
+        for key in gitlab_keys:
+            token = str(os.getenv(key, "")).strip()
+            if token:
+                return token
+    # Fallback for unknown platform — try all
     for key in (
+        "NEXUS_AUTOMATION_GITHUB_TOKEN",
+        "NEXUS_AUTOMATION_GITLAB_TOKEN",
         "NEXUS_AUTOMATION_GIT_TOKEN",
         "NEXUS_GITHUB_WRITE_TOKEN",
         "GITHUB_TOKEN",

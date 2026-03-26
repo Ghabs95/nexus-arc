@@ -46,8 +46,43 @@ _ISSUE_OPEN_ERROR_LOG_COOLDOWN_SECONDS = 300
 _last_issue_open_error_log_at: dict[tuple[str, str], float] = {}
 
 
-def _runtime_token_override() -> str | None:
+def _runtime_token_override(platform: str | None = None) -> str | None:
+    """Return the best automation token for the given git platform.
+
+    Preference order:
+    - Platform-specific automation token (NEXUS_AUTOMATION_GITHUB_TOKEN / NEXUS_AUTOMATION_GITLAB_TOKEN)
+    - Legacy generic automation token (NEXUS_AUTOMATION_GIT_TOKEN)
+    - Platform-specific write/service tokens
+    - Requester token as last resort
+    """
+    norm_platform = str(platform or "").strip().lower()
+    if norm_platform in ("github", ""):
+        github_keys = (
+            "NEXUS_AUTOMATION_GITHUB_TOKEN",
+            "NEXUS_AUTOMATION_GIT_TOKEN",
+            "NEXUS_GITHUB_WRITE_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+        )
+        for key in github_keys:
+            token = str(os.getenv(key, "")).strip()
+            if token:
+                return token
+    if norm_platform in ("gitlab", ""):
+        gitlab_keys = (
+            "NEXUS_AUTOMATION_GITLAB_TOKEN",
+            "NEXUS_AUTOMATION_GIT_TOKEN",
+            "GITLAB_TOKEN",
+            "GLAB_TOKEN",
+        )
+        for key in gitlab_keys:
+            token = str(os.getenv(key, "")).strip()
+            if token:
+                return token
+    # Fallback for unknown platform — try all
     for key in (
+        "NEXUS_AUTOMATION_GITHUB_TOKEN",
+        "NEXUS_AUTOMATION_GITLAB_TOKEN",
         "NEXUS_AUTOMATION_GIT_TOKEN",
         "NEXUS_GITHUB_WRITE_TOKEN",
         "GITHUB_TOKEN",
