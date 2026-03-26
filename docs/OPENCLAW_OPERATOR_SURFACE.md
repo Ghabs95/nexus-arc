@@ -15,6 +15,9 @@ The operator surface adds a read/control layer so OpenClaw can also:
 - explain routing decisions
 - perform safe workflow control actions
 
+Where supported, workflow-oriented endpoints accept either `workflow_id` or
+`issue_number` so operators can use whichever reference they have handy.
+
 ## Authentication
 
 All `/api/v1/operator/*` endpoints use the same bearer-token protection as the
@@ -59,7 +62,7 @@ curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/recent-failures?limit=2
 
 ### Workflow status
 
-By workflow id:
+By workflow ID:
 
 ```bash
 curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/status?workflow_id=nexus-123-full" \
@@ -84,6 +87,77 @@ It returns:
 
 ```bash
 curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/summary?workflow_id=nexus-123-full" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Workflow timeline / step history
+
+Returns a step-by-step execution view including:
+- step number
+- step name
+- agent
+- status
+- started/completed timestamps
+- retry count
+- error summary when present
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/timeline?workflow_id=nexus-123-full" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Why stuck
+
+This extends the original summary-style diagnosis so operators can distinguish:
+- failed step
+- paused workflow
+- agent still running
+- handoff pending
+- cancelled/completed workflow
+- unclear state that needs deeper inspection
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/why-stuck?workflow_id=nexus-123-full" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Recent incidents digest
+
+Returns a compact digest of recent problematic workflows across failed, paused,
+and retrying/running states.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/recent-incidents?limit=20" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Authorship audit
+
+Returns a best-effort bot-vs-human provenance summary based on workflow/issue/PR/comment/runtime identity that Nexus currently knows about.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/authorship-audit?issue_number=123" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+This is intended for operator review, not as a security boundary. Secret values are never returned.
+
+### Approval / blocker awareness
+
+Returns current blocking signals including paused workflows, pending approval-gate records, and downstream review/compliance-style gates when inferable from workflow state.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/blockers?issue_number=123" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+### Logs context
+
+Returns the current workflow summary together with recent relevant task-log
+context when issue-scoped logs are available.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/workflows/logs-context?issue_number=123" \
   -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
 ```
 
@@ -113,6 +187,15 @@ Returns a structured explanation of:
 - default branch
 - git platform
 - agent preference/profile (when determinable)
+
+### Routing validate
+
+Validates the currently configured routing assumptions for a project/work-type pair. For `project_key=nexus`, this adds best-effort checks for the expected repo split across `nexus-os`, `nexus-arc`, and `nexus`, plus branch/provider expectations when they can be inferred from config.
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/routing/validate?project_key=nexus&task_type=operator" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
 
 ## Safe Control Endpoints
 
