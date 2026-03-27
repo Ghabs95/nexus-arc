@@ -86,8 +86,8 @@ nexus-discord-bot = [
     "cryptography>=42.0",
     "PyNaCl>=1.5",
 ]
-nexus-bot = [
-    "nexus-arc[telegram,discord,postgres,redis,openai,anthropic]",
+nexus-bot-runtime = [
+    "nexus-arc[postgres,redis,openai,anthropic]",
     "python-dotenv>=1.2",
     "flask>=3.1",
     "flask-socketio>=5.3",
@@ -96,8 +96,16 @@ nexus-bot = [
     "apscheduler>=3.11",
     "requests>=2.32",
     "cryptography>=42.0",
-    "openai-whisper>=20250625",
+]
+nexus-bot-chat = [
+    "nexus-arc[telegram,discord]",
     "PyNaCl>=1.5",
+]
+nexus-bot-voice = [
+    "openai-whisper>=20250625",
+]
+nexus-bot = [
+    "nexus-arc[nexus-bot-runtime,nexus-bot-chat,nexus-bot-voice]",
 ]
 all = [
     "nexus-arc[telegram,slack,discord,postgres,redis,openai,anthropic,hotreload,nexus-bot]",

@@ -39,6 +39,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 
 WORKDIR /app
 
+ARG NEXUS_ARC_EXTRAS="nexus-bot-runtime"
+
 RUN mkdir -p /home/ubuntu \
     && chmod 755 /home/ubuntu
 
@@ -47,7 +49,7 @@ RUN mkdir -p /home/ubuntu \
 COPY pyproject.toml /nexus-arc/pyproject.toml
 COPY nexus /nexus-arc/nexus
 COPY README.md /nexus-arc/README.md
-RUN pip install --no-cache-dir "/nexus-arc[nexus-bot]"
+RUN pip install --no-cache-dir "/nexus-arc[${NEXUS_ARC_EXTRAS}]"
 
 # Install the chat runtime package (console scripts: nexus-telegram-bot, nexus-discord-bot, etc.)
 COPY examples/nexus-bot/pyproject.toml /app/pyproject.toml
