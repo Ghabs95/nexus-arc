@@ -31,6 +31,7 @@ def _pr_payload(action: str, merged: bool = False) -> dict:
             "merged_by": {"login": "maintainer"},
         },
         "repository": {"full_name": "sample-org/nexus-arc"},
+        "sender": {"login": "closer"},
     }
 
 
@@ -60,16 +61,16 @@ def test_pr_opened_sends_notification(mock_notify):
 
 @patch("webhook_server._effective_review_mode", return_value="manual")
 @patch("webhook_server._notify_lifecycle", return_value=True)
-def test_pr_merged_skips_when_manual_review_policy(mock_notify, mock_policy):
+def test_pr_merged_notifies_even_when_manual_review_policy(mock_notify, mock_policy):
     from webhook_server import _get_webhook_policy, handle_pull_request
 
     payload = _pr_payload("closed", merged=True)
     event = _get_webhook_policy().parse_pull_request_event(payload)
     result = handle_pull_request(payload, event)
 
-    assert result["status"] == "pr_merged_skipped_manual_review"
+    assert result["status"] == "pr_merged_notified"
     mock_policy.assert_called_once()
-    mock_notify.assert_not_called()
+    mock_notify.assert_called_once()
 
 
 @patch("webhook_server._effective_review_mode", return_value="auto")
@@ -82,6 +83,20 @@ def test_pr_merged_notifies_when_policy_allows(mock_notify, mock_policy):
     result = handle_pull_request(payload, event)
 
     assert result["status"] == "pr_merged_notified"
+    mock_policy.assert_called_once()
+    mock_notify.assert_called_once()
+
+
+@patch("webhook_server._effective_review_mode", return_value="manual")
+@patch("webhook_server._notify_lifecycle", return_value=True)
+def test_pr_closed_unmerged_notifies_without_cleanup(mock_notify, mock_policy):
+    from webhook_server import _get_webhook_policy, handle_pull_request
+
+    payload = _pr_payload("closed", merged=False)
+    event = _get_webhook_policy().parse_pull_request_event(payload)
+    result = handle_pull_request(payload, event)
+
+    assert result["status"] == "pr_closed_unmerged_notified"
     mock_policy.assert_called_once()
     mock_notify.assert_called_once()
 

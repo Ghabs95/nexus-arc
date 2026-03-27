@@ -20,6 +20,15 @@ def _extract_issue_numbers_from_text(text: str) -> list[str]:
     return ordered
 
 
+def _normalize_pr_action(action: Any, *, merged: bool) -> str:
+    normalized = str(action or "").strip().lower()
+    if normalized in {"merge", "merged"}:
+        return "merged"
+    if normalized in {"close", "closed"}:
+        return "merged" if merged else "closed"
+    return normalized
+
+
 def evaluate_issue_close_for_pr_merge(
     workflow_status: dict[str, Any] | None,
 ) -> tuple[bool, str]:
@@ -64,10 +73,17 @@ def handle_pull_request_event(
     pr_author = event.get("author", "")
     repo_name = event.get("repo", "unknown")
     merged = bool(event.get("merged"))
+    normalized_action = _normalize_pr_action(action, merged=merged)
 
-    logger.info("🔀 Pull request #%s: %s by %s", pr_number, action, pr_author)
+    logger.info(
+        "🔀 Pull request #%s: action=%s normalized=%s by %s",
+        pr_number,
+        action,
+        normalized_action,
+        pr_author,
+    )
 
-    if action == "opened":
+    if normalized_action == "opened":
         message = policy.build_pr_created_message(event)
         notify_lifecycle(message)
 
@@ -88,10 +104,11 @@ def handle_pull_request_event(
                     exc,
                 )
 
-        return {"status": "pr_opened_notified", "pr": pr_number, "action": action}
+        return {"status": "pr_opened_notified", "pr": pr_number, "action": normalized_action}
 
-    if action == "closed" and merged:
-        referenced_issue_refs = _extract_issue_numbers_from_text(pr_title)
+    referenced_issue_refs = _extract_issue_numbers_from_text(pr_title)
+
+    if normalized_action == "merged":
         closed_issue_refs: list[str] = []
         if callable(close_issue_for_issue):
             for issue_ref in referenced_issue_refs:
@@ -121,31 +138,28 @@ def handle_pull_request_event(
                     )
 
         review_mode = effective_review_mode(repo_name)
-        should_notify = policy.should_notify_pr_merged(review_mode)
-        if should_notify:
-            message = policy.build_pr_merged_message(event, review_mode)
-            notify_lifecycle(message)
-            return {
-                "status": "pr_merged_notified",
-                "pr": pr_number,
-                "action": action,
-                "review_mode": review_mode,
-                "cleaned_issue_refs": cleaned_issue_refs,
-                "closed_issue_refs": closed_issue_refs,
-            }
-
-        logger.info(
-            "Skipping PR merged notification for #%s due to review mode '%s'",
-            pr_number,
-            review_mode,
-        )
+        message = policy.build_pr_merged_message(event, review_mode)
+        notify_lifecycle(message)
         return {
-            "status": "pr_merged_skipped_manual_review",
+            "status": "pr_merged_notified",
             "pr": pr_number,
-            "action": action,
+            "action": normalized_action,
             "review_mode": review_mode,
             "cleaned_issue_refs": cleaned_issue_refs,
             "closed_issue_refs": closed_issue_refs,
         }
 
-    return {"status": "logged", "pr": pr_number, "action": action}
+    if normalized_action == "closed":
+        review_mode = effective_review_mode(repo_name)
+        message = policy.build_pr_closed_unmerged_message(event)
+        notify_lifecycle(message)
+        return {
+            "status": "pr_closed_unmerged_notified",
+            "pr": pr_number,
+            "action": normalized_action,
+            "review_mode": review_mode,
+            "cleaned_issue_refs": [],
+            "closed_issue_refs": [],
+        }
+
+    return {"status": "logged", "pr": pr_number, "action": normalized_action}

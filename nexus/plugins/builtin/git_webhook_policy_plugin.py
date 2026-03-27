@@ -64,25 +64,40 @@ class GitWebhookPolicyPlugin:
         if "object_kind" in payload and payload["object_kind"] == "merge_request":
             mr = payload.get("object_attributes", {})
             project = payload.get("project", {})
-            author = (
+            actor = (
                 payload["user"].get("username", "unknown")
                 if isinstance(payload.get("user"), dict)
                 else "unknown"
             )
-            merged = mr.get("state") == "merged"
+            raw_action = str(mr.get("action", "") or "").strip().lower()
+            merged = (
+                str(mr.get("state", "")).strip().lower() == "merged"
+                or raw_action in {"merge", "merged"}
+            )
+            if merged:
+                action = "merged"
+            elif raw_action in {"close", "closed"} or str(mr.get("state", "")).strip().lower() == "closed":
+                action = "closed"
+            else:
+                action = raw_action or str(mr.get("state", "")).strip().lower()
+            merge_user = payload.get("merge_user") or payload.get("user") or {}
             return {
-                "action": mr.get("action"),
+                "action": action,
                 "number": mr.get("iid"),
                 "title": mr.get("title", ""),
                 "url": mr.get("url", ""),
-                "author": author,
+                "author": actor,
                 "merged": merged,
-                "merged_by": author if merged else "unknown",
+                "merged_by": (
+                    merge_user.get("username", "unknown") if merged and isinstance(merge_user, dict) else "unknown"
+                ),
+                "closed_by": actor if action == "closed" and not merged else "unknown",
                 "repo": project.get("path_with_namespace", "unknown"),
             }
 
         pr = payload.get("pull_request", {}) or {}
         repository = payload.get("repository", {}) or {}
+        sender = payload.get("sender") or {}
 
         return {
             "action": payload.get("action"),
@@ -96,6 +111,7 @@ class GitWebhookPolicyPlugin:
                 if isinstance(pr.get("merged_by"), dict)
                 else "unknown"
             ),
+            "closed_by": sender.get("login", "unknown") if isinstance(sender, dict) else "unknown",
             "repo": repository.get("full_name", "unknown"),
         }
 
@@ -189,8 +205,14 @@ class GitWebhookPolicyPlugin:
         return default
 
     def should_notify_pr_merged(self, review_mode: str) -> bool:
-        """Return True when PR merge notifications should be emitted."""
-        return self._normalize_review_mode(review_mode) == "auto"
+        """Backward-compatible helper retained for older callers.
+
+        PR/MR lifecycle outcomes should always reach the human-facing surface;
+        review mode only affects merge policy, not whether close/merge events are
+        surfaced.
+        """
+        _ = review_mode
+        return True
 
     def verify_signature(
         self,
@@ -307,7 +329,20 @@ class GitWebhookPolicyPlugin:
             f"Title: {event.get('title', '')}\n"
             f"Repository: {event.get('repo', 'unknown')}\n"
             f"Merged by: @{event.get('merged_by', 'unknown')}\n"
-            f"Review mode: `{self._normalize_review_mode(review_mode)}`\n\n"
+            f"Review mode: `{self._normalize_review_mode(review_mode)}`\n"
+            "Cleanup: `eligible for local worktree cleanup`\n\n"
+            f"🔗 {event.get('url', '')}"
+        )
+
+    def build_pr_closed_unmerged_message(self, event: dict[str, Any]) -> str:
+        """Build PR/MR closed-without-merge lifecycle notification message."""
+        return (
+            "🛑 **PR/MR Closed Without Merge**\n\n"
+            f"PR/MR: #{event.get('number', '')}\n"
+            f"Title: {event.get('title', '')}\n"
+            f"Repository: {event.get('repo', 'unknown')}\n"
+            f"Closed by: @{event.get('closed_by', 'unknown')}\n"
+            "Cleanup: `conservative (no auto-cleanup)`\n\n"
             f"🔗 {event.get('url', '')}"
         )
 
