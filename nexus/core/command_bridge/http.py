@@ -13,7 +13,7 @@ from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server
 
 from nexus.core.command_bridge.models import CommandRequest, CommandResult, ReplyRequest
-from nexus.core.command_bridge.reply_security import ReplyTokenError
+from nexus.core.command_bridge.reply_security import ReplyTokenError, validate_reply_token
 from nexus.core.command_bridge.router import CommandRouter
 
 _logger = logging.getLogger(__name__)
@@ -352,6 +352,16 @@ def create_command_bridge_app(
                 payload = _load_json_body(environ)
                 _validate_reply_payload(payload)
                 reply = ReplyRequest.from_dict(payload)
+                _secret = str(config.reply_token_secret or config.auth_token or "").strip()
+                validate_reply_token(
+                    reply.reply_token,
+                    secret=_secret,
+                    correlation_id=str(reply.correlation_id or ""),
+                    workflow_id=str(reply.workflow_id or ""),
+                    session_id=str(reply.session_id or ""),
+                    sender_id=str(reply.sender_id or ""),
+                    action=str(reply.action or ""),
+                )
                 result = asyncio.run(router.receive_reply(reply))
                 return _command_result_response(start_response, result)
 

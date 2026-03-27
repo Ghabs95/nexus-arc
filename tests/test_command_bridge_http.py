@@ -104,10 +104,19 @@ class _FakeRouter:
         return {"ok": True, "action": "refresh-state", **kwargs}
 
     async def receive_reply(self, reply: ReplyRequest):
+        action = str(reply.action or "").strip().lower()
+        action_name = {
+            "show_status": "status",
+            "show_logs": "logs",
+            "continue": "continue",
+            "cancel": "cancel",
+            "refresh_state": "refresh_state",
+        }.get(action, "ack")
+        message = "Reply received" if action_name == "ack" else f"Reply action '{action_name}' accepted"
         return CommandResult(
             status="success",
-            message="Reply received",
-            data={"correlation_id": reply.correlation_id, "received": True},
+            message=message,
+            data={"correlation_id": reply.correlation_id, "received": True, "reply_action": action_name},
         )
 
 

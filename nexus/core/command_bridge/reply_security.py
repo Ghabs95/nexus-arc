@@ -68,6 +68,15 @@ class ReplyTokenClaims:
 
 
 class _ReplyNonceCache:
+    """In-process nonce store for reply-token replay detection.
+
+    .. note::
+        This cache is per-process. In multi-worker deployments (e.g. multiple WSGI
+        workers or containers behind a load balancer), a token could be replayed
+        against a different worker and still be accepted.  For full replay protection
+        across workers, replace this with a shared store (Redis, memcached, etc.) and
+        override ``_USED_REPLY_NONCES`` before starting the server.
+    """
     _CLEANUP_THRESHOLD = 500
 
     def __init__(self) -> None:

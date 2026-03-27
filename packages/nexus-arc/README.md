@@ -90,9 +90,7 @@ Examples:
 - `/nexus wfstate demo-42-full`
 - `/nexus show me the workflow state for demo#42`
 
-The plugin now forwards richer bridge metadata with each request and signs each bridge call with per-request replay headers (`X-Nexus-Timestamp`, `X-Nexus-Nonce`) so the bridge can enforce freshness/non-reuse when replay protection is enabled.
-
-The plugin now forwards richer bridge metadata with each request:
+The plugin now adds per-request replay headers (`X-Nexus-Timestamp`, `X-Nexus-Nonce`) to each bridge call so the bridge can enforce freshness/non-reuse when replay protection is enabled, and forwards richer bridge metadata with each request:
 
 - requester identity: `operator_id`, `session_id`, `roles`
 - requester metadata: raw args, message id, thread id, attachment summaries
