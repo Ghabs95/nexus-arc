@@ -234,6 +234,34 @@ const sessionStateStore = new Map<string, SessionState>();
 const workflowSessionBindings = new Map<string, SessionAffinityBinding>();
 const pendingConfirmations = new Map<string, PendingConfirmation>();
 
+function buildRequestReplayHeaders(): Record<string, string> {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    let nonce: string;
+    const webCrypto =
+        typeof globalThis !== "undefined" &&
+        globalThis.crypto &&
+        typeof (globalThis.crypto as Crypto).getRandomValues === "function"
+            ? (globalThis.crypto as Crypto)
+            : typeof crypto !== "undefined" && typeof (crypto as Crypto).getRandomValues === "function"
+              ? (crypto as Crypto)
+              : null;
+    if (webCrypto) {
+        const buf = new Uint8Array(16);
+        webCrypto.getRandomValues(buf);
+        nonce = Array.from(buf)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+    } else if (typeof crypto !== "undefined" && typeof (crypto as { randomUUID?: () => string }).randomUUID === "function") {
+        nonce = (crypto as { randomUUID: () => string }).randomUUID().replace(/-/g, "");
+    } else {
+        nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+    return {
+        "x-nexus-timestamp": timestamp,
+        "x-nexus-nonce": nonce
+    };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
@@ -893,6 +921,7 @@ async function fetchJson(
         if (config.authToken) {
             headers.authorization = `Bearer ${config.authToken}`;
         }
+        Object.assign(headers, buildRequestReplayHeaders());
         let response: Response;
         try {
             response = await fetch(`${config.bridgeUrl}${path}`, {

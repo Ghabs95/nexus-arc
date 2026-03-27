@@ -710,21 +710,73 @@ class CommandRouter:
         )
 
     async def receive_reply(self, reply: ReplyRequest) -> CommandResult:
-        """Accept an inbound reply forwarded by an OpenClaw plugin."""
-        correlation_id = reply.correlation_id
+        """Accept an inbound reply forwarded by an OpenClaw plugin.
+
+        Token validation is performed by the HTTP layer before this method is called.
+        """
+        correlation_id = str(reply.correlation_id or "").strip()
         logger.info(
-            "Received OpenClaw reply: correlation_id=%r sender_id=%r content_len=%d",
+            "Received OpenClaw reply: correlation_id=%r sender_id=%r content_len=%d action=%r workflow_id=%r",
             correlation_id,
             reply.sender_id,
             len(reply.content),
+            reply.action,
+            reply.workflow_id,
         )
+        action_name, action_payload = await self._reply_action_result(reply)
+        if isinstance(action_payload, dict) and action_payload.get("ok") is False:
+            message = str(action_payload.get("error") or "Reply action could not be completed")
+            return CommandResult(
+                status="error",
+                message=message,
+                workflow_id=str(action_payload.get("workflow_id") or reply.workflow_id or "") or None,
+                issue_number=str(action_payload.get("issue_number") or reply.issue_number or "") or None,
+                project_key=str(action_payload.get("project_key") or reply.project_key or "") or None,
+                data={
+                    "correlation_id": correlation_id,
+                    "reply_action": action_name,
+                    "received": False,
+                    "reason": action_payload,
+                },
+            )
+        message = "Reply received" if action_name == "ack" else f"Reply action '{action_name}' accepted"
         return CommandResult(
             status="success",
-            message="Reply received",
+            message=message,
+            workflow_id=str(reply.workflow_id or (action_payload.get("workflow_id") if isinstance(action_payload, dict) else "") or "") or None,
+            issue_number=str(reply.issue_number or (action_payload.get("issue_number") if isinstance(action_payload, dict) else "") or "") or None,
+            project_key=str(reply.project_key or (action_payload.get("project_key") if isinstance(action_payload, dict) else "") or "") or None,
             data={
                 "correlation_id": correlation_id,
                 "received": True,
+                "reply_action": action_name,
+                "result": action_payload,
             },
+        )
+
+    async def _reply_action_result(self, reply: ReplyRequest) -> tuple[str, dict[str, Any]]:
+        action = str(reply.action or "").strip().lower()
+        workflow_id = str(reply.workflow_id or "").strip() or None
+        issue_number = str(reply.issue_number or "").strip() or None
+        if not action:
+            return "ack", {"ok": True, "message": "Reply received", "received": True}
+        if action == "show_status":
+            payload = await self.operator_service.workflow_status(workflow_id=workflow_id, issue_number=issue_number)
+            return "status", payload
+        if action == "show_logs":
+            payload = await self.operator_service.workflow_logs_context(workflow_id=workflow_id, issue_number=issue_number)
+            return "logs", payload
+        if action == "continue":
+            payload = await self.continue_workflow(workflow_id=workflow_id, issue_number=issue_number)
+            return "continue", payload
+        if action == "cancel":
+            payload = await self.cancel_workflow(workflow_id=workflow_id, issue_number=issue_number)
+            return "cancel", payload
+        if action == "refresh_state":
+            payload = await self.refresh_workflow_state(workflow_id=workflow_id, issue_number=issue_number)
+            return "refresh_state", payload
+        raise ValueError(
+            f"Reply action '{action}' is not supported by the current Nexus bridge slice; request a fresh workflow status and use an explicit command instead."
         )
 
     def get_capabilities(self) -> dict[str, Any]:

@@ -6,6 +6,7 @@ import time
 
 from nexus.core.command_bridge.http import CommandBridgeConfig, create_command_bridge_app
 from nexus.core.command_bridge.models import CommandResult, ReplyRequest
+from nexus.core.command_bridge.reply_security import issue_reply_token
 
 
 class _FakeOperatorService:
@@ -103,10 +104,19 @@ class _FakeRouter:
         return {"ok": True, "action": "refresh-state", **kwargs}
 
     async def receive_reply(self, reply: ReplyRequest):
+        action = str(reply.action or "").strip().lower()
+        action_name = {
+            "show_status": "status",
+            "show_logs": "logs",
+            "continue": "continue",
+            "cancel": "cancel",
+            "refresh_state": "refresh_state",
+        }.get(action, "ack")
+        message = "Reply received" if action_name == "ack" else f"Reply action '{action_name}' accepted"
         return CommandResult(
             status="success",
-            message="Reply received",
-            data={"correlation_id": reply.correlation_id, "received": True},
+            message=message,
+            data={"correlation_id": reply.correlation_id, "received": True, "reply_action": action_name},
         )
 
 
@@ -421,6 +431,13 @@ def test_reply_endpoint_accepts_valid_payload():
         _FakeRouter(),
         config=CommandBridgeConfig(auth_token="secret"),
     )
+    reply_token, _claims = issue_reply_token(
+        secret="secret",
+        correlation_id="corr-001",
+        workflow_id="demo-42-full",
+        sender_id="alice",
+        allowed_actions=["show_status"],
+    )
 
     status, payload = _call_app(
         app,
@@ -431,6 +448,9 @@ def test_reply_endpoint_accepts_valid_payload():
             "correlation_id": "corr-001",
             "content": "Done!",
             "sender_id": "alice",
+            "workflow_id": "demo-42-full",
+            "action": "show_status",
+            "reply_token": reply_token,
         },
     )
 
@@ -438,6 +458,7 @@ def test_reply_endpoint_accepts_valid_payload():
     assert payload["status"] == "success"
     assert payload["data"]["correlation_id"] == "corr-001"
     assert payload["data"]["received"] is True
+    assert payload["data"]["reply_action"] == "status"
 
 
 def test_reply_endpoint_rejects_missing_correlation_id():
@@ -451,7 +472,7 @@ def test_reply_endpoint_rejects_missing_correlation_id():
         method="POST",
         path="/api/v1/bridge/openclaw/reply",
         auth="Bearer secret",
-        payload={"content": "No correlation id here"},
+        payload={"content": "No correlation id here", "reply_token": "dummy"},
     )
 
     assert status.startswith("400")
@@ -468,10 +489,84 @@ def test_reply_endpoint_requires_auth():
         app,
         method="POST",
         path="/api/v1/bridge/openclaw/reply",
-        payload={"correlation_id": "corr-001", "content": "hi"},
+        payload={"correlation_id": "corr-001", "content": "hi", "reply_token": "dummy"},
     )
 
     assert status.startswith("401")
+
+
+def test_reply_endpoint_rejects_replayed_reply_token():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+    reply_token, _claims = issue_reply_token(
+        secret="secret",
+        correlation_id="corr-002",
+        workflow_id="demo-42-full",
+        sender_id="alice",
+        allowed_actions=["show_status"],
+    )
+    payload = {
+        "correlation_id": "corr-002",
+        "content": "status?",
+        "sender_id": "alice",
+        "workflow_id": "demo-42-full",
+        "action": "show_status",
+        "reply_token": reply_token,
+    }
+
+    first_status, first_payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/bridge/openclaw/reply",
+        auth="Bearer secret",
+        payload=payload,
+    )
+    assert first_status.startswith("200")
+    assert first_payload["status"] == "success"
+
+    second_status, second_payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/bridge/openclaw/reply",
+        auth="Bearer secret",
+        payload=payload,
+    )
+
+    assert second_status.startswith("410")
+    assert second_payload["error_code"] == "reply_replay_detected"
+
+
+def test_reply_endpoint_rejects_correlation_mismatch():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+    reply_token, _claims = issue_reply_token(
+        secret="secret",
+        correlation_id="corr-003",
+        workflow_id="demo-42-full",
+        sender_id="alice",
+        allowed_actions=["continue"],
+    )
+
+    status, payload = _call_app(
+        app,
+        method="POST",
+        path="/api/v1/bridge/openclaw/reply",
+        auth="Bearer secret",
+        payload={
+            "correlation_id": "corr-wrong",
+            "sender_id": "alice",
+            "workflow_id": "demo-42-full",
+            "action": "continue",
+            "reply_token": reply_token,
+        },
+    )
+
+    assert status.startswith("409")
+    assert payload["error_code"] == "reply_correlation_mismatch"
 
 
 def test_operator_runtime_health_endpoint_returns_payload():

@@ -13,6 +13,7 @@ from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server
 
 from nexus.core.command_bridge.models import CommandRequest, CommandResult, ReplyRequest
+from nexus.core.command_bridge.reply_security import ReplyTokenError, validate_reply_token
 from nexus.core.command_bridge.router import CommandRouter
 
 _logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class CommandBridgeConfig:
     require_tls: bool = False
     replay_protection_enabled: bool = False
     replay_window_seconds: int = _DEFAULT_REPLAY_WINDOW
+    reply_token_secret: str = ""
 
 
 class _NonceCache:
@@ -350,10 +352,26 @@ def create_command_bridge_app(
                 payload = _load_json_body(environ)
                 _validate_reply_payload(payload)
                 reply = ReplyRequest.from_dict(payload)
+                _secret = str(config.reply_token_secret or config.auth_token or "").strip()
+                validate_reply_token(
+                    reply.reply_token,
+                    secret=_secret,
+                    correlation_id=str(reply.correlation_id or ""),
+                    workflow_id=str(reply.workflow_id or ""),
+                    session_id=str(reply.session_id or ""),
+                    sender_id=str(reply.sender_id or ""),
+                    action=str(reply.action or ""),
+                )
                 result = asyncio.run(router.receive_reply(reply))
                 return _command_result_response(start_response, result)
 
             return _json_response(start_response, 404, {"error": "Not found"})
+        except ReplyTokenError as exc:
+            error_code = getattr(exc, "code", "invalid_reply_token")
+            status_code = 410 if error_code in {"reply_token_expired", "reply_replay_detected"} else 409
+            return _json_response(
+                start_response, status_code, {"error": str(exc), "error_code": error_code}
+            )
         except ValueError as exc:
             return _json_response(
                 start_response, 400, {"error": str(exc), "error_code": "invalid_request"}
@@ -501,6 +519,9 @@ def _validate_reply_payload(payload: dict[str, Any]) -> None:
     sender_id = payload.get("sender_id")
     if sender_id is not None and not isinstance(sender_id, str):
         raise ValueError("Reply payload 'sender_id' must be a string")
+    reply_token = str(payload.get("reply_token") or "").strip()
+    if not reply_token:
+        raise ValueError("Reply payload must include a non-empty 'reply_token'")
 
 
 def _load_json_body(environ: dict[str, Any]) -> dict[str, Any]:

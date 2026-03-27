@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus.core.command_bridge.reply_security import issue_reply_token
+
 from nexus.adapters.notifications.base import Message, NotificationChannel
 from nexus.core.models import Severity
 from nexus.core.openclaw_affinity_state import (
@@ -82,6 +84,8 @@ class WorkflowNotificationPayload:
     suggested_actions: list[str] = field(default_factory=list)
     session_key: str = ""
     correlation_token: str = field(default_factory=lambda: f"ocwf-{uuid.uuid4().hex}")
+    reply_token: str = ""
+    reply_token_expires_at_utc: str = ""
     binding_status: str = "active"
     binding_source: str = "deterministic"
     lifecycle_reason: str = ""
@@ -135,6 +139,9 @@ class WorkflowNotificationPayload:
                     "event_type": self.event_type,
                     "current_step": self.current_step,
                     "correlation_token": self.correlation_token,
+                    "reply_token": self.reply_token,
+                    "reply_token_expires_at_utc": self.reply_token_expires_at_utc,
+                    "allowed_actions": list(self.suggested_actions or []),
                 },
             },
         }
@@ -233,6 +240,8 @@ class OpenClawNotificationChannel(NotificationChannel):
         self._channel = channel or os.getenv("NEXUS_OPENCLAW_CHANNEL") or "telegram"
         self._session_key = session_key or os.getenv("NEXUS_OPENCLAW_SESSION_KEY") or ""
         self._timeout_seconds = timeout
+        self._reply_secret = os.getenv("NEXUS_OPENCLAW_REPLY_SECRET") or self._auth_token
+        self._reply_ttl_seconds = int(os.getenv("NEXUS_OPENCLAW_REPLY_TTL_SECONDS") or "900")
         self._sessions_by_loop: dict[object, aiohttp.ClientSession] = {}
         self._affinity_store = OpenClawAffinityStateStore()
 
@@ -333,6 +342,20 @@ class OpenClawNotificationChannel(NotificationChannel):
                 binding_source="fallback",
                 lifecycle_reason="persistence_failure",
             )
+        allowed_actions = [str(item).strip() for item in (suggested_actions or []) if str(item).strip()]
+        reply_token = ""
+        reply_token_expiry = ""
+        if self._reply_secret and affinity.correlation_token:
+            reply_token, claims = issue_reply_token(
+                secret=self._reply_secret,
+                correlation_id=affinity.correlation_token,
+                workflow_id=str(workflow_id or "").strip(),
+                session_key=affinity.session_key,
+                sender_id=str(target_user or self._sender_id or "").strip(),
+                allowed_actions=allowed_actions,
+                ttl_seconds=self._reply_ttl_seconds,
+            )
+            reply_token_expiry = datetime.fromtimestamp(claims.expires_at, UTC).isoformat()
         payload_model = WorkflowNotificationPayload(
             event_type=_normalize_event_type(event_type),
             workflow_id=str(workflow_id or "").strip(),
@@ -351,11 +374,11 @@ class OpenClawNotificationChannel(NotificationChannel):
             summary=str(summary or "").strip(),
             blocked_reason=str(blocked_reason or "").strip(),
             key_findings=[str(item).strip() for item in (key_findings or []) if str(item).strip()],
-            suggested_actions=[
-                str(item).strip() for item in (suggested_actions or []) if str(item).strip()
-            ],
+            suggested_actions=allowed_actions,
             session_key=affinity.session_key,
             correlation_token=affinity.correlation_token,
+            reply_token=reply_token,
+            reply_token_expires_at_utc=reply_token_expiry,
             binding_status=affinity.binding_status,
             binding_source=affinity.binding_source,
             lifecycle_reason=affinity.lifecycle_reason,

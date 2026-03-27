@@ -352,6 +352,11 @@ class ReplyRequest:
     content: str = ""
     sender_id: str = ""
     session_id: str = ""
+    workflow_id: str = ""
+    issue_number: str = ""
+    project_key: str = ""
+    action: str = ""
+    reply_token: str = ""
     status: str = "ok"
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -363,6 +368,11 @@ class ReplyRequest:
             content=str(data.get("content", "") or ""),
             sender_id=str(data.get("sender_id", "") or ""),
             session_id=str(data.get("session_id", "") or ""),
+            workflow_id=str(data.get("workflow_id", "") or ""),
+            issue_number=str(data.get("issue_number", "") or ""),
+            project_key=str(data.get("project_key", "") or ""),
+            action=str(data.get("action", "") or ""),
+            reply_token=str(data.get("reply_token", "") or ""),
             status=str(data.get("status", "ok") or "ok"),
             metadata=dict(data.get("metadata", {}) or {}),
         )
@@ -373,6 +383,11 @@ class ReplyRequest:
             "content": self.content,
             "sender_id": self.sender_id,
             "session_id": self.session_id,
+            "workflow_id": self.workflow_id,
+            "issue_number": self.issue_number,
+            "project_key": self.project_key,
+            "action": self.action,
+            "reply_token": self.reply_token,
             "status": self.status,
             "metadata": dict(self.metadata or {}),
         }
