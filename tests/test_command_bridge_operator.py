@@ -231,11 +231,15 @@ async def test_workflow_diagnosis_distinguishes_common_operator_states(operator_
     paused = await operator_service.workflow_diagnosis(issue_number="102")
     running = await operator_service.workflow_diagnosis(issue_number="103")
     handoff = await operator_service.workflow_diagnosis(issue_number="104")
+    approval = await operator_service.workflow_diagnosis(issue_number="105")
 
     assert failed["diagnosis"] == "step_failed"
     assert paused["diagnosis"] == "workflow_paused"
     assert running["diagnosis"] == "agent_running"
     assert handoff["diagnosis"] == "handoff_pending"
+    assert approval["diagnosis"] == "approval_required"
+    assert "waiting for approval" in str(approval["likely_cause"]).lower()
+    assert "inspect blockers" in approval["suggested_actions"]
 
 
 @pytest.mark.asyncio
@@ -298,3 +302,16 @@ async def test_workflow_blockers_surfaces_approvals_and_pauses(operator_service:
     assert approval_payload["blocking"] is True
     assert approval_payload["approval"]["pending_approval"]["step_name"] == "review"
     assert any(item["type"] == "approval_required" for item in approval_payload["blockers"])
+
+
+@pytest.mark.asyncio
+async def test_workflow_summary_includes_blocker_context_for_pending_approval(operator_service: BridgeOperatorService):
+    payload = await operator_service.workflow_summary(issue_number="105")
+
+    assert payload["ok"] is True
+    assert payload["blocking"] is True
+    assert payload["approval"]["pending_approval"]["step_name"] == "review"
+    assert any(item["type"] == "approval_required" for item in payload["blockers"])
+    assert "approval_pending=2:review" in payload["summary"]
+    assert "waiting for approval" in str(payload["reason"]).lower()
+    assert "inspect blockers" in payload["suggested_actions"]

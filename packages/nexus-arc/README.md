@@ -108,11 +108,17 @@ the same Nexus workspace chat memory and project context.
 
 This slice introduces the first stable affinity layer needed for nexus-os issue #1:
 
-- deterministic workflow session keys use `nexus::workflow:<workflow_id>`
+- plugin-local conversation bindings use `nexus::workflow:<workflow_id>`
 - before a workflow is known, the plugin falls back to `nexus::session:<openclaw_session_id>`
 - once a bridge result resolves a workflow id, the plugin binds that workflow to the active OpenClaw conversation in memory
 - follow-up turns include affinity metadata and the latest reply-correlation hints so the bridge can reason about workflow-bound replies without making Nexus subordinate to chat state
 - if a binding is missing or the workflow has not been resolved yet, commands still execute using the current session/issue/project hints instead of failing hard
+
+Current validation note:
+
+- Nexus-side persisted routing metadata currently uses `nexus:<project>:workflow:<workflow_id>` keys in `affinity_state.json`
+- the plugin and bridge remain interoperable because the plugin forwards explicit workflow/session hints, but the key formats are not yet unified end-to-end
+- treat this as an operator-facing contract gap to close in a follow-up rather than assuming the two formats are already identical
 
 Risky commands can require local confirmation before they hit the bridge.
 By default this covers `implement`, `respond`, `stop`, `kill`, and `reprocess`, and operators can

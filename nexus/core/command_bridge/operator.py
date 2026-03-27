@@ -276,9 +276,22 @@ class BridgeOperatorService:
         current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
         next_step = workflow.get("next_step") if isinstance(workflow.get("next_step"), dict) else {}
         timeline = workflow.get("timeline") if isinstance(workflow.get("timeline"), list) else []
+        blockers = workflow.get("blockers") if isinstance(workflow.get("blockers"), list) else []
+        approval = workflow.get("approval") if isinstance(workflow.get("approval"), dict) else {}
+        pending_approval = approval.get("pending_approval") if isinstance(approval.get("pending_approval"), dict) else None
         active_agent = str(workflow.get("active_agent") or plugin_status.get("current_agent_type") or "").strip() or None
         actions = list(fallback_actions or [])
 
+        if pending_approval:
+            step_name = pending_approval.get("step_name") or current_step.get("name") or "current step"
+            approvers = list(pending_approval.get("approvers") or [])
+            approver_text = f" from {', '.join(str(item) for item in approvers)}" if approvers else ""
+            return "approval_required", f"Workflow is waiting for approval on step {pending_approval.get('step_num')}:{step_name}{approver_text}", [
+                "continue",
+                "inspect blockers",
+                "inspect logs-context",
+                "refresh-state",
+            ]
         if state == "failed":
             return "step_failed", current_step.get("error_summary") or fallback_reason or "Current step failed", [
                 "inspect logs-context",
@@ -288,6 +301,7 @@ class BridgeOperatorService:
         if state == "paused":
             return "workflow_paused", "Workflow is paused and waiting for operator action", [
                 "continue",
+                "inspect blockers",
                 "inspect logs-context",
                 "refresh-state",
             ]
@@ -459,14 +473,33 @@ class BridgeOperatorService:
         next_step = workflow.get("next_step") if isinstance(workflow.get("next_step"), dict) else {}
         last_completed = workflow.get("last_completed_step") if isinstance(workflow.get("last_completed_step"), dict) else {}
 
+        resolved_issue = str(workflow.get("issue_number") or issue_number or "").strip() or None
+        raw_workflow, _, _ = await self._workflow_by_ref(
+            workflow_id=str(workflow.get("workflow_id") or workflow_id or "").strip() or None,
+            issue_number=resolved_issue,
+        )
+        approval = (
+            self._approval_gate_summary(raw_workflow, issue_number=resolved_issue)
+            if raw_workflow is not None
+            else {"pending_approval": None, "step_gates": [], "blockers": [], "blocking": False}
+        )
+        blockers = list(approval.get("blockers") or [])
+        pending_approval = approval.get("pending_approval") if isinstance(approval.get("pending_approval"), dict) else None
+
         reason = None
         actions: list[str] = []
-        if state == "failed":
+        if pending_approval:
+            step_name = pending_approval.get("step_name") or current_step.get("name") or "current step"
+            approvers = list(pending_approval.get("approvers") or [])
+            approver_text = f" from {', '.join(str(item) for item in approvers)}" if approvers else ""
+            reason = f"Waiting for approval on step {pending_approval.get('step_num')}:{step_name}{approver_text}"
+            actions = ["continue", "inspect blockers", "inspect logs-context", "refresh-state"]
+        elif state == "failed":
             reason = str(current_step.get("error_summary") or current_step.get("error") or "Workflow is in failed state")
             actions = ["inspect logs-context", "retry-step", "refresh-state"]
         elif state == "paused":
             reason = "Workflow is paused and needs a continue/resume action"
-            actions = ["continue", "inspect logs-context", "refresh-state"]
+            actions = ["continue", "inspect blockers", "inspect logs-context", "refresh-state"]
         elif state == "cancelled":
             reason = "Workflow has been cancelled"
             actions = ["refresh-state"]
@@ -479,6 +512,9 @@ class BridgeOperatorService:
         elif next_step.get("agent"):
             reason = f"Next expected handoff is @{next_step.get('agent')}"
             actions = ["continue", "refresh-state"]
+        elif blockers:
+            reason = str(blockers[0].get("summary") or "Workflow has active blockers")
+            actions = ["inspect blockers", "inspect logs-context", "refresh-state"]
         else:
             reason = "Workflow state is available but the next handoff is unclear"
             actions = ["inspect workflow status", "inspect logs-context", "refresh-state"]
@@ -503,14 +539,29 @@ class BridgeOperatorService:
             summary_lines.append(
                 f"next_step={next_step.get('step_num')}:{next_step.get('name')}@{next_step.get('agent') or 'unknown'}"
             )
+        if pending_approval:
+            summary_lines.append(
+                f"approval_pending={pending_approval.get('step_num')}:{pending_approval.get('step_name') or current_step.get('name') or 'unknown'}"
+            )
+        elif blockers:
+            summary_lines.append(f"blockers={len(blockers)}")
 
+        workflow_enriched = {
+            **workflow,
+            "approval": approval,
+            "blockers": blockers,
+            "blocking": bool(approval.get("blocking")),
+        }
         return {
             "ok": True,
-            "workflow": workflow,
+            "workflow": workflow_enriched,
             "plugin_status": plugin_status,
             "reason": reason,
             "suggested_actions": actions,
             "summary": "; ".join(summary_lines),
+            "approval": approval,
+            "blockers": blockers,
+            "blocking": bool(approval.get("blocking")),
         }
 
     async def workflow_diagnosis(

@@ -260,11 +260,13 @@ Current payload shape (first concrete runtime slice):
 
 Current behavior:
 - text remains concise and mobile-friendly for chat delivery
-- session affinity defaults to deterministic workflow-bound keys like `nexus:<project>:workflow:<workflow_id>` when no explicit session key is configured
+- Nexus-side persisted affinity defaults to deterministic workflow-bound keys like `nexus:<project>:workflow:<workflow_id>` when no explicit session key is configured
 - workflow ↔ session affinity and latest correlation token are now persisted under `NEXUS_CORE_STORAGE_DIR/openclaw/affinity_state.json` so restart/redeploy recovery can reuse prior bindings
 - startup recovery repairs missing persisted bindings from workflow mappings and records lifecycle status for created/repaired/drifted bindings
 - configured session-key drift is surfaced in routing metadata (`binding_status`, `binding_source`, `lifecycle_reason`) for operator inspection
 - action hints are advisory metadata today; they are not yet a full authenticated reply-button flow
+
+> Note: the current OpenClaw plugin still uses local in-memory keys shaped like `nexus::workflow:<workflow_id>` for its own conversation binding. That differs from the Nexus-side persisted routing key format above. The bridge tolerates this today because the plugin also forwards workflow/session hints explicitly, but operators should treat the persisted Nexus key as the source of truth until the formats are unified.
 
 This keeps Nexus as workflow truth while giving OpenClaw stronger workflow context for notification rendering and future reply routing.
 
