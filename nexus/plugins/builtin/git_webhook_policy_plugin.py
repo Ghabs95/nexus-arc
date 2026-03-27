@@ -69,9 +69,12 @@ class GitWebhookPolicyPlugin:
                 if isinstance(payload.get("user"), dict)
                 else "unknown"
             )
-            merged = str(mr.get("state", "")).strip().lower() == "merged"
             raw_action = str(mr.get("action", "") or "").strip().lower()
-            if merged or raw_action in {"merge", "merged"}:
+            merged = (
+                str(mr.get("state", "")).strip().lower() == "merged"
+                or raw_action in {"merge", "merged"}
+            )
+            if merged:
                 action = "merged"
             elif raw_action in {"close", "closed"} or str(mr.get("state", "")).strip().lower() == "closed":
                 action = "closed"

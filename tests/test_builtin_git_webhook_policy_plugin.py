@@ -84,6 +84,32 @@ def test_parse_gitlab_merge_request_merged_event_prefers_merge_user():
     assert event["repo"] == "acme/repo"
 
 
+def test_parse_gitlab_merge_request_action_merge_without_merged_state_is_still_merged():
+    """action='merge' alone (state not yet updated to 'merged') must yield merged=True."""
+    plugin = GitWebhookPolicyPlugin()
+
+    event = plugin.parse_pull_request_event(
+        {
+            "object_kind": "merge_request",
+            "user": {"username": "actor"},
+            "project": {"path_with_namespace": "acme/repo"},
+            "object_attributes": {
+                "action": "merge",
+                "state": "open",  # state not yet updated
+                "iid": 21,
+                "title": "Fix #99",
+                "url": "https://gitlab.com/acme/repo/-/merge_requests/21",
+            },
+            "merge_user": {"username": "maintainer"},
+        }
+    )
+
+    assert event["action"] == "merged"
+    assert event["merged"] is True
+    assert event["merged_by"] == "maintainer"
+    assert event["closed_by"] == "unknown"
+
+
 def test_parse_gitlab_merge_request_closed_unmerged_event_tracks_closer():
     plugin = GitWebhookPolicyPlugin()
 
