@@ -276,7 +276,6 @@ class BridgeOperatorService:
         current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
         next_step = workflow.get("next_step") if isinstance(workflow.get("next_step"), dict) else {}
         timeline = workflow.get("timeline") if isinstance(workflow.get("timeline"), list) else []
-        blockers = workflow.get("blockers") if isinstance(workflow.get("blockers"), list) else []
         approval = workflow.get("approval") if isinstance(workflow.get("approval"), dict) else {}
         pending_approval = approval.get("pending_approval") if isinstance(approval.get("pending_approval"), dict) else None
         active_agent = str(workflow.get("active_agent") or plugin_status.get("current_agent_type") or "").strip() or None
@@ -451,6 +450,7 @@ class BridgeOperatorService:
             "workflow": {**summary, "timeline": timeline},
             "timeline": timeline,
             "count": len(timeline),
+            "raw_workflow": workflow,
         }
 
     async def workflow_summary(
@@ -474,10 +474,12 @@ class BridgeOperatorService:
         last_completed = workflow.get("last_completed_step") if isinstance(workflow.get("last_completed_step"), dict) else {}
 
         resolved_issue = str(workflow.get("issue_number") or issue_number or "").strip() or None
-        raw_workflow, _, _ = await self._workflow_by_ref(
-            workflow_id=str(workflow.get("workflow_id") or workflow_id or "").strip() or None,
-            issue_number=resolved_issue,
-        )
+        raw_workflow = timeline_payload.get("raw_workflow")
+        if raw_workflow is None:
+            raw_workflow, _, _ = await self._workflow_by_ref(
+                workflow_id=str(workflow.get("workflow_id") or workflow_id or "").strip() or None,
+                issue_number=resolved_issue,
+            )
         approval = (
             self._approval_gate_summary(raw_workflow, issue_number=resolved_issue)
             if raw_workflow is not None

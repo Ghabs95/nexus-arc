@@ -315,3 +315,14 @@ async def test_workflow_summary_includes_blocker_context_for_pending_approval(op
     assert "approval_pending=2:review" in payload["summary"]
     assert "waiting for approval" in str(payload["reason"]).lower()
     assert "inspect blockers" in payload["suggested_actions"]
+
+
+@pytest.mark.asyncio
+async def test_workflow_summary_includes_blocker_context_for_paused_workflow(operator_service: BridgeOperatorService):
+    payload = await operator_service.workflow_summary(issue_number="102")
+
+    assert payload["ok"] is True
+    assert payload["blocking"] is True
+    assert any(item["type"] == "workflow_paused" for item in payload["blockers"])
+    assert "paused" in str(payload["reason"]).lower()
+    assert "inspect blockers" in payload["suggested_actions"]
