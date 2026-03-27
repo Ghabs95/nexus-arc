@@ -6,7 +6,7 @@ import time
 
 from nexus.core.command_bridge.http import CommandBridgeConfig, create_command_bridge_app
 from nexus.core.command_bridge.models import CommandResult, ReplyRequest
-from nexus.core.command_bridge.reply_security import issue_reply_token
+from nexus.core.command_bridge.reply_security import issue_reply_token, validate_reply_token
 
 
 class _FakeOperatorService:
@@ -104,10 +104,33 @@ class _FakeRouter:
         return {"ok": True, "action": "refresh-state", **kwargs}
 
     async def receive_reply(self, reply: ReplyRequest):
+        claims = validate_reply_token(
+            reply.reply_token,
+            secret="secret",
+            correlation_id=reply.correlation_id,
+            workflow_id=str(reply.workflow_id or "").strip(),
+            session_id=str(reply.session_id or "").strip(),
+            sender_id=str(reply.sender_id or "").strip(),
+            action=str(reply.action or "").strip(),
+        )
+        action_map = {
+            "show_status": "status",
+            "show_logs": "logs",
+            "continue": "continue",
+            "cancel": "cancel",
+            "refresh_state": "refresh_state",
+            "": "ack",
+        }
+        action_name = action_map.get(str(reply.action or "").strip(), str(reply.action or "").strip())
         return CommandResult(
             status="success",
             message="Reply received",
-            data={"correlation_id": reply.correlation_id, "received": True},
+            data={
+                "correlation_id": reply.correlation_id,
+                "received": True,
+                "reply_action": action_name,
+                "reply_context": {"workflow_id": claims.workflow_id},
+            },
         )
 
 
