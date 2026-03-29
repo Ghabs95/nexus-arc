@@ -269,3 +269,72 @@ test("getRequesterContext forwards OpenClaw auth-backed requester identity", () 
     assert.equal(requester.nexus_id, "openclaw:user:alice");
     assert.equal(requester.is_authorized_sender, true);
 });
+
+test("plugin health surfaces runtime-health wake mode warnings", async () => {
+    const commands = new Map<string, (ctx: Record<string, unknown>) => Promise<{text: string}>>();
+    const originalFetch = globalThis.fetch;
+    let fetchCount = 0;
+
+    try {
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            const url = String(input);
+            fetchCount += 1;
+            if (url.endsWith("/api/v1/capabilities")) {
+                return new Response(
+                    JSON.stringify({ok: true, supported_commands: ["health", "plan"]}),
+                    {status: 200}
+                );
+            }
+            if (url.endsWith("/api/v1/operator/runtime-health")) {
+                return new Response(
+                    JSON.stringify({
+                        ok: true,
+                        runtime_mode: "openclaw",
+                        active_workflow_count: 2,
+                        recent_failure_count: 1,
+                        bridge: {
+                            openclaw_wake_mode: "now"
+                        },
+                        warnings: [
+                            "OpenClaw wake mode is enabled and can leave OpenClaw stuck on 'Compacting context...'."
+                        ]
+                    }),
+                    {status: 200}
+                );
+            }
+            throw new Error(`Unexpected fetch URL: ${url}`);
+        }) as typeof fetch;
+
+        const pluginModule = await import("./index.ts");
+        pluginModule.default.register({
+            registerCommand(command) {
+                commands.set(command.name, command.handler);
+            }
+        });
+
+        const healthHandler = commands.get("nexus");
+        assert.ok(healthHandler);
+
+        const result = await healthHandler({
+            args: "health",
+            senderId: "alice",
+            senderName: "Alice",
+            channel: "telegram",
+            channelId: "chat-1",
+            messageId: "1001",
+            isAuthorizedSender: true,
+            config: {
+                bridgeUrl: "http://127.0.0.1:8091",
+                authToken: "secret"
+            }
+        });
+
+        assert.match(result.text, /Runtime Mode: openclaw/);
+        assert.match(result.text, /OpenClaw Wake Mode: now/);
+        assert.match(result.text, /Compacting context/);
+        assert.match(result.text, /Active Workflows: 2/);
+        assert.equal(fetchCount, 2);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});

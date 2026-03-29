@@ -9,6 +9,7 @@ Configuration (env vars or project_config.yaml plugin block):
     NEXUS_OPENCLAW_BRIDGE_TOKEN   Bearer token for the OpenClaw hooks endpoint
     NEXUS_OPENCLAW_SENDER_ID      Telegram/channel chat ID to deliver notifications to
     NEXUS_OPENCLAW_CHANNEL        Optional channel hint (e.g. "telegram")
+    NEXUS_OPENCLAW_WAKE_MODE      Optional OpenClaw wake mode override. Leave unset for passive notifications.
 
 Requires hooks to be enabled in openclaw.json:
     {
@@ -219,6 +220,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         auth_token: Bearer token for the bridge.  Defaults to ``NEXUS_OPENCLAW_BRIDGE_TOKEN``.
         sender_id:  Target session/chat ID.  Defaults to ``NEXUS_OPENCLAW_SENDER_ID``.
         channel:    Optional channel hint forwarded in the payload (e.g. ``"telegram"``).
+        wake_mode:  Optional OpenClaw wake mode override. Leave unset for passive notifications.
         timeout:    HTTP request timeout in seconds.
     """
 
@@ -229,6 +231,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         sender_id: str | None = None,
         channel: str | None = None,
         session_key: str | None = None,
+        wake_mode: str | None = None,
         timeout: int = 10,
     ):
         _require_aiohttp()
@@ -239,6 +242,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         self._sender_id = sender_id or os.getenv("NEXUS_OPENCLAW_SENDER_ID") or ""
         self._channel = channel or os.getenv("NEXUS_OPENCLAW_CHANNEL") or "telegram"
         self._session_key = session_key or os.getenv("NEXUS_OPENCLAW_SESSION_KEY") or ""
+        self._wake_mode = str(wake_mode or os.getenv("NEXUS_OPENCLAW_WAKE_MODE") or "").strip()
         self._timeout_seconds = timeout
         self._reply_secret = os.getenv("NEXUS_OPENCLAW_REPLY_SECRET") or self._auth_token
         self._reply_ttl_seconds = int(os.getenv("NEXUS_OPENCLAW_REPLY_TTL_SECONDS") or "900")
@@ -405,8 +409,9 @@ class OpenClawNotificationChannel(NotificationChannel):
             "name": "Nexus",
             "deliver": True,
             "channel": self._channel or "telegram",
-            "wakeMode": "now",
         }
+        if self._wake_mode:
+            payload["wakeMode"] = self._wake_mode
         if metadata:
             payload["metadata"] = metadata
         resolved_session_key = str(session_key or self._session_key or "").strip()
