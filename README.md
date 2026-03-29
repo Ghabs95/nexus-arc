@@ -67,6 +67,7 @@ Nexus ARC is where Jarvis gets safe, reusable access to authenticated systems.
 - ✅ **Bridge/operator control**: OpenClaw-friendly operator endpoints
 - ✅ **Pluggable architecture**: storage, git platforms, notification systems
 - 🚧 **Connector model**: explicit credential-aware integrations as first-class building blocks
+- ✅ **LinkedIn connector foundation**: OAuth onboarding, stored auth status inspection, profile/me retrieval, and publishing now share a reusable client/service layer
 
 **Think of it as Temporal meets GitHub Actions for AI agents — with an emerging credentialed integration layer for real-world automation.**
 

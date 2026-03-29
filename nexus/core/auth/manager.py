@@ -11,6 +11,7 @@ from typing import Any
 
 from nexus.core.auth import access_domain as _project_access
 from nexus.core.auth import oauth_onboarding_domain as _auth_sessions
+from nexus.connectors.linkedin import linkedin_connector_service
 
 
 class AuthManager:
@@ -67,6 +68,21 @@ class AuthManager:
 
     def complete_meta_oauth(self, *, code: str, state: str) -> dict[str, Any]:
         return _auth_sessions.complete_meta_oauth(code=code, state=state)
+
+    def get_linkedin_auth_status(self, *, nexus_id: str) -> dict[str, Any]:
+        status = linkedin_connector_service.get_auth_status(nexus_id=nexus_id)
+        return {
+            "nexus_id": status.nexus_id,
+            "connected": status.connected,
+            "has_access_token": status.has_access_token,
+            "has_author_urn": status.has_author_urn,
+            "author_urn": status.author_urn,
+            "expires_at": status.expires_at,
+            "is_expired": status.is_expired,
+        }
+
+    def get_linkedin_profile_me(self, *, nexus_id: str) -> dict[str, Any]:
+        return linkedin_connector_service.get_profile_me(nexus_id=nexus_id)
 
     def store_ai_provider_keys(
         self,
@@ -238,6 +254,13 @@ def complete_x_oauth(*, code: str, state: str) -> dict[str, Any]:
 
 def complete_meta_oauth(*, code: str, state: str) -> dict[str, Any]:
     return auth_manager.complete_meta_oauth(code=code, state=state)
+
+def get_linkedin_auth_status(*, nexus_id: str) -> dict[str, Any]:
+    return auth_manager.get_linkedin_auth_status(nexus_id=nexus_id)
+
+
+def get_linkedin_profile_me(*, nexus_id: str) -> dict[str, Any]:
+    return auth_manager.get_linkedin_profile_me(nexus_id=nexus_id)
 
 
 def store_ai_provider_keys(

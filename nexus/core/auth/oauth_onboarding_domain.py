@@ -43,6 +43,7 @@ from nexus.core.auth.credential_store import (
     upsert_x_credentials,
     upsert_meta_credentials,
 )
+from nexus.connectors.linkedin import LinkedInClient
 from nexus.core.config.runtime import normalize_runtime_mode
 
 logger = logging.getLogger(__name__)
@@ -1380,13 +1381,7 @@ def complete_linkedin_oauth(*, code: str, state: str) -> dict[str, Any]:
         expires_at = _now_utc() + timedelta(seconds=expires_in)
 
     # Fetch profile (OpenID userinfo endpoint)
-    profile_resp = requests.get(
-        "https://api.linkedin.com/v2/userinfo",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=10,
-    )
-    profile_resp.raise_for_status()
-    profile = profile_resp.json()
+    profile = LinkedInClient(access_token).get_profile_me(timeout=10)
     sub = str(profile.get("sub") or "").strip()
     name = str(profile.get("name") or profile.get("given_name") or "").strip()
     if not sub:

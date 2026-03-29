@@ -18,10 +18,10 @@ from nexus.adapters.social.base import (
     SocialPublishError,
 )
 from nexus.adapters.social.base import derive_idempotency_key
+from nexus.connectors.linkedin import LINKEDIN_UGC_POSTS_URL, LinkedInClient
 
 logger = logging.getLogger(__name__)
 
-_LINKEDIN_API_BASE = "https://api.linkedin.com/v2"
 _MAX_LINKEDIN_TEXT_LEN = 3000
 
 
@@ -92,16 +92,12 @@ class LinkedInSocialAdapter(SocialPlatformAdapter):
             )
 
         body = self._build_share_body(post)
-        headers = {
-            "Authorization": f"Bearer {self._access_token}",
-            "Content-Type": "application/json",
-            "X-Restli-Protocol-Version": "2.0.0",
-        }
+        headers = LinkedInClient(self._access_token, author_urn=self._author_urn).build_headers()
 
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{_LINKEDIN_API_BASE}/ugcPosts",
+                    LINKEDIN_UGC_POSTS_URL,
                     json=body,
                     headers=headers,
                 ) as resp:
