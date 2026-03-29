@@ -254,6 +254,26 @@ async def test_workflow_logs_context_returns_summary_plus_recent_log_tail(operat
 
 
 @pytest.mark.asyncio
+async def test_runtime_health_warns_when_openclaw_wake_mode_is_enabled(
+    operator_service: BridgeOperatorService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("NEXUS_RUNTIME_MODE", "openclaw")
+    monkeypatch.setenv("NEXUS_OPENCLAW_WAKE_MODE", "now")
+    monkeypatch.setenv("NEXUS_OPENCLAW_BRIDGE_URL", "https://jarvis.ghabs.me")
+    monkeypatch.setenv("NEXUS_OPENCLAW_BRIDGE_TOKEN", "secret")
+    monkeypatch.setenv("NEXUS_OPENCLAW_SENDER_ID", "47168736")
+
+    payload = await operator_service.runtime_health()
+
+    assert payload["ok"] is True
+    assert payload["runtime_mode"] == "openclaw"
+    assert payload["bridge"]["openclaw_wake_mode"] == "now"
+    assert payload["bridge"]["openclaw_sender_id"] is True
+    assert any("Compacting context" in warning for warning in payload["warnings"])
+
+
+@pytest.mark.asyncio
 async def test_workflow_authorship_audit_classifies_bot_vs_human_signals(operator_service: BridgeOperatorService):
     payload = await operator_service.workflow_authorship_audit(issue_number="105")
 

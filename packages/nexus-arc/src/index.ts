@@ -998,7 +998,11 @@ async function getBridgeCapabilities(config: Required<PluginConfig>): Promise<Br
 }
 
 async function getBridgeHealth(config: Required<PluginConfig>): Promise<Record<string, unknown>> {
-    return callBridgeGet("/healthz", config);
+    try {
+        return await callBridgeGet("/api/v1/operator/runtime-health", config);
+    } catch {
+        return callBridgeGet("/healthz", config);
+    }
 }
 
 export function formatBridgeError(error: unknown): string {
@@ -1143,11 +1147,30 @@ function renderHealthText(
     lines.push(`Bridge URL: ${config.bridgeUrl}`);
     lines.push(`HTTP: ${healthPayload.ok === true ? "ok" : "unexpected"}`);
     lines.push(`Auth token configured: ${config.authToken ? "yes" : "no"}`);
+    const runtimeMode = stringValue(healthPayload.runtime_mode);
+    if (runtimeMode) {
+        lines.push(`Runtime Mode: ${runtimeMode}`);
+    }
+    const bridge = isRecord(healthPayload.bridge) ? healthPayload.bridge : {};
+    const wakeMode = stringValue(bridge.openclaw_wake_mode);
+    if (wakeMode) {
+        lines.push(`OpenClaw Wake Mode: ${wakeMode}`);
+    }
+    if (typeof healthPayload.active_workflow_count === "number") {
+        lines.push(`Active Workflows: ${healthPayload.active_workflow_count}`);
+    }
+    if (typeof healthPayload.recent_failure_count === "number") {
+        lines.push(`Recent Failures: ${healthPayload.recent_failure_count}`);
+    }
     if (Array.isArray(capabilities?.supported_commands) && capabilities.supported_commands.length > 0) {
         lines.push(`Supported commands: ${capabilities.supported_commands.join(", ")}`);
     }
-    if (warnings.length > 0) {
-        lines.push(`Warnings: ${warnings.join(" ")}`);
+    const runtimeWarnings = Array.isArray(healthPayload.warnings)
+        ? healthPayload.warnings.filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [];
+    const combinedWarnings = [...warnings, ...runtimeWarnings];
+    if (combinedWarnings.length > 0) {
+        lines.push(`Warnings: ${combinedWarnings.join(" ")}`);
     }
     return lines.join("\n");
 }

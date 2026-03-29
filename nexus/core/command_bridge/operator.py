@@ -713,16 +713,27 @@ class BridgeOperatorService:
         runtime_ops = RuntimeOpsPlugin()
         active = await self.active_workflows(limit=100)
         failures = await self.recent_failures(limit=20)
+        runtime_mode = str(os.getenv("NEXUS_RUNTIME_MODE") or "").strip() or None
+        openclaw_wake_mode = str(os.getenv("NEXUS_OPENCLAW_WAKE_MODE") or "").strip() or None
+        warnings: list[str] = []
+        if runtime_mode == "openclaw" and openclaw_wake_mode:
+            warnings.append(
+                "OpenClaw wake mode is enabled. Wakeful workflow notifications can loop back into the "
+                "operator chat and leave OpenClaw stuck on 'Compacting context...'. Leave "
+                "NEXUS_OPENCLAW_WAKE_MODE unset for passive notifications unless interactive wakeups are required."
+            )
         return {
             "ok": True,
             "timestamp": datetime.now(UTC).isoformat(),
-            "runtime_mode": str(os.getenv("NEXUS_RUNTIME_MODE") or "").strip() or None,
+            "runtime_mode": runtime_mode,
             "storage_backend": storage_name,
             "bridge": {
                 "command_bridge_auth_configured": bool(str(os.getenv("NEXUS_COMMAND_BRIDGE_AUTH_TOKEN") or "").strip()),
                 "openclaw_bridge_url": bool(str(os.getenv("NEXUS_OPENCLAW_BRIDGE_URL") or "").strip()),
                 "openclaw_bridge_token": bool(str(os.getenv("NEXUS_OPENCLAW_BRIDGE_TOKEN") or "").strip()),
+                "openclaw_sender_id": bool(str(os.getenv("NEXUS_OPENCLAW_SENDER_ID") or "").strip()),
                 "openclaw_session_key": bool(str(os.getenv("NEXUS_OPENCLAW_SESSION_KEY") or "").strip()),
+                "openclaw_wake_mode": openclaw_wake_mode,
             },
             "tooling": {
                 "gh": shutil.which("gh") is not None,
@@ -731,6 +742,7 @@ class BridgeOperatorService:
             },
             "active_workflow_count": int(active.get("count") or 0) if active.get("ok") else None,
             "recent_failure_count": int(failures.get("count") or 0) if failures.get("ok") else None,
+            "warnings": warnings,
         }
 
     def _cli_identity(self, cli_name: str, args: list[str]) -> dict[str, Any]:

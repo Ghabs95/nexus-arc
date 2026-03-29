@@ -1773,7 +1773,10 @@ class TestOpenClawNotificationChannel:
         channel._sender_id = "12345"
         channel._channel = "telegram"
         channel._session_key = ""
+        channel._wake_mode = ""
         channel._timeout_seconds = 10
+        channel._reply_secret = "test-token"
+        channel._reply_ttl_seconds = 900
         channel._sessions_by_loop = {}
         return channel
 
@@ -1801,6 +1804,13 @@ class TestOpenClawNotificationChannel:
         assert payload["name"] == "Nexus"
         assert payload["deliver"] is True
         assert payload["channel"] == "telegram"
+        assert "wakeMode" not in payload
+
+    def test_build_payload_includes_wake_mode_when_configured(self):
+        channel = self._make_channel()
+        channel._wake_mode = "now"
+        payload = channel._build_payload("Hello OpenClaw")
+        assert payload["wakeMode"] == "now"
 
     def test_build_payload_includes_to_when_recipient_set(self):
         channel = self._make_channel()
@@ -1908,6 +1918,7 @@ class TestOpenClawNotificationChannel:
         assert payload["metadata"]["payload"]["summary"] == (
             "Review requested for OpenClaw notification payload updates."
         )
+        assert "wakeMode" not in payload
         assert payload["metadata"]["routing"]["reply_hint"]["correlation_token"] == "corr-123"
         assert payload["metadata"]["actions"][0]["name"] == "approve"
         assert "Workflow #123" in payload["message"]

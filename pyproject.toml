@@ -96,6 +96,7 @@ nexus-bot-runtime = [
     "apscheduler>=3.11",
     "requests>=2.32",
     "cryptography>=42.0",
+    "aiohttp>=3.9",
 ]
 nexus-bot-chat = [
     "nexus-arc[telegram,discord]",

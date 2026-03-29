@@ -199,6 +199,7 @@ NEXUS_CHAT_TRANSCRIPT_OWNER=openclaw
 NEXUS_COMMAND_BRIDGE_ENABLED=true
 NEXUS_COMMAND_BRIDGE_AUTH_TOKEN=replace_with_a_long_random_secret
 NEXUS_COMMAND_BRIDGE_ALLOWED_SOURCES=openclaw
+NEXUS_OPENCLAW_WAKE_MODE=
 
 # Choose one:
 NEXUS_STORAGE_BACKEND=filesystem
@@ -212,6 +213,20 @@ NEXUS_STORAGE_DSN=postgresql://nexus:your_password@127.0.0.1:5432/nexus
 # Typically disabled because OpenClaw owns end-user auth flows
 NEXUS_AUTH_ENABLED=false
 ```
+
+Leave `NEXUS_OPENCLAW_WAKE_MODE` unset unless you explicitly want Nexus workflow notifications to wake the OpenClaw
+agent session. The passive default avoids notification loops and stuck "Compacting context" states in the operator
+chat.
+
+If OpenClaw is already stuck on `Compacting context...`, clear `NEXUS_OPENCLAW_WAKE_MODE`, restart the bridge/runtime,
+and verify the effective setting before retrying:
+
+```bash
+curl -s http://127.0.0.1:8091/api/v1/operator/runtime-health \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+In a safe passive setup, `bridge.openclaw_wake_mode` should be `null` (or absent) and `warnings` should be empty.
 
 ### Run
 
