@@ -1,6 +1,6 @@
 # Nexus ARC (Agentic Runtime Core)
 
-**Production-grade framework for orchestrating AI agents in multi-step workflows**
+**Authenticated integration and orchestration layer for AI agents**
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -9,40 +9,76 @@
 
 ## What is Nexus ARC?
 
-Nexus ARC (Agentic Runtime Core) is the **Git-native AI orchestration framework**. Unlike other frameworks that log
-agent actions to ephemeral files, Nexus creates permanent, traceable artifacts in your Git platform (GitHub, GitLab,
-Bitbucket).
+Nexus ARC (Agentic Runtime Core) is a **Git-native workflow engine that is evolving into the authenticated integration
+layer for AI agents**.
 
-### Why Git-Native?
+It still does the orchestration work Nexus was built for:
 
-Every agent action becomes part of your development history:
+- multi-step workflows
+- stateful execution
+- retries, timeouts, and fallback
+- Git-native traceability through issues, comments, PRs, and reviews
+
+But in practice Nexus is also becoming the place where agents safely interact with real external systems:
+
+- **OAuth and credentialed integrations**
+- **connector/adaptor logic for third-party APIs**
+- **bridge endpoints for trusted operator surfaces such as OpenClaw**
+- **policy, audit, and workflow-aware external actions**
+
+### Why this matters
+
+Most agent systems are good at prompting and bad at the boring but critical parts:
+
+- credential storage
+- token refresh
+- permission boundaries
+- provider-specific API quirks
+- auditability of external actions
+- routing external data into workflows safely
+
+Nexus ARC is being shaped to own that layer.
+
+### Git-native remains a core differentiator
+
+Every important action can still become part of your durable development history:
 
 - 🎯 **Issues** track what was requested and decided
-- 💬 **Comments** preserve agent reasoning and handoffs
+- 💬 **Comments** preserve reasoning and handoffs
 - 🔀 **Pull Requests** contain actual code changes
 - ✅ **Reviews** create approval gates with full context
-- 📊 **Git History** provides permanent audit trail
+- 📊 **Git history** remains a permanent audit trail
 
-**The result:** Complete traceability, searchability, and accountability for AI workflows.
+### OpenClaw vs Nexus ARC
 
-### Production-Ready Features
+A useful mental model:
 
-- ✅ **Reliability**: Auto-retry, timeout detection, graceful failure handling
-- ✅ **State Management**: Persistent workflow state with audit trails
-- ✅ **AI Orchestration**: Route work to the best AI tool (Copilot, Gemini, soon Claude and Codex)
-- ✅ **Fallback Support**: Automatic failover when tools are rate-limited or unavailable
-- ✅ **Pluggable Architecture**: Bring your own storage, git platform, notification system
+- **OpenClaw** = operator surface, chat UX, agent runtime
+- **Nexus ARC** = workflows, connectors, credentials, audit, control plane
 
-**Think of it as Temporal meets GitHub Actions for AI agents** — workflows that integrate seamlessly with your
-development process.
+OpenClaw is where Jarvis talks to you.
+Nexus ARC is where Jarvis gets safe, reusable access to authenticated systems.
+
+### Current product shape
+
+- ✅ **Workflow orchestration**: multi-step execution with persistent state
+- ✅ **Reliability**: retries, timeouts, graceful failure handling
+- ✅ **Git-native auditability**: traceable artifacts in your dev platform
+- ✅ **Bridge/operator control**: OpenClaw-friendly operator endpoints
+- ✅ **Pluggable architecture**: storage, git platforms, notification systems
+- 🚧 **Connector model**: explicit credential-aware integrations as first-class building blocks
+
+**Think of it as Temporal meets GitHub Actions for AI agents — with an emerging credentialed integration layer for real-world automation.**
 
 > 📖 **Documentation:**
-> - [Usage Guide & Examples](docs/USAGE.md) - How to use nexus-arc in your project
-> - [Plugin Architecture](docs/PLUGINS.md) - Build and load Telegram/GitHub/AI integrations as plugins
-> - [OpenClaw Release Guide](docs/OPENCLAW_RELEASE.md) - Package Nexus ARC with the OpenClaw plugin
-> - [Config Bootstrap Lifecycle](docs/CONFIG_BOOTSTRAP_LIFECYCLE.md) - Explicit runtime startup order and singleton-test
-    hooks
-> - [Autofix Learning Contract](docs/AUTOFIX_LEARNING.md) - Event schema, retry-guard behavior, and rollout
+> - [Usage Guide & Examples](docs/USAGE.md) - how to use Nexus ARC in your project
+> - [Architecture](docs/ARCHITECTURE.md) - current system split and historical evolution
+> - [Connectors & Credentials](docs/CONNECTORS.md) - where OAuth, token storage, and third-party integrations belong
+> - [OpenClaw Operator Surface](docs/OPENCLAW_OPERATOR_SURFACE.md) - how OpenClaw acts as a trusted control plane over Nexus ARC
+> - [Plugin Architecture](docs/PLUGINS.md) - build and load Telegram/GitHub/AI integrations as plugins
+> - [OpenClaw Release Guide](docs/OPENCLAW_RELEASE.md) - package Nexus ARC with the OpenClaw plugin
+> - [Config Bootstrap Lifecycle](docs/CONFIG_BOOTSTRAP_LIFECYCLE.md) - explicit runtime startup order and singleton-test hooks
+> - [Autofix Learning Contract](docs/AUTOFIX_LEARNING.md) - event schema, retry-guard behavior, and rollout
 > - [Comparison with Google ADK, LangChain, and others](docs/COMPARISON.md)
 > - [Positioning & Messaging](docs/POSITIONING.md)
 
@@ -214,40 +250,44 @@ engine.add_observer(exporter)
 
 ## Architecture
 
+```text
+┌──────────────────────────────────────────────────────────────┐
+│           Operator / Runtime Surfaces                        │
+│      OpenClaw, CLI, webhooks, chat clients, automations     │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                  Nexus ARC Control Plane                     │
+│  command bridge • operator APIs • workflow triggers         │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                Workflow & Policy Engine                      │
+│  state machine • retries • timeouts • audit • routing       │
+└───────────────┬───────────────────────────────┬──────────────┘
+                │                               │
+                ▼                               ▼
+┌───────────────────────────────┐   ┌──────────────────────────┐
+│ Connectors / Credential Layer │   │ Persistent State         │
+│ OAuth • token storage • API   │   │ workflow state • audit   │
+│ adapters • provider policies  │   │ logs • metrics           │
+└───────────────┬───────────────┘   └──────────────────────────┘
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────┐
+│        External Systems and AI Runtimes                      │
+│ GitHub • GitLab • email • social APIs • AI providers        │
+└──────────────────────────────────────────────────────────────┘
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  Input Adapters                         │
-│  (Telegram, Slack, Webhook, CLI, GitHub Issues)         │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│                Workflow Engine (ARC)                 │
-│  ┌────────────────────────────────────────────────┐  │
-│  │  Step Manager → State Machine → Audit Logger   │  │
-│  └────────────────────────────────────────────────┘  │
-└────────────┬──────────────────────┬──────────────────┘
-             │                      │
-    ┌────────▼────────┐    ┌───────▼────────┐
-    │ AI Orchestrator │    │ Storage Backend│
-    │  - Provider     │    │  - State       │
-    │    Selection    │    │  - Audit Log   │
-    │  - Retry Logic  │    │  - Metrics     │
-    │  - Fallback     │    └────────────────┘
-    └────────┬────────┘
-             │
-    ┌────────▼─────────────────────┐
-    │     AI Providers             │
-    │  (Copilot, Gemini, soon      │
-    │   Claude & Codex)            │
-    └──────────────────────────────┘
-             │
-    ┌────────▼────────┐
-    │ Output Adapters │
-    │  (Git Platform, │
-    │   Notifications)│
-    └─────────────────┘
-```
+
+In practice:
+
+- **OpenClaw** is the conversational/operator-facing surface
+- **Nexus ARC** is the authenticated integration + workflow layer
+- **connectors** are where third-party API auth and provider-specific logic belong
+- **Git-native artifacts** remain the durable audit trail whenever the workflow is development-facing
 
 ---
 
