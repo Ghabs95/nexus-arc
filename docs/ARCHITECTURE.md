@@ -1,9 +1,99 @@
 # Nexus ARC (Agentic Runtime Core) Architecture
 
-> **About this document:** This shows the evolution from the original Nexus Telegram bot (coupled architecture) to the
-> generic Nexus ARC (Agentic Runtime Core) framework (pluggable architecture). The migration sections are specific to
-> that
-> project but demonstrate how to adopt the framework.
+> **About this document:** This document now serves two purposes:
+> 1. describe the **current architectural direction** for Nexus ARC as an authenticated integration and orchestration layer for AI agents
+> 2. preserve the **historical evolution** from the original coupled Telegram bot into a reusable framework
+
+## Current architectural direction
+
+Nexus ARC started as a Git-native workflow/orchestration framework. That is still true.
+
+But the system is increasingly taking on a second responsibility: acting as the **credential-aware integration layer**
+that lets agents interact with external systems safely.
+
+### Responsibility split
+
+A useful working model is:
+
+- **OpenClaw / operator surfaces**
+  - chat UX
+  - agent runtime
+  - user interaction
+  - notifications and command entrypoints
+
+- **Nexus ARC**
+  - workflow state and orchestration
+  - bridge/control endpoints
+  - connector and adapter logic
+  - OAuth / token / credential handling
+  - policy and audit boundaries for external actions
+
+This split matters because it keeps the conversational/runtime shell separate from the business logic and auth logic of
+real integrations.
+
+### Current stack view
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│         Operator / Runtime Surfaces                          │
+│ OpenClaw • CLI • webhooks • trusted automation callers       │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                  Nexus ARC Control Plane                     │
+│      command bridge • operator APIs • workflow triggers      │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                Workflow & Policy Engine                      │
+│  step execution • retries • timeout handling • audit         │
+└───────────────┬───────────────────────────────┬──────────────┘
+                │                               │
+                ▼                               ▼
+┌───────────────────────────────┐   ┌──────────────────────────┐
+│ Connectors / Credential Layer │   │ Persistent State         │
+│ OAuth • token storage • API   │   │ workflow state • audit   │
+│ adapters • provider policies  │   │ logs • metrics           │
+└───────────────┬───────────────┘   └──────────────────────────┘
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────┐
+│       External Systems and AI Runtimes                       │
+│ GitHub • GitLab • email • social APIs • AI providers         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Why this direction makes sense
+
+Most agent systems can reason, but they struggle with the operational layer around real integrations:
+
+- token storage and refresh
+- permission boundaries
+- provider-specific API quirks
+- auditability for external actions
+- safe reuse of authenticated capabilities across agents
+
+Nexus ARC is a natural home for that layer because it already owns workflow state, audit trails, bridge endpoints, and
+provider/runtime routing.
+
+### Design implication
+
+When deciding where a new capability belongs:
+
+- if it is primarily **chat UX / conversation / agent interaction**, it probably belongs in **OpenClaw**
+- if it is primarily **OAuth / credentials / third-party API access / reusable workflow capability**, it probably belongs in **Nexus ARC**
+
+Examples:
+
+- LinkedIn OAuth connector → Nexus ARC
+- GitHub repo sync / issue bridge → Nexus ARC
+- “Jarvis, show me my LinkedIn-enriched leads” → OpenClaw calling Nexus ARC
+
+---
+
+## Historical evolution
 
 ## Original Nexus (Coupled Architecture)
 

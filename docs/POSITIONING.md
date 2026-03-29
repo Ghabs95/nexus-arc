@@ -4,15 +4,13 @@
 
 ## Elevator Pitch (30 seconds)
 
-**"Nexus ARC is the Git-native AI orchestration framework. Unlike Google ADK or LangChain that log agent actions to
-files, we create permanent artifacts in GitHub — every decision becomes an issue, every implementation becomes a PR,
-every workflow has a complete audit trail. Think Temporal meets GitHub Actions for AI agents."**
+**"Nexus ARC is a Git-native orchestration framework that is evolving into the authenticated integration layer for AI agents. It runs multi-step workflows, keeps a durable audit trail in Git artifacts, and gives agent systems a safe place for connectors, credentials, and policy-aware external actions. Think Temporal meets GitHub Actions for AI agents — plus the integration backbone they actually need in production."**
 
 ---
 
 ## One-Liner
 
-**"The only AI workflow framework where agent actions become part of your Git history, not ephemeral logs."**
+**"Git-native workflows, authenticated connectors, and durable audit trails for AI agents."**
 
 ---
 
