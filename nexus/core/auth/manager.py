@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from nexus.connectors.linkedin import linkedin_connector_service
 from nexus.core.auth import access_domain as _project_access
 from nexus.core.auth import oauth_onboarding_domain as _auth_sessions
-from nexus.connectors.linkedin import linkedin_connector_service
 
 
 class AuthManager:
@@ -71,13 +71,14 @@ class AuthManager:
 
     def get_linkedin_auth_status(self, *, nexus_id: str) -> dict[str, Any]:
         status = linkedin_connector_service.get_auth_status(nexus_id=nexus_id)
+        expires_at_iso = status.expires_at.isoformat() if status.expires_at else None
         return {
             "nexus_id": status.nexus_id,
             "connected": status.connected,
             "has_access_token": status.has_access_token,
             "has_author_urn": status.has_author_urn,
             "author_urn": status.author_urn,
-            "expires_at": status.expires_at,
+            "expires_at": expires_at_iso,
             "is_expired": status.is_expired,
         }
 

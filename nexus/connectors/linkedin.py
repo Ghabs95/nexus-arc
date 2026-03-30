@@ -119,9 +119,12 @@ class LinkedInConnectorService:
         has_token = bool(token_enc)
         has_author = bool(author_urn)
         connected = has_token and has_author
-        connection = None
-        if connected:
-            connection = self.get_connection(nexus_id=nexus_id)
+        is_expired = False
+        if expires_at is not None:
+            expiry = expires_at
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=UTC)
+            is_expired = expiry <= datetime.now(tz=UTC)
         return LinkedInAuthStatus(
             nexus_id=str(nexus_id),
             connected=connected,
@@ -129,7 +132,7 @@ class LinkedInConnectorService:
             has_author_urn=has_author,
             author_urn=author_urn,
             expires_at=expires_at,
-            is_expired=connection.is_expired if connection else False,
+            is_expired=is_expired,
         )
 
     def get_connection(self, *, nexus_id: str) -> LinkedInConnection:

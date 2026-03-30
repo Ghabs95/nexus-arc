@@ -16,11 +16,20 @@ from nexus.core.models import WorkflowState
 from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 from nexus.plugins.builtin.runtime_ops_plugin import RuntimeOpsPlugin
 
+
 def _get_nexus_id_from_headers(headers: dict) -> str:
-    nexus_id = headers.get("X-Nexus-ID") or headers.get("X-Nexus-User-ID")
-    if not nexus_id:
+    nexus_id = (
+        headers.get("X-Nexus-ID")
+        or headers.get("X-Nexus-User-ID")
+        or headers.get("HTTP_X_NEXUS_ID")
+        or headers.get("HTTP_X_NEXUS_USER_ID")
+    )
+    if nexus_id is None:
         raise ValueError("Missing X-Nexus-ID header for authenticated endpoint")
-    return str(nexus_id).strip()
+    cleaned = str(nexus_id).strip()
+    if not cleaned:
+        raise ValueError("Missing X-Nexus-ID header for authenticated endpoint")
+    return cleaned
 
 def _iso(value: Any) -> str | None:
     if value is None:

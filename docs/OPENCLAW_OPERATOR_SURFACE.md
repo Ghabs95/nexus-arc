@@ -183,7 +183,11 @@ curl -s http://127.0.0.1:8091/api/v1/operator/linkedin/auth-status \
 
 Returns:
 - `ok: true` on success, `false` on error
-- `status`: detailed connection status (`connected`, `expired`, `missing_credentials`, etc.)
+- `status`: detailed connection status object:
+  - `has_access_token`: boolean indicating whether a LinkedIn access token is stored
+  - `has_author_urn`: boolean indicating whether an `author_urn` is known for this user
+  - `is_expired`: boolean indicating whether the current access token (if any) is expired
+  - `expires_at` (optional): ISO-8601 timestamp for when the token expires, if available
 
 ### LinkedIn profile (me)
 
