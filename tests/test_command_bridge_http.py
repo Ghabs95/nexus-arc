@@ -21,6 +21,28 @@ class _FakeOperatorService:
             },
         }
 
+    async def linkedin_auth_status(self, *, headers):
+        return {
+            "ok": True,
+            "nexus_id": "test-user-1",
+            "connected": True,
+            "has_access_token": True,
+            "has_author_urn": True,
+            "author_urn": "urn:li:person:abc123",
+            "expires_at": "2027-01-01T00:00:00+00:00",
+            "is_expired": False,
+        }
+
+    async def linkedin_profile_me(self, *, headers):
+        return {
+            "ok": True,
+            "profile": {
+                "sub": "abc123",
+                "name": "Test User",
+                "author_urn": "urn:li:person:abc123",
+            },
+        }
+
 
 class _FakeRouter:
     def __init__(self):
@@ -856,3 +878,77 @@ def test_operator_retry_step_returns_400_when_target_agent_missing():
 
     assert status.startswith("400")
     assert payload["error"] == "target_agent is required for retry-step requests"
+
+
+def test_operator_linkedin_auth_status_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/linkedin/auth-status",
+        auth="Bearer secret",
+        extra_headers={"HTTP_X_NEXUS_ID": "test-user-1"},
+    )
+
+    assert status.startswith("200")
+    assert payload["ok"] is True
+    assert payload["connected"] is True
+    assert payload["has_access_token"] is True
+    assert payload["author_urn"] == "urn:li:person:abc123"
+    assert payload["expires_at"] == "2027-01-01T00:00:00+00:00"
+
+
+def test_operator_linkedin_auth_status_rejects_subpath():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/linkedin/auth-status-extra",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("404")
+
+
+def test_operator_linkedin_profile_me_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/linkedin/profile/me",
+        auth="Bearer secret",
+        extra_headers={"HTTP_X_NEXUS_ID": "test-user-1"},
+    )
+
+    assert status.startswith("200")
+    assert payload["ok"] is True
+    assert payload["profile"]["sub"] == "abc123"
+    assert payload["profile"]["author_urn"] == "urn:li:person:abc123"
+
+
+def test_operator_linkedin_profile_me_rejects_subpath():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/linkedin/profile/me/extra",
+        auth="Bearer secret",
+    )
+
+    assert status.startswith("404")

@@ -303,6 +303,22 @@ def create_command_bridge_app(
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
 
+            if method == "GET" and path == "/api/v1/operator/linkedin/auth-status":
+                payload = asyncio.run(
+                    router.operator_service.linkedin_auth_status(
+                        headers=environ,
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+
+            if method == "GET" and path == "/api/v1/operator/linkedin/profile/me":
+                payload = asyncio.run(
+                    router.operator_service.linkedin_profile_me(
+                        headers=environ,
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+
             if method == "POST" and path == "/api/v1/operator/workflows/continue":
                 payload = _load_json_body(environ)
                 result = asyncio.run(

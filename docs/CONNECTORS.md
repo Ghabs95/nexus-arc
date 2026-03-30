@@ -118,6 +118,7 @@ Nexus ARC receives the callback and stores:
 Once connected, the connector exposes workflow-facing actions such as:
 
 - `linkedin.profile.me`
+- `linkedin.auth.status`
 - `linkedin.company.lookup`
 - `github.issue.create`
 - `email.send`
@@ -223,6 +224,9 @@ Possible separation of concerns:
 - `health.py` → runtime status and rate-limit tracking
 
 ## Example: LinkedIn
+
+Current implementation note: Nexus ARC now includes a reusable LinkedIn connector foundation that powers OAuth callback profile resolution, stored auth status inspection, `linkedin.profile.me`, and the existing publish adapter from the same credential-aware client layer.
+
 
 If Nexus ARC adds an official LinkedIn connector, the connector should probably
 focus on what the official API can support safely and durably:
