@@ -2332,9 +2332,15 @@ async def login_command(
         available_providers.append("github")
     if gitlab_oauth_ready:
         available_providers.append("gitlab")
+    if bool(os.getenv("NEXUS_LINKEDIN_CLIENT_ID") and os.getenv("NEXUS_LINKEDIN_CLIENT_SECRET")):
+        available_providers.append("linkedin")
+    if bool(os.getenv("NEXUS_X_CLIENT_ID") and os.getenv("NEXUS_X_CLIENT_SECRET")):
+        available_providers.append("x")
+    if bool(os.getenv("NEXUS_META_CLIENT_ID") and os.getenv("NEXUS_META_CLIENT_SECRET")):
+        available_providers.append("meta")
     if not available_providers:
         await interaction.response.send_message(
-            "⚠️ No OAuth providers are configured. Ask an admin to configure GitHub/GitLab OAuth.",
+            "⚠️ No OAuth providers are configured. Ask an admin to configure GitHub/GitLab/LinkedIn/X/Meta OAuth.",
             ephemeral=True,
         )
         return
@@ -2433,7 +2439,7 @@ async def login_command(
             sent = await dm_channel.send(
                 "🔐 Setup required before task execution.\n\n"
                 f"Session reference: `{session_ref}`\n"
-                "Choose your Git provider to continue OAuth onboarding.",
+                "Choose your OAuth provider to continue onboarding.",
                 view=view,
             )
             await interaction.response.send_message(
@@ -2458,13 +2464,13 @@ async def login_command(
             logger.warning("Failed to register Discord onboarding message for session %s: %s", session_id, exc)
         return
 
-    if selected_provider and not account_provider_target and selected_provider not in {"github", "gitlab"}:
+    if selected_provider and not account_provider_target and selected_provider not in {"github", "gitlab", "linkedin", "x", "meta", "instagram"}:
         await interaction.response.send_message(
-            "⚠️ Invalid provider. Use github, gitlab, codex, gemini, claude, or copilot.",
+            "⚠️ Invalid provider. Use github, gitlab, linkedin, x, meta, codex, gemini, claude, or copilot.",
             ephemeral=True,
         )
         return
-    if not account_provider_target and selected_provider not in available_providers:
+    if not account_provider_target and selected_provider not in {"linkedin", "x", "meta", "instagram"} and selected_provider not in available_providers:
         await interaction.response.send_message(
             f"⚠️ {selected_provider.title()} OAuth is not configured in this environment.",
             ephemeral=True,
@@ -2541,8 +2547,15 @@ async def setup_status_command(interaction: discord.Interaction):
         f"- CLI auth mode: `{status.get('cli_auth_mode') or 'account'}`",
         f"- GitHub linked: {'✅' if status.get('github_linked') else '❌'}",
         f"- GitLab linked: {'✅' if status.get('gitlab_linked') else '❌'}",
+        f"- LinkedIn linked: {'✅' if status.get('linkedin_linked') else '❌'}",
+        f"- X linked: {'✅' if status.get('x_linked') else '❌'}",
+        f"- Meta linked: {'✅' if status.get('meta_linked') else '❌'}",
+        f"- Instagram linked: {'✅' if status.get('instagram_linked') else '❌'}",
         f"- GitHub login: `{status.get('github_login') or 'n/a'}`",
         f"- GitLab username: `{status.get('gitlab_username') or 'n/a'}`",
+        f"- LinkedIn author URN: `{status.get('linkedin_author_urn') or 'n/a'}`",
+        f"- Meta page ID: `{status.get('meta_page_id') or 'n/a'}`",
+        f"- Instagram account ID: `{status.get('meta_ig_account_id') or 'n/a'}`",
         f"- Codex key set: {'✅' if status.get('codex_key_set') else '❌'}",
         f"- Gemini key set: {'✅' if status.get('gemini_key_set') else '❌'}",
         f"- Claude key set: {'✅' if status.get('claude_key_set') else '❌'}",

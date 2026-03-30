@@ -16,6 +16,10 @@ Configuration per platform in project_config.yaml:
       linkedin:
         access_token: "..."          # or env: NEXUS_LINKEDIN_ACCESS_TOKEN
         author_urn: "urn:li:person:..."  # or env: NEXUS_LINKEDIN_AUTHOR_URN
+        require_link_preview: true
+        default_link_url: "https://github.com/org/repo"
+        default_link_title: "org/repo"
+        default_link_description: "Short repo summary"
       discord:
         webhook_url: "..."           # or env: NEXUS_DISCORD_WEBHOOK_URL
       x:
@@ -32,6 +36,7 @@ import os
 from typing import Any
 
 from nexus.adapters.social.base import SocialPost
+from nexus.core.auth.credential_store import record_social_publish_event
 from nexus.core.campaign import CampaignContext
 from nexus.plugins.base import PluginHealthStatus
 
@@ -121,26 +126,57 @@ class SocialPublisherPlugin:
     def available_platforms(self) -> list[str]:
         return list(self._adapters.keys())
 
-    async def dry_run(self, *, platform: str, post_text: str, campaign_id: str = "") -> dict[str, Any]:
+    def _resolve_post_metadata(self, *, platform: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        resolved = dict(metadata or {})
+        if platform != "linkedin":
+            return resolved
+
+        platform_cfg = self._config.get("linkedin", {}) if isinstance(self._config, dict) else {}
+
+        for field, cfg_key in (
+            ("link_url", "default_link_url"),
+            ("link_title", "default_link_title"),
+            ("link_description", "default_link_description"),
+            ("visibility", "default_visibility"),
+        ):
+            if not resolved.get(field) and platform_cfg.get(cfg_key):
+                resolved[field] = platform_cfg[cfg_key]
+
+        if platform_cfg.get("require_link_preview") and not resolved.get("link_url"):
+            raise ValueError(
+                "LinkedIn publishing requires a repo/article link preview. "
+                "Provide metadata.link_url or configure plugins.social_publisher.linkedin.default_link_url."
+            )
+        return resolved
+
+    async def dry_run(
+        self,
+        *,
+        platform: str,
+        post_text: str,
+        campaign_id: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Validate post content without publishing. Returns dry_run result dict."""
         adapter = self._adapters.get(platform)
         if not adapter:
             return {"ok": False, "error": f"No adapter configured for platform: {platform}"}
 
-        post = SocialPost(
-            content=post_text,
-            platform=platform,
-            campaign_id=campaign_id or "dry-run",
-            scheduled_time_utc="",
-        )
         try:
+            post = SocialPost(
+                content=post_text,
+                platform=platform,
+                campaign_id=campaign_id or "dry-run",
+                metadata=self._resolve_post_metadata(platform=platform, metadata=metadata),
+                scheduled_time_utc="",
+            )
             result = await adapter.dry_run(post)
             return {
                 "ok": result.success,
                 "platform": platform,
                 "char_count": len(post_text),
                 "preview": post_text[:100],
-                "error": result.error_message if not result.success else None,
+                "error": result.error if not result.success else None,
             }
         except Exception as exc:
             logger.error("SocialPublisherPlugin dry_run error (%s): %s", platform, exc)
@@ -153,30 +189,59 @@ class SocialPublisherPlugin:
         post_text: str,
         campaign_id: str,
         issue_number: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Publish post to the given platform. Returns publish result dict."""
         adapter = self._adapters.get(platform)
         if not adapter:
             return {"ok": False, "error": f"No adapter configured for platform: {platform}"}
 
-        post = SocialPost(
-            content=post_text,
-            platform=platform,
-            campaign_id=campaign_id,
-            scheduled_time_utc="",
-        )
         try:
+            post = SocialPost(
+                content=post_text,
+                platform=platform,
+                campaign_id=campaign_id,
+                metadata=self._resolve_post_metadata(platform=platform, metadata=metadata),
+                scheduled_time_utc="",
+            )
             result = await adapter.publish(post)
             if result.success:
                 self._last_ok = True
+                result_metadata = result.metadata if isinstance(result.metadata, dict) else {}
+                published_at_value = result.published_at or ""
+                post_url_value = str(result_metadata.get("post_url") or result_metadata.get("url") or "")
+                try:
+                    record_social_publish_event(
+                        nexus_id=str(self._config.get("nexus_id") or "").strip() or None,
+                        platform=platform,
+                        campaign_id=campaign_id,
+                        post_id=result.post_id or "",
+                        post_url=post_url_value,
+                        idempotency_key=result.idempotency_key,
+                        published_at=result.published_at,
+                        metadata={
+                            "link_url": post.metadata.get("link_url"),
+                            "link_title": post.metadata.get("link_title"),
+                            "link_description": post.metadata.get("link_description"),
+                            "visibility": post.metadata.get("visibility"),
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "SocialPublisherPlugin: failed to persist publish record (%s, %s): %s",
+                        platform,
+                        campaign_id,
+                        exc,
+                    )
                 return {
                     "ok": True,
                     "platform": platform,
-                    "post_url": result.post_url or "",
+                    "post_url": post_url_value,
                     "post_id": result.post_id or "",
+                    "published_at": published_at_value,
                 }
             self._last_ok = False
-            return {"ok": False, "platform": platform, "error": result.error_message or "Unknown error"}
+            return {"ok": False, "platform": platform, "error": result.error or "Unknown error"}
         except Exception as exc:
             self._last_ok = False
             logger.error("SocialPublisherPlugin publish error (%s): %s", platform, exc)

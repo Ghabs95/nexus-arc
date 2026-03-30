@@ -199,6 +199,8 @@ def _allow_api_keys_in_web_setup() -> bool:
 
 def _oauth_provider_configured(provider: str) -> bool:
     normalized = str(provider or "").strip().lower()
+    if normalized == "instagram":
+        normalized = "meta"
     if normalized == "github":
         return bool(
             str(os.getenv("NEXUS_GITHUB_CLIENT_ID", "")).strip()
@@ -209,23 +211,36 @@ def _oauth_provider_configured(provider: str) -> bool:
             str(os.getenv("NEXUS_GITLAB_CLIENT_ID", "")).strip()
             and str(os.getenv("NEXUS_GITLAB_CLIENT_SECRET", "")).strip()
         )
+    if normalized == "linkedin":
+        return bool(
+            str(os.getenv("NEXUS_LINKEDIN_CLIENT_ID", "")).strip()
+            and str(os.getenv("NEXUS_LINKEDIN_CLIENT_SECRET", "")).strip()
+        )
+    if normalized == "x":
+        return bool(
+            str(os.getenv("NEXUS_X_CLIENT_ID", "")).strip()
+            and str(os.getenv("NEXUS_X_CLIENT_SECRET", "")).strip()
+        )
+    if normalized == "meta":
+        return bool(
+            str(os.getenv("NEXUS_META_CLIENT_ID", "")).strip()
+            and str(os.getenv("NEXUS_META_CLIENT_SECRET", "")).strip()
+        )
     return False
 
 
 def _configured_oauth_providers() -> list[str]:
     providers: list[str] = []
-    if _oauth_provider_configured("github"):
-        providers.append("github")
-    if _oauth_provider_configured("gitlab"):
-        providers.append("gitlab")
+    for provider in ("github", "gitlab", "linkedin", "x", "meta"):
+        if _oauth_provider_configured(provider):
+            providers.append(provider)
     return providers
 
 
 def _default_oauth_provider(providers: list[str]) -> str:
-    if "gitlab" in providers:
-        return "gitlab"
-    if "github" in providers:
-        return "github"
+    for preferred in ("gitlab", "github", "linkedin", "x", "meta"):
+        if preferred in providers:
+            return preferred
     return ""
 
 # Track processed events to avoid duplicates

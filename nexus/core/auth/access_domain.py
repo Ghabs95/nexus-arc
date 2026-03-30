@@ -695,6 +695,10 @@ def get_setup_status(nexus_id: str) -> dict[str, Any]:
             "ready": True,
             "github_linked": False,
             "gitlab_linked": False,
+            "linkedin_linked": False,
+            "x_linked": False,
+            "meta_linked": False,
+            "instagram_linked": False,
             "git_provider_linked": False,
             "codex_key_set": False,
             "gemini_key_set": False,
@@ -718,6 +722,10 @@ def get_setup_status(nexus_id: str) -> dict[str, Any]:
 
     github_linked = bool(record and record.github_token_enc and record.github_login)
     gitlab_linked = bool(record and record.gitlab_token_enc and record.gitlab_username)
+    linkedin_linked = bool(record and record.linkedin_token_enc and record.linkedin_author_urn)
+    x_linked = bool(record and (record.x_bearer_token_enc or record.x_oauth_token_enc))
+    meta_linked = bool(record and record.meta_page_token_enc and record.meta_page_id)
+    instagram_linked = bool(record and record.meta_ig_account_id)
     git_provider_linked = bool(github_linked or gitlab_linked)
     codex_key_set = bool(record and record.codex_api_key_enc)
     gemini_key_set = bool(record and record.gemini_api_key_enc)
@@ -753,6 +761,10 @@ def get_setup_status(nexus_id: str) -> dict[str, Any]:
         "ready": ready,
         "github_linked": github_linked,
         "gitlab_linked": gitlab_linked,
+        "linkedin_linked": linkedin_linked,
+        "x_linked": x_linked,
+        "meta_linked": meta_linked,
+        "instagram_linked": instagram_linked,
         "git_provider_linked": git_provider_linked,
         "codex_key_set": codex_key_set,
         "gemini_key_set": gemini_key_set,
@@ -769,6 +781,9 @@ def get_setup_status(nexus_id: str) -> dict[str, Any]:
         "org_verified": org_verified,
         "github_login": (record.github_login if record else None),
         "gitlab_username": (record.gitlab_username if record else None),
+        "linkedin_author_urn": (record.linkedin_author_urn if record else None),
+        "meta_page_id": (record.meta_page_id if record else None),
+        "meta_ig_account_id": (record.meta_ig_account_id if record else None),
         "project_access_count": project_access_count,
         "projects": projects,
     }

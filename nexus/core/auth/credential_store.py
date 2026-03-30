@@ -194,6 +194,28 @@ if _SA_AVAILABLE:
             sa.DateTime(timezone=True), nullable=False, default=_now_utc
         )
 
+    class _SocialPublishEventRow(_AuthBase):
+        __tablename__ = "nexus_social_publish_events"
+        __table_args__ = (
+            sa.UniqueConstraint("platform", "idempotency_key", name="uq_social_publish_platform_idempotency"),
+        )
+
+        id: sa.orm.Mapped[int] = sa.orm.mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+        nexus_id: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.String(64), index=True)
+        platform: sa.orm.Mapped[str] = sa.orm.mapped_column(sa.String(32), nullable=False, index=True)
+        campaign_id: sa.orm.Mapped[str] = sa.orm.mapped_column(sa.String(255), nullable=False, index=True)
+        post_id: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.String(255), index=True)
+        post_url: sa.orm.Mapped[str | None] = sa.orm.mapped_column(sa.String(1024))
+        idempotency_key: sa.orm.Mapped[str] = sa.orm.mapped_column(sa.String(64), nullable=False, index=True)
+        metadata_json: sa.orm.Mapped[str] = sa.orm.mapped_column(sa.Text, nullable=False, default="{}")
+        published_at: sa.orm.Mapped[datetime | None] = sa.orm.mapped_column(sa.DateTime(timezone=True))
+        created_at: sa.orm.Mapped[datetime] = sa.orm.mapped_column(
+            sa.DateTime(timezone=True), nullable=False, default=_now_utc
+        )
+        updated_at: sa.orm.Mapped[datetime] = sa.orm.mapped_column(
+            sa.DateTime(timezone=True), nullable=False, default=_now_utc
+        )
+
 
 @dataclass
 class CredentialRecord:
@@ -259,6 +281,21 @@ class ProjectGrant:
     synced_at: datetime
 
 
+@dataclass
+class SocialPublishEventRecord:
+    id: int
+    nexus_id: str | None
+    platform: str
+    campaign_id: str
+    post_id: str | None
+    post_url: str | None
+    idempotency_key: str
+    metadata: dict[str, Any]
+    published_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 _ENGINE: Any | None = None
 
 
@@ -280,6 +317,26 @@ def _run_schema_migrations(engine: Any) -> None:
             "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
             ")"
         ),
+        (
+            "CREATE TABLE IF NOT EXISTS nexus_social_publish_events ("
+            "id SERIAL PRIMARY KEY, "
+            "nexus_id VARCHAR(64), "
+            "platform VARCHAR(32) NOT NULL, "
+            "campaign_id VARCHAR(255) NOT NULL, "
+            "post_id VARCHAR(255), "
+            "post_url VARCHAR(1024), "
+            "idempotency_key VARCHAR(64) NOT NULL, "
+            "metadata_json TEXT NOT NULL DEFAULT '{}', "
+            "published_at TIMESTAMPTZ, "
+            "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
+            "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
+            "CONSTRAINT uq_social_publish_platform_idempotency UNIQUE (platform, idempotency_key)"
+            ")"
+        ),
+        "CREATE INDEX IF NOT EXISTS ix_nexus_social_publish_events_nexus_id ON nexus_social_publish_events (nexus_id)",
+        "CREATE INDEX IF NOT EXISTS ix_nexus_social_publish_events_platform ON nexus_social_publish_events (platform)",
+        "CREATE INDEX IF NOT EXISTS ix_nexus_social_publish_events_campaign_id ON nexus_social_publish_events (campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_nexus_social_publish_events_post_id ON nexus_social_publish_events (post_id)",
         # User credentials
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(32)",
         "ALTER TABLE IF EXISTS nexus_user_credentials ADD COLUMN IF NOT EXISTS gitlab_user_id BIGINT",
@@ -553,6 +610,114 @@ def cleanup_expired_auth_sessions() -> int:
             session.delete(row)
         session.commit()
         return count
+
+
+def _row_to_social_publish_event(row: Any) -> SocialPublishEventRecord:
+    metadata_raw = str(getattr(row, "metadata_json", "") or "").strip()
+    metadata: dict[str, Any] = {}
+    if metadata_raw:
+        try:
+            parsed = json.loads(metadata_raw)
+            if isinstance(parsed, dict):
+                metadata = parsed
+        except Exception:
+            metadata = {}
+    return SocialPublishEventRecord(
+        id=int(row.id),
+        nexus_id=str(row.nexus_id) if getattr(row, "nexus_id", None) else None,
+        platform=str(row.platform),
+        campaign_id=str(row.campaign_id),
+        post_id=str(row.post_id) if getattr(row, "post_id", None) else None,
+        post_url=str(row.post_url) if getattr(row, "post_url", None) else None,
+        idempotency_key=str(row.idempotency_key),
+        metadata=metadata,
+        published_at=getattr(row, "published_at", None),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def record_social_publish_event(
+    *,
+    platform: str,
+    campaign_id: str,
+    post_id: str | None,
+    idempotency_key: str,
+    nexus_id: str | None = None,
+    post_url: str | None = None,
+    published_at: datetime | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> SocialPublishEventRecord:
+    engine = _get_engine()
+    safe_platform = str(platform or "").strip().lower()
+    safe_campaign_id = str(campaign_id or "").strip()
+    safe_post_id = str(post_id or "").strip() or None
+    safe_post_url = str(post_url or "").strip() or None
+    safe_idempotency_key = str(idempotency_key or "").strip()
+    safe_nexus_id = str(nexus_id or "").strip() or None
+    if not safe_platform:
+        raise ValueError("platform is required")
+    if not safe_campaign_id:
+        raise ValueError("campaign_id is required")
+    if not safe_idempotency_key:
+        raise ValueError("idempotency_key is required")
+    metadata_json = json.dumps(metadata or {}, sort_keys=True)
+    with Session(engine) as session:
+        row = (
+            session.query(_SocialPublishEventRow)
+            .filter(
+                _SocialPublishEventRow.platform == safe_platform,
+                _SocialPublishEventRow.idempotency_key == safe_idempotency_key,
+            )
+            .first()
+        )
+        now = _now_utc()
+        if not row:
+            row = _SocialPublishEventRow(
+                nexus_id=safe_nexus_id,
+                platform=safe_platform,
+                campaign_id=safe_campaign_id,
+                post_id=safe_post_id,
+                post_url=safe_post_url,
+                idempotency_key=safe_idempotency_key,
+                metadata_json=metadata_json,
+                published_at=published_at,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(row)
+        else:
+            row.nexus_id = safe_nexus_id or row.nexus_id
+            row.campaign_id = safe_campaign_id
+            row.post_id = safe_post_id or row.post_id
+            row.post_url = safe_post_url or row.post_url
+            row.metadata_json = metadata_json
+            row.published_at = published_at or row.published_at
+            row.updated_at = now
+        session.commit()
+        session.refresh(row)
+        return _row_to_social_publish_event(row)
+
+
+def list_social_publish_events(
+    *,
+    nexus_id: str | None = None,
+    platform: str | None = None,
+    campaign_id: str | None = None,
+    limit: int = 50,
+) -> list[SocialPublishEventRecord]:
+    engine = _get_engine()
+    safe_limit = max(1, int(limit))
+    with Session(engine) as session:
+        query = session.query(_SocialPublishEventRow)
+        if nexus_id is not None:
+            query = query.filter(_SocialPublishEventRow.nexus_id == (str(nexus_id).strip() or None))
+        if platform is not None:
+            query = query.filter(_SocialPublishEventRow.platform == str(platform).strip().lower())
+        if campaign_id is not None:
+            query = query.filter(_SocialPublishEventRow.campaign_id == str(campaign_id).strip())
+        rows = query.order_by(_SocialPublishEventRow.created_at.desc()).limit(safe_limit).all()
+        return [_row_to_social_publish_event(row) for row in rows]
 
 
 def get_user_tracking_state(*, storage_key: str = "default") -> tuple[dict[str, Any] | None, datetime | None]:

@@ -1321,6 +1321,20 @@ def complete_gitlab_oauth(*, code: str, state: str) -> dict[str, Any]:
 # LinkedIn OAuth 2.0 (PKCE)
 # ---------------------------------------------------------------------------
 
+def _linkedin_oauth_scopes() -> str:
+    raw = str(
+        os.getenv(
+            "NEXUS_LINKEDIN_SCOPES",
+            "openid profile email r_profile_basicinfo r_verify w_member_social",
+        )
+    ).strip()
+    if not raw:
+        raw = "openid profile email r_profile_basicinfo r_verify w_member_social"
+    tokens = [token.strip() for token in re.split(r"[\s,]+", raw) if token.strip()]
+    deduped = list(dict.fromkeys(tokens))
+    return " ".join(deduped)
+
+
 def start_linkedin_oauth(session_id: str) -> tuple[str, str]:
     """Start LinkedIn OAuth 2.0 PKCE flow. Returns (auth_url, state)."""
     client_id = _required_env("NEXUS_LINKEDIN_CLIENT_ID")
@@ -1347,7 +1361,7 @@ def start_linkedin_oauth(session_id: str) -> tuple[str, str]:
         "client_id": client_id,
         "redirect_uri": callback_url,
         "state": state,
-        "scope": "openid profile w_member_social",
+        "scope": _linkedin_oauth_scopes(),
     })
     return f"https://www.linkedin.com/oauth/v2/authorization?{query}", state
 

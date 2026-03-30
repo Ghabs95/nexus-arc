@@ -1677,9 +1677,15 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         available_providers.append("github")
     if gitlab_oauth_ready:
         available_providers.append("gitlab")
+    if bool(os.getenv("NEXUS_LINKEDIN_CLIENT_ID") and os.getenv("NEXUS_LINKEDIN_CLIENT_SECRET")):
+        available_providers.append("linkedin")
+    if bool(os.getenv("NEXUS_X_CLIENT_ID") and os.getenv("NEXUS_X_CLIENT_SECRET")):
+        available_providers.append("x")
+    if bool(os.getenv("NEXUS_META_CLIENT_ID") and os.getenv("NEXUS_META_CLIENT_SECRET")):
+        available_providers.append("meta")
     if not available_providers:
         await update.effective_message.reply_text(
-            "⚠️ No OAuth providers are configured. Ask an admin to configure GitHub/GitLab OAuth.",
+            "⚠️ No OAuth providers are configured. Ask an admin to configure GitHub/GitLab/LinkedIn/X/Meta OAuth.",
         )
         return
     if account_provider_target == "copilot" and "github" not in available_providers:
@@ -1777,7 +1783,7 @@ async def login_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (
                 "🔐 Setup required before task execution.\n\n"
                 f"Session reference: {session_ref}\n"
-                "Choose your Git provider to continue OAuth onboarding."
+                "Choose your OAuth provider to continue onboarding."
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             disable_web_page_preview=True,
@@ -1858,8 +1864,15 @@ async def setup_status_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         f"- CLI auth mode: `{status.get('cli_auth_mode') or 'account'}`",
         f"- GitHub linked: {'✅' if status.get('github_linked') else '❌'}",
         f"- GitLab linked: {'✅' if status.get('gitlab_linked') else '❌'}",
+        f"- LinkedIn linked: {'✅' if status.get('linkedin_linked') else '❌'}",
+        f"- X linked: {'✅' if status.get('x_linked') else '❌'}",
+        f"- Meta linked: {'✅' if status.get('meta_linked') else '❌'}",
+        f"- Instagram linked: {'✅' if status.get('instagram_linked') else '❌'}",
         f"- GitHub login: `{status.get('github_login') or 'n/a'}`",
         f"- GitLab username: `{status.get('gitlab_username') or 'n/a'}`",
+        f"- LinkedIn author URN: `{status.get('linkedin_author_urn') or 'n/a'}`",
+        f"- Meta page ID: `{status.get('meta_page_id') or 'n/a'}`",
+        f"- Instagram account ID: `{status.get('meta_ig_account_id') or 'n/a'}`",
         f"- Codex key set: {'✅' if status.get('codex_key_set') else '❌'}",
         f"- Gemini key set: {'✅' if status.get('gemini_key_set') else '❌'}",
         f"- Claude key set: {'✅' if status.get('claude_key_set') else '❌'}",

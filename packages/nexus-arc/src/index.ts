@@ -1,5 +1,6 @@
 const PLUGIN_ID = "nexus-arc";
 const PLUGIN_VERSION = "0.2.0";
+const DEFAULT_BRIDGE_URL = "http://127.0.0.1:8091";
 
 type PluginConfig = {
     bridgeUrl?: string;
@@ -274,7 +275,7 @@ function resolvePluginConfig(ctx: CommandHandlerContext): Required<PluginConfig>
     const pluginConfig = isRecord(pluginEntry.config) ? pluginEntry.config : {};
 
     return {
-        bridgeUrl: stringValue(pluginConfig.bridgeUrl) || "http://127.0.0.1:8091",
+        bridgeUrl: normalizeBridgeUrl(pluginConfig.bridgeUrl),
         authToken: stringValue(pluginConfig.authToken),
         timeoutMs: numberValue(pluginConfig.timeoutMs) ?? 15000,
         sourcePlatform: stringValue(pluginConfig.sourcePlatform) || "openclaw",
@@ -289,6 +290,38 @@ function resolvePluginConfig(ctx: CommandHandlerContext): Required<PluginConfig>
         acceptedPollDelayMs: numberValue(pluginConfig.acceptedPollDelayMs) ?? 1500,
         acceptedPollAttempts: numberValue(pluginConfig.acceptedPollAttempts) ?? 1
     };
+}
+
+export function normalizeBridgeUrl(value: unknown): string {
+    const raw = stringValue(value);
+    if (!raw) {
+        return DEFAULT_BRIDGE_URL;
+    }
+
+    let parsed: URL;
+    try {
+        parsed = new URL(raw);
+    } catch {
+        return raw.replace(/\/+$/, "");
+    }
+
+    const originalProtocol = parsed.protocol;
+    if (parsed.protocol === "ws:") {
+        parsed.protocol = "http:";
+    } else if (parsed.protocol === "wss:") {
+        parsed.protocol = "https:";
+    }
+
+    const hostname = parsed.hostname.trim().toLowerCase();
+    const isLoopbackHost = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    if (isLoopbackHost && parsed.port === "18789") {
+        parsed.port = "8091";
+        if (parsed.pathname === "/" && (originalProtocol === "ws:" || originalProtocol === "wss:")) {
+            parsed.pathname = "";
+        }
+    }
+
+    return parsed.toString().replace(/\/+$/, "");
 }
 
 function stringValue(value: unknown): string {

@@ -9,6 +9,7 @@ import {
     formatBridgeError,
     getRequesterContext,
     inferCommandContext,
+    normalizeBridgeUrl,
     normalizeInvocationArgs,
     parseNexusInvocation,
     tokenizeInput
@@ -20,6 +21,16 @@ test("tokenizeInput preserves quoted phrases", () => {
         "demo",
         "investigate launch retries"
     ]);
+});
+
+test("normalizeBridgeUrl rewrites legacy local loopback websocket bridge URLs", () => {
+    assert.equal(normalizeBridgeUrl("ws://127.0.0.1:18789"), "http://127.0.0.1:8091");
+    assert.equal(normalizeBridgeUrl("wss://localhost:18789"), "https://localhost:8091");
+});
+
+test("normalizeBridgeUrl rewrites websocket schemes for HTTP bridge fetches", () => {
+    assert.equal(normalizeBridgeUrl("ws://127.0.0.1:8091/api/v1"), "http://127.0.0.1:8091/api/v1");
+    assert.equal(normalizeBridgeUrl("wss://nexus.example.com/api/v1"), "https://nexus.example.com/api/v1");
 });
 
 test("parseNexusInvocation treats unknown leading text as freeform", () => {
