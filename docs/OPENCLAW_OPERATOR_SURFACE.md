@@ -173,6 +173,30 @@ Returns best-effort authentication/availability status for:
 - `glab`
 - relevant automation-token env presence (presence only, never secret values)
 
+### LinkedIn status
+
+```bash
+curl -s http://127.0.0.1:8091/api/v1/operator/linkedin/auth-status \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN" \
+  -H "X-Nexus-ID: your-nexus-user-id"
+```
+
+Returns:
+- `ok: true` on success, `false` on error
+- `status`: detailed connection status (`connected`, `expired`, `missing_credentials`, etc.)
+
+### LinkedIn profile (me)
+
+```bash
+curl -s http://127.0.0.1:8091/api/v1/operator/linkedin/profile/me \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN" \
+  -H "X-Nexus-ID: your-nexus-user-id"
+```
+
+Returns:
+- `ok: true` on success, `false` on error
+- `profile`: the raw LinkedIn `userinfo` response including `sub`, `name`, `author_urn`, etc.
+
 ### Routing explain
 
 ```bash

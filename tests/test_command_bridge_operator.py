@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -198,7 +199,56 @@ def operator_service(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> BridgeO
         return str(logs_dir) if project_key == "demo" else None
 
     monkeypatch.setattr(BridgeOperatorService, "_resolve_logs_dir", _fake_resolve_logs_dir)
-    return BridgeOperatorService()
+
+    # Build service and inject a fake auth manager for LinkedIn connector tests
+    service = BridgeOperatorService()
+
+    class FakeAuthManager:
+        def get_linkedin_auth_status(self, *, nexus_id: str) -> dict[str, Any]:
+            if nexus_id == "nexus-user-1":
+                return {
+                    "nexus_id": "nexus-user-1",
+                    "connected": True,
+                    "has_access_token": True,
+                    "has_author_urn": True,
+                    "author_urn": "urn:li:person:abc123",
+                    "expires_at": datetime(2026, 3, 30, 1, 0, tzinfo=UTC).isoformat(),
+                    "is_expired": False,
+                }
+            return {"nexus_id": nexus_id, "connected": False}
+
+        def get_linkedin_profile_me(self, *, nexus_id: str) -> dict[str, Any]:
+            if nexus_id == "nexus-user-1":
+                return {
+                    "sub": "abc123",
+                    "name": "Ada Lovelace",
+                    "author_urn": "urn:li:person:abc123",
+                }
+            raise ValueError("Profile not found")
+
+    service._auth_manager_instance = FakeAuthManager()
+    return service
+
+
+@pytest.mark.asyncio
+async def test_linkedin_auth_status_endpoint(operator_service: BridgeOperatorService):
+    payload = await operator_service.linkedin_auth_status(headers={"X-Nexus-ID": "nexus-user-1"})
+
+    assert payload["ok"] is True
+    assert payload["status"]["connected"] is True
+    assert payload["status"]["author_urn"] == "urn:li:person:abc123"
+
+
+@pytest.mark.asyncio
+async def test_linkedin_profile_me_endpoint(operator_service: BridgeOperatorService):
+    payload = await operator_service.linkedin_profile_me(headers={"X-Nexus-ID": "nexus-user-1"})
+
+    assert payload["ok"] is True
+    assert payload["profile"]["name"] == "Ada Lovelace"
+    assert payload["profile"]["author_urn"] == "urn:li:person:abc123"
+
+    with pytest.raises(ValueError, match="Profile not found"):
+        await operator_service.linkedin_profile_me(headers={"X-Nexus-ID": "missing-user"})
 
 
 @pytest.mark.asyncio

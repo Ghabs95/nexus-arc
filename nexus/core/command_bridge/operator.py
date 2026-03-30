@@ -11,10 +11,16 @@ import subprocess
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus.core.auth.manager import AuthManager
 from nexus.core.models import WorkflowState
 from nexus.core.orchestration.plugin_runtime import get_workflow_state_plugin
 from nexus.plugins.builtin.runtime_ops_plugin import RuntimeOpsPlugin
 
+def _get_nexus_id_from_headers(headers: dict) -> str:
+    nexus_id = headers.get("X-Nexus-ID") or headers.get("X-Nexus-User-ID")
+    if not nexus_id:
+        raise ValueError("Missing X-Nexus-ID header for authenticated endpoint")
+    return str(nexus_id).strip()
 
 def _iso(value: Any) -> str | None:
     if value is None:
@@ -133,6 +139,22 @@ def _expected_repo_roles(project_key: str, repos: list[str], task_type: str) -> 
 class BridgeOperatorService:
     def __init__(self, *, workflow_state_plugin_kwargs: dict[str, Any] | None = None) -> None:
         self.workflow_state_plugin_kwargs = dict(workflow_state_plugin_kwargs or {})
+        self._auth_manager_instance = AuthManager()
+
+    def _auth_manager(self) -> AuthManager:
+        return self._auth_manager_instance
+
+    async def linkedin_auth_status(self, *, headers: dict) -> dict[str, Any]:
+        nexus_id = _get_nexus_id_from_headers(headers)
+        auth_manager = self._auth_manager()
+        status = auth_manager.get_linkedin_auth_status(nexus_id=nexus_id)
+        return {"ok": True, "status": status}
+
+    async def linkedin_profile_me(self, *, headers: dict) -> dict[str, Any]:
+        nexus_id = _get_nexus_id_from_headers(headers)
+        auth_manager = self._auth_manager()
+        profile = auth_manager.get_linkedin_profile_me(nexus_id=nexus_id)
+        return {"ok": True, "profile": profile}
 
     def _workflow_plugin(self):
         return get_workflow_state_plugin(

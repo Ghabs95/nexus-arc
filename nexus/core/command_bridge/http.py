@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server
 
+from nexus.core.command_bridge.operator import BridgeOperatorService
 from nexus.core.command_bridge.models import CommandRequest, CommandResult, ReplyRequest
 from nexus.core.command_bridge.reply_security import ReplyTokenError, validate_reply_token
 from nexus.core.command_bridge.router import CommandRouter
@@ -299,6 +300,24 @@ def create_command_bridge_app(
                         workflow_id=_str_param(params, "workflow_id"),
                         issue_number=_str_param(params, "issue_number"),
                         agent_name=_str_param(params, "agent_name"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+
+            if method == "GET" and path.startswith("/api/v1/operator/linkedin/auth-status"):
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    operator_service.linkedin_auth_status(
+                        headers=environ,
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+
+            if method == "GET" and path.startswith("/api/v1/operator/linkedin/profile/me"):
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    operator_service.linkedin_profile_me(
+                        headers=environ,
                     )
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
