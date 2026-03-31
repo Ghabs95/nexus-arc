@@ -29,6 +29,14 @@ CALLBACK_PREFIX = "routefb:"
 FALLBACK_STORE_PATH = os.path.join(NEXUS_STATE_DIR, "router_feedback_fallback.jsonl")
 PENDING_STORE_PATH = os.path.join(NEXUS_STATE_DIR, "router_feedback_pending.json")
 
+# Model-verdict options surfaced in step 2 of the "Wrong" flow
+MODEL_VERDICT_LABELS: dict[str, str] = {
+    "too_cheap": "🔼 Too cheap/fast",
+    "ok": "✅ Model OK",
+    "too_powerful": "🔽 Too powerful/slow",
+}
+MODEL_VERDICTS = list(MODEL_VERDICT_LABELS.keys())
+
 
 def feedback_enabled(config: dict[str, Any] | None, *, surface: str) -> bool:
     cfg = config or {}
@@ -124,16 +132,41 @@ def build_feedback_prompt(meta: dict[str, Any]) -> tuple[str, list[list[Button]]
     model = str(meta.get("selected_model") or "unknown")
     text = f"🧭 {task} · {model} · {confidence_text}\nFeedback?"
     buttons = [
-        [Button("✅ Correct", callback_data=f"{CALLBACK_PREFIX}ok:{meta['decision_id']}"), Button("❌ Wrong", callback_data=f"{CALLBACK_PREFIX}wrong:{meta['decision_id']}")],
+        [
+            Button("✅ Correct", callback_data=f"{CALLBACK_PREFIX}ok:{meta['decision_id']}"),
+            Button("❌ Wrong", callback_data=f"{CALLBACK_PREFIX}wrong:{meta['decision_id']}"),
+        ],
     ]
+    return text, buttons
+
+
+def build_wrong_task_prompt(meta: dict[str, Any]) -> tuple[str, list[list[Button]]]:
+    """Step 1 of 'Wrong' flow: ask which task was correct."""
+    decision_id = meta["decision_id"]
+    text = "❌ Step 1/2 — Which task was it?"
+    buttons: list[list[Button]] = []
     row: list[Button] = []
     for label in TASK_LABELS:
-        row.append(Button(label, callback_data=f"{CALLBACK_PREFIX}fix:{meta['decision_id']}:{label}"))
+        row.append(Button(label, callback_data=f"{CALLBACK_PREFIX}wrong_task:{decision_id}:{label}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
+    buttons.append([Button("⏭ Skip", callback_data=f"{CALLBACK_PREFIX}wrong_task:{decision_id}:skip")])
+    return text, buttons
+
+
+def build_wrong_model_prompt(meta: dict[str, Any], corrected_task: str | None) -> tuple[str, list[list[Button]]]:
+    """Step 2 of 'Wrong' flow: ask about model quality (too cheap/ok/too powerful)."""
+    decision_id = meta["decision_id"]
+    task_slot = corrected_task or "skip"
+    text = "❌ Step 2/2 — Was the model right?"
+    buttons: list[list[Button]] = [[
+        Button(label_text, callback_data=f"{CALLBACK_PREFIX}wrong_model:{decision_id}:{task_slot}:{verdict_key}")
+        for verdict_key, label_text in MODEL_VERDICT_LABELS.items()
+    ]]
+    buttons.append([Button("⏭ Skip", callback_data=f"{CALLBACK_PREFIX}wrong_model:{decision_id}:{task_slot}:skip")])
     return text, buttons
 
 
@@ -187,7 +220,7 @@ def parse_feedback_text(text: str) -> tuple[str, str | None] | None:
     return None
 
 
-def build_feedback_payload(*, meta: dict[str, Any], verdict: str, corrected_task: str | None, source_message_id: str | None, source_user_id: str | None) -> dict[str, Any]:
+def build_feedback_payload(*, meta: dict[str, Any], verdict: str, corrected_task: str | None, source_message_id: str | None, source_user_id: str | None, model_verdict: str | None = None) -> dict[str, Any]:
     metadata = dict(meta.get("metadata") or {}) if isinstance(meta.get("metadata"), dict) else {}
     metadata.update(
         {
@@ -204,6 +237,7 @@ def build_feedback_payload(*, meta: dict[str, Any], verdict: str, corrected_task
         "decision_id": meta.get("decision_id"),
         "verdict": verdict,
         "corrected_task": corrected_task,
+        "model_verdict": model_verdict or None,
         "source_surface": "telegram",
         "source_channel": meta.get("source_channel") or "telegram",
         "source_message_id": str(source_message_id or meta.get("source_message_id") or "") or None,
