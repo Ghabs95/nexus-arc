@@ -286,7 +286,7 @@ async def test_hands_free_task_route_sends_feedback_prompt():
         handle_feature_ideation_request=_false_async,
         feature_ideation_deps_factory=lambda: {},
         route_hands_free_text=_route,
-        router_feedback_config={"router_url": "http://router", "telegram_enabled": True},
+        router_feedback_config={"router_url": "http://router", "telegram_enabled": True, "enabled": True},
     )
 
     assert ctx.user_data["router_feedback_pending"]["decision_id"] == "dec-1"
@@ -325,7 +325,7 @@ async def test_hands_free_inbox_route_without_decision_id_still_sends_feedback_p
         handle_feature_ideation_request=_false_async,
         feature_ideation_deps_factory=lambda: {},
         route_hands_free_text=_route,
-        router_feedback_config={"router_url": "http://router", "telegram_enabled": True},
+        router_feedback_config={"router_url": "http://router", "telegram_enabled": True, "enabled": True},
     )
 
     pending = ctx.user_data["router_feedback_pending"]
