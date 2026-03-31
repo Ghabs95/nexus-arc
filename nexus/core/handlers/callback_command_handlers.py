@@ -17,6 +17,16 @@ from nexus.core.callbacks.callback_inline_service import (
 from nexus.core.callbacks.callback_menu_service import (
     handle_menu_callback as service_menu_callback_handler,
 )
+from nexus.core.telegram.telegram_router_feedback_service import (
+    CALLBACK_PREFIX,
+    PENDING_KEY,
+    build_feedback_payload,
+    clear_external_pending_feedback,
+    has_feedback_submission,
+    load_external_pending_feedback,
+    remember_feedback_submission,
+    submit_feedback,
+)
 
 
 @dataclass
@@ -32,6 +42,7 @@ class CallbackHandlerDeps:
     action_handlers: dict[str, Callable[..., Awaitable[None]]]
     report_bug_action: Callable[[InteractiveContext, str, str], Awaitable[None]]
     requester_context_builder: Callable[[int], dict[str, Any]] | None = None
+    router_feedback_url: str | None = None
 
 
 def _resolve_direct_issue_plugin(
@@ -72,6 +83,8 @@ async def core_callback_router(ctx: InteractiveContext, deps: CallbackHandlerDep
         await monitor_project_picker_handler(ctx, deps)
     elif data.startswith("flow:close"):
         await flow_close_handler(ctx, deps)
+    elif data.startswith(CALLBACK_PREFIX):
+        await route_feedback_callback_handler(ctx, deps)
     elif data.startswith("menu:"):
         await menu_callback_handler(ctx, deps)
     elif data == "close":
@@ -229,6 +242,67 @@ async def flow_close_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps)
 
 async def menu_callback_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
     await service_menu_callback_handler(ctx)
+
+
+async def route_feedback_callback_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):
+    await ctx.answer_callback_query()
+    query = ctx.query
+    if query is None:
+        return
+    query_data = str(query.action_data or "")
+    parts = query_data.split(":", 3)
+    if len(parts) < 3:
+        await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Invalid feedback action.", buttons=[])
+        return
+    action = parts[1]
+    decision_id = parts[2]
+
+    pending = ctx.user_state.get(PENDING_KEY)
+    if not isinstance(pending, dict):
+        pending = load_external_pending_feedback(user_id=str(ctx.user_id or ""))
+        if isinstance(pending, dict):
+            ctx.user_state[PENDING_KEY] = pending
+    if not isinstance(pending, dict):
+        pending = {
+            "decision_id": decision_id,
+            "feedback_mode": "router",
+            "source_channel": getattr(getattr(ctx, "client", None), "name", None) or "openclaw",
+            "metadata": {},
+        }
+        ctx.user_state[PENDING_KEY] = pending
+    corrected_task = parts[3] if action == "fix" and len(parts) >= 4 else None
+    if decision_id != str(pending.get("decision_id") or ""):
+        await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Feedback no longer matches the latest route.", buttons=[])
+        return
+
+    user_id = str(ctx.user_id or "") or None
+    if has_feedback_submission(ctx.user_state, decision_id=decision_id, user_id=user_id):
+        await ctx.edit_message_text(message_id=query.message_id, text="✅ Feedback already recorded.", buttons=[])
+        return
+
+    verdict = "correct" if action == "ok" else "wrong"
+    payload = build_feedback_payload(
+        meta=pending,
+        verdict=verdict,
+        corrected_task=corrected_task,
+        source_message_id=str(query.message_id or "") or None,
+        source_user_id=user_id,
+    )
+    ok, _detail = submit_feedback(router_url=str(deps.router_feedback_url or ""), payload=payload)
+    if not ok:
+        await ctx.edit_message_text(
+            message_id=query.message_id,
+            text="⚠️ Feedback service unreachable. Reply later with `wrong -> reasoning` if needed.",
+            buttons=[],
+            parse_mode=None,
+        )
+        return
+
+    remember_feedback_submission(ctx.user_state, decision_id=decision_id, user_id=user_id)
+    ctx.user_state.pop(PENDING_KEY, None)
+    clear_external_pending_feedback(user_id=str(ctx.user_id or ""), decision_id=decision_id)
+    summary = "✅ Feedback recorded." if verdict == "correct" else f"✅ Marked wrong → {corrected_task or 'wrong'}."
+    await ctx.edit_message_text(message_id=query.message_id, text=summary, buttons=[])
 
 
 async def inline_keyboard_handler(ctx: InteractiveContext, deps: CallbackHandlerDeps):

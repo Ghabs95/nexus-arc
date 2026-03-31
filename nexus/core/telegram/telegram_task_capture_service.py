@@ -15,6 +15,7 @@ async def handle_task_confirmation_callback(
     process_inbox_task: Callable[..., Awaitable[Any]],
     requester_context_builder: Callable[[Any], dict[str, str]] | None = None,
     authorize_project: Callable[[str, dict[str, Any] | None], tuple[bool, str]] | None = None,
+    router_feedback_config: dict[str, Any] | None = None,
 ) -> None:
     query = getattr(update, "callback_query", None)
     if not query:

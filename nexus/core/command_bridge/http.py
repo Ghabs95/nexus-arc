@@ -15,6 +15,7 @@ from wsgiref.simple_server import make_server
 from nexus.core.command_bridge.models import CommandRequest, CommandResult, ReplyRequest
 from nexus.core.command_bridge.reply_security import ReplyTokenError, validate_reply_token
 from nexus.core.command_bridge.router import CommandRouter
+from nexus.core.telegram.telegram_router_feedback_service import maybe_send_feedback_prompt_external
 
 _logger = logging.getLogger(__name__)
 
@@ -121,6 +122,48 @@ def create_command_bridge_app(
                     )
                 result = asyncio.run(router.route(request))
                 return _command_result_response(start_response, result)
+
+            if method == "POST" and path == "/api/v1/router/feedback-card":
+                payload = _load_json_body(environ)
+                telegram_user_id = str(payload.get("telegram_user_id") or "").strip()
+                decision_id = str(payload.get("decision_id") or "").strip()
+                if not telegram_user_id or not decision_id:
+                    return _json_response(
+                        start_response,
+                        400,
+                        {"ok": False, "error": "telegram_user_id and decision_id are required"},
+                    )
+
+                task_type = str(payload.get("task_type") or "").strip() or "unknown"
+                selected_model = str(payload.get("selected_model") or "").strip() or "unknown"
+                source_channel = str(payload.get("source_channel") or "openclaw").strip() or "openclaw"
+                source_message_id = str(payload.get("source_message_id") or "").strip() or None
+                confidence = payload.get("confidence")
+
+                result_payload = {
+                    "routing_feedback": {
+                        "decision_id": decision_id,
+                        "task_type": task_type,
+                        "selected_model": selected_model,
+                        "confidence": confidence,
+                        "source_channel": source_channel,
+                        "metadata": {
+                            "origin": "openclaw-router-plugin",
+                            "bridge": "command-bridge",
+                        },
+                    }
+                }
+
+                sent = asyncio.run(
+                    maybe_send_feedback_prompt_external(
+                        telegram_user_id=telegram_user_id,
+                        feedback_config=getattr(router.hands_free_deps, "router_feedback_config", None),
+                        result=result_payload,
+                        source_message_id=source_message_id,
+                        source_channel=source_channel,
+                    )
+                )
+                return _json_response(start_response, 200, {"ok": bool(sent)})
 
             if method == "GET" and path.startswith("/api/v1/workflows/"):
                 workflow_id = path.rsplit("/", 1)[-1]

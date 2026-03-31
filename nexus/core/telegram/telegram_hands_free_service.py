@@ -3,6 +3,17 @@ import logging
 from typing import Any, Awaitable, Callable
 
 from nexus.core.handlers.image_download_handler import ImageDownloadDeps, collect_telegram_photos
+from nexus.core.telegram.telegram_router_feedback_service import (
+    PENDING_KEY,
+    build_feedback_payload,
+    clear_external_pending_feedback,
+    has_feedback_submission,
+    load_external_pending_feedback,
+    maybe_send_feedback_prompt,
+    parse_feedback_text,
+    remember_feedback_submission,
+    submit_feedback,
+)
 
 
 async def handle_hands_free_message(
@@ -25,6 +36,7 @@ async def handle_hands_free_message(
     handle_feature_ideation_request: Callable[..., Awaitable[bool]],
     feature_ideation_deps_factory: Callable[[], Any],
     route_hands_free_text: Callable[[Any, Any], Awaitable[Any]],
+    router_feedback_config: dict[str, Any] | None = None,
 ) -> None:
     try:
         logger.info(
@@ -133,6 +145,41 @@ async def handle_hands_free_message(
             logger.info("Ignoring command in hands_free_handler: %s", update.message.text)
             return
 
+        feedback_parse = parse_feedback_text(update.message.text or "") if update.message.text else None
+        pending_feedback = context.user_data.get(PENDING_KEY)
+        if not isinstance(pending_feedback, dict):
+            pending_feedback = load_external_pending_feedback(user_id=str(update.effective_user.id))
+            if isinstance(pending_feedback, dict):
+                context.user_data[PENDING_KEY] = pending_feedback
+        if feedback_parse and isinstance(pending_feedback, dict):
+            verdict, corrected_task = feedback_parse
+            user_id = str(update.effective_user.id)
+            decision_id = str(pending_feedback.get("decision_id") or "")
+            if has_feedback_submission(context.user_data, decision_id=decision_id, user_id=user_id):
+                await update.message.reply_text("✅ Feedback already recorded.")
+                return
+            payload = build_feedback_payload(
+                meta=pending_feedback,
+                verdict=verdict,
+                corrected_task=corrected_task,
+                source_message_id=str(update.message.message_id),
+                source_user_id=user_id,
+            )
+            ok, _detail = submit_feedback(
+                router_url=str((router_feedback_config or {}).get("router_url") or ""),
+                payload=payload,
+            )
+            if ok:
+                remember_feedback_submission(context.user_data, decision_id=decision_id, user_id=user_id)
+                context.user_data.pop(PENDING_KEY, None)
+                clear_external_pending_feedback(user_id=str(update.effective_user.id), decision_id=decision_id)
+                await update.message.reply_text(
+                    "✅ Feedback recorded." if verdict == "correct" else f"✅ Marked wrong → {corrected_task}."
+                )
+            else:
+                await update.message.reply_text("⚠️ Feedback service unreachable right now.")
+            return
+
         if await resolve_pending_project_selection(
             build_ctx(update, context), hands_free_routing_deps_factory()
         ):
@@ -163,7 +210,15 @@ async def handle_hands_free_message(
         interactive_ctx = build_ctx(update, context)
         interactive_ctx.text = text
         interactive_ctx.attachments = photo_attachments or None
-        await route_hands_free_text(interactive_ctx, hands_free_routing_deps_factory())
+        result = await route_hands_free_text(interactive_ctx, hands_free_routing_deps_factory())
+        if isinstance(result, dict):
+            await maybe_send_feedback_prompt(
+                ctx=interactive_ctx,
+                user_state=context.user_data,
+                feedback_config=router_feedback_config,
+                result=result,
+                source_message_id=str(update.message.message_id),
+            )
     except Exception as exc:
         logger.error("Unexpected error in hands_free_handler: %s", exc, exc_info=True)
         with contextlib.suppress(Exception):

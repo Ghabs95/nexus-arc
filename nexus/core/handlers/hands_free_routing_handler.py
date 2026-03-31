@@ -595,3 +595,4 @@ async def route_hands_free_text(ctx: InteractiveContext, deps: HandsFreeRoutingD
         message_id=status_msg_id,
         text=result["message"],
     )
+    return result

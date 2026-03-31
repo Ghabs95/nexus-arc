@@ -156,6 +156,9 @@ def register_application_handlers(
     app.add_handler(CallbackQueryHandler(_wrap(handlers["close_flow_handler"]), pattern=r"^flow:close$"))
     app.add_handler(CallbackQueryHandler(_wrap(handlers["feature_callback_handler"]), pattern=r"^feat:"))
     app.add_handler(
+        CallbackQueryHandler(_wrap(handlers["route_feedback_callback_handler"]), pattern=r"^routefb:")
+    )
+    app.add_handler(
         CallbackQueryHandler(
             _wrap(handlers["task_confirmation_callback_handler"]),
             pattern=r"^taskconfirm:",

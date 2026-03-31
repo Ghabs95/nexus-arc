@@ -40,6 +40,10 @@ from nexus.core.discord.discord_bridge_deps_service import (
     workflow_bridge_deps,
 )
 from nexus.core.handlers.chat_command_handlers import chat_agents_handler, chat_menu_handler
+from nexus.core.telegram.telegram_router_feedback_service import (
+    maybe_send_feedback_prompt,
+    maybe_send_feedback_prompt_external,
+)
 from nexus.core.handlers.hands_free_routing_handler import route_hands_free_text
 from nexus.core.handlers.issue_command_handlers import (
     assign_handler,
@@ -900,8 +904,8 @@ class CommandRouter:
             normalized_args = self._normalize_arg_tokens(args or [])
             effective_user_state = dict(user_state or {})
             effective_user_state["chat_session_active"] = True
-            if normalized_args:
-                chat_text = " ".join(normalized_args).strip()
+
+            async def _run_hands_free(chat_text: str) -> None:
                 ctx = self.build_context(
                     client=client,
                     user_id=user_id,
@@ -911,7 +915,45 @@ class CommandRouter:
                     user_state=effective_user_state,
                     attachments=attachments,
                 )
-                await route_hands_free_text(ctx, self.hands_free_deps)
+                result = await route_hands_free_text(ctx, self.hands_free_deps)
+                if not isinstance(result, dict):
+                    return
+
+                feedback_config = getattr(self.hands_free_deps, "router_feedback_config", None)
+                client_name = getattr(client, "name", "").lower()
+                message_id = ""
+                if hasattr(raw_event, "message"):
+                    message_id = str(getattr(getattr(raw_event, "message", None), "message_id", "") or "")
+                elif isinstance(raw_event, dict):
+                    message_id = str(raw_event.get("message_id") or "")
+
+                if client_name == "telegram":
+                    if message_id:
+                        await maybe_send_feedback_prompt(
+                            ctx=ctx,
+                            user_state=effective_user_state,
+                            feedback_config=feedback_config,
+                            result=result,
+                            source_message_id=message_id,
+                        )
+                    return
+
+                if str(user_id).isdigit():
+                    await maybe_send_feedback_prompt_external(
+                        telegram_user_id=str(user_id),
+                        feedback_config=feedback_config,
+                        result=result,
+                        source_message_id=message_id or None,
+                        source_channel=client_name or "openclaw",
+                    )
+
+            if normalized_args:
+                await _run_hands_free(" ".join(normalized_args).strip())
+                return
+
+            raw_text = (text or "").strip()
+            if raw_text and raw_text.lower() not in {"chat", "/chat"}:
+                await _run_hands_free(raw_text)
                 return
 
             ctx = self.build_context(

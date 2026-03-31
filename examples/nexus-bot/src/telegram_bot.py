@@ -43,6 +43,7 @@ from nexus.core.config import (
     NEXUS_GITLAB_CLIENT_SECRET,
     NEXUS_PUBLIC_BASE_URL,
     NEXUS_CORE_STORAGE_DIR,
+    NEXUS_ROUTER_FEEDBACK_CONFIG,
     NEXUS_STORAGE_DSN,
     NEXUS_STORAGE_BACKEND,
     NEXUS_WORKFLOW_BACKEND,
@@ -113,6 +114,9 @@ from nexus.core.handlers.callback_command_handlers import (
 )
 from nexus.core.handlers.callback_command_handlers import (
     inline_keyboard_handler as callback_inline_keyboard_handler,
+)
+from nexus.core.handlers.callback_command_handlers import (
+    route_feedback_callback_handler as callback_route_feedback_callback_handler,
 )
 from nexus.core.handlers.callback_command_handlers import (
     issue_picker_handler as callback_issue_picker_handler,
@@ -946,6 +950,7 @@ def _callback_handler_deps() -> CallbackHandlerDeps:
             plan_handler=plan_handler,
         ),
         report_bug_action=_report_bug_action_wrapper,
+        router_feedback_url=NEXUS_ROUTER_FEEDBACK_CONFIG.get("router_url"),
     )
 
 
@@ -1551,6 +1556,10 @@ async def close_flow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _call_core_callback_handler(update, context, callback_close_flow_handler)
 
 
+async def route_feedback_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _call_core_callback_handler(update, context, callback_route_feedback_callback_handler)
+
+
 # --- STATES ---
 SELECT_PROJECT, SELECT_TYPE, INPUT_TASK = range(3)
 
@@ -2001,6 +2010,7 @@ async def task_confirmation_callback_handler(update: Update, context: ContextTyp
         process_inbox_task=process_inbox_task,
         requester_context_builder=_requester_context_for_telegram_user,
         authorize_project=_authorize_project_for_requester,
+        router_feedback_config=NEXUS_ROUTER_FEEDBACK_CONFIG,
     )
 
 
@@ -2033,6 +2043,7 @@ async def hands_free_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         handle_feature_ideation_request=handle_feature_ideation_request,
         feature_ideation_deps_factory=_feature_ideation_handler_deps,
         route_hands_free_text=route_hands_free_text,
+        router_feedback_config=NEXUS_ROUTER_FEEDBACK_CONFIG,
     )
 
 
@@ -2572,6 +2583,7 @@ def main():
             "monitor_project_picker_handler": monitor_project_picker_handler,
             "close_flow_handler": close_flow_handler,
             "feature_callback_handler": feature_callback_handler,
+            "route_feedback_callback_handler": route_feedback_callback_handler,
             "task_confirmation_callback_handler": task_confirmation_callback_handler,
             "inline_keyboard_handler": inline_keyboard_handler,
             "hands_free_handler": hands_free_handler,

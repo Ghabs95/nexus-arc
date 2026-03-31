@@ -12,6 +12,7 @@ class _Msg:
         self.text = text
         self.voice = voice
         self.message_id = message_id
+        self.photo = []
         self.replies = []
 
     async def reply_text(self, text, **kwargs):
@@ -53,6 +54,19 @@ async def _none_transcribe(*_a, **_k):
     return None
 
 
+class _CtxObj:
+    def __init__(self):
+        self.user_id = "1"
+        self.text = ""
+        self.attachments = None
+        self.replies = []
+        self.client = SimpleNamespace(name="telegram")
+
+    async def reply_text(self, text, buttons=None, parse_mode=None, disable_web_page_preview=True):
+        self.replies.append((text, buttons))
+        return "555"
+
+
 def _rename_chat(_user_id: int, _chat_id: Any, _title: str) -> Any:
     return False
 
@@ -81,6 +95,7 @@ async def test_hands_free_unauthorized_returns_early():
         handle_feature_ideation_request=_false_async,
         feature_ideation_deps_factory=lambda: {},
         route_hands_free_text=_false_async,
+        router_feedback_config={},
     )
 
     assert update.message.replies == []
@@ -191,3 +206,129 @@ async def test_hands_free_pending_task_edit_builds_confirmation_preview():
     assert "Confirm task creation" in text
     labels = [row[0].text for row in kwargs["reply_markup"].rows]
     assert labels == ["✅ Confirm", "✏️ Edit", "❌ Cancel"]
+
+
+@pytest.mark.asyncio
+async def test_hands_free_text_feedback_submits(monkeypatch):
+    update = _update(text="wrong -> reasoning")
+    ctx = _context({"router_feedback_pending": {"decision_id": "dec-1", "metadata": {}}})
+    seen = {}
+
+    def _submit_feedback(*, router_url, payload, timeout_seconds=3.0):
+        seen["router_url"] = router_url
+        seen["payload"] = payload
+        return (True, '{"ok":true}')
+
+    monkeypatch.setattr(
+        "nexus.core.telegram.telegram_hands_free_service.submit_feedback",
+        _submit_feedback,
+    )
+
+    await handle_hands_free_message(
+        update=update,
+        context=ctx,
+        logger=logging.getLogger("test"),
+        allowed_user_ids=None,
+        get_active_chat=lambda _u: None,
+        rename_chat=_rename_chat,
+        chat_menu_handler=_false_async,
+        handle_pending_issue_input=_false_async,
+        transcribe_voice_message=_none_transcribe,
+        inline_keyboard_button_cls=SimpleNamespace,
+        inline_keyboard_markup_cls=lambda rows: rows,
+        resolve_pending_project_selection=_false_async,
+        build_ctx=lambda u, c: _CtxObj(),
+        hands_free_routing_deps_factory=lambda: {},
+        get_chat=lambda _u: {},
+        handle_feature_ideation_request=_false_async,
+        feature_ideation_deps_factory=lambda: {},
+        route_hands_free_text=_false_async,
+        router_feedback_config={"router_url": "http://router"},
+    )
+
+    assert seen["router_url"] == "http://router"
+    assert seen["payload"]["corrected_task"] == "reasoning"
+    assert update.message.replies[-1][0] == "✅ Marked wrong → reasoning."
+
+
+@pytest.mark.asyncio
+async def test_hands_free_task_route_sends_feedback_prompt():
+    update = _update(text="route this")
+    ctx = _context()
+    ictx = _CtxObj()
+
+    async def _route(_ctx, _deps):
+        return {
+            "routing_feedback": {
+                "decision_id": "dec-1",
+                "task_type": "coding",
+                "selected_model": "gpt-5",
+                "confidence": 0.88,
+            }
+        }
+
+    await handle_hands_free_message(
+        update=update,
+        context=ctx,
+        logger=logging.getLogger("test"),
+        allowed_user_ids=None,
+        get_active_chat=lambda _u: None,
+        rename_chat=_rename_chat,
+        chat_menu_handler=_false_async,
+        handle_pending_issue_input=_false_async,
+        transcribe_voice_message=_none_transcribe,
+        inline_keyboard_button_cls=SimpleNamespace,
+        inline_keyboard_markup_cls=lambda rows: rows,
+        resolve_pending_project_selection=_false_async,
+        build_ctx=lambda u, c: ictx,
+        hands_free_routing_deps_factory=lambda: {},
+        get_chat=lambda _u: {},
+        handle_feature_ideation_request=_false_async,
+        feature_ideation_deps_factory=lambda: {},
+        route_hands_free_text=_route,
+        router_feedback_config={"router_url": "http://router", "telegram_enabled": True},
+    )
+
+    assert ctx.user_data["router_feedback_pending"]["decision_id"] == "dec-1"
+    assert ictx.replies[-1][0].startswith("🧭 coding")
+
+
+@pytest.mark.asyncio
+async def test_hands_free_inbox_route_without_decision_id_still_sends_feedback_prompt():
+    update = _update(text="route this")
+    ctx = _context()
+    ictx = _CtxObj()
+
+    async def _route(_ctx, _deps):
+        return {
+            "success": True,
+            "project": "nexus",
+            "content": "Nexus: ship it",
+        }
+
+    await handle_hands_free_message(
+        update=update,
+        context=ctx,
+        logger=logging.getLogger("test"),
+        allowed_user_ids=None,
+        get_active_chat=lambda _u: None,
+        rename_chat=_rename_chat,
+        chat_menu_handler=_false_async,
+        handle_pending_issue_input=_false_async,
+        transcribe_voice_message=_none_transcribe,
+        inline_keyboard_button_cls=SimpleNamespace,
+        inline_keyboard_markup_cls=lambda rows: rows,
+        resolve_pending_project_selection=_false_async,
+        build_ctx=lambda u, c: ictx,
+        hands_free_routing_deps_factory=lambda: {},
+        get_chat=lambda _u: {},
+        handle_feature_ideation_request=_false_async,
+        feature_ideation_deps_factory=lambda: {},
+        route_hands_free_text=_route,
+        router_feedback_config={"router_url": "http://router", "telegram_enabled": True},
+    )
+
+    pending = ctx.user_data["router_feedback_pending"]
+    assert pending["feedback_mode"] == "fallback"
+    assert pending["decision_id"].startswith("fallback-")
+    assert ictx.replies[-1][0].startswith("🧭 inbox_classification")
