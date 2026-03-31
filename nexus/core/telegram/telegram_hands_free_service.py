@@ -173,9 +173,13 @@ async def handle_hands_free_message(
                 remember_feedback_submission(context.user_data, decision_id=decision_id, user_id=user_id)
                 context.user_data.pop(PENDING_KEY, None)
                 clear_external_pending_feedback(user_id=str(update.effective_user.id), decision_id=decision_id)
-                await update.message.reply_text(
-                    "✅ Feedback recorded." if verdict == "correct" else f"✅ Marked wrong → {corrected_task}."
-                )
+                if verdict == "correct":
+                    reply_message = "✅ Feedback recorded."
+                elif corrected_task:
+                    reply_message = f"✅ Marked wrong → {corrected_task}."
+                else:
+                    reply_message = "✅ Marked wrong."
+                await update.message.reply_text(reply_message)
             else:
                 await update.message.reply_text("⚠️ Feedback service unreachable right now.")
             return

@@ -32,6 +32,8 @@ PENDING_STORE_PATH = os.path.join(NEXUS_STATE_DIR, "router_feedback_pending.json
 
 def feedback_enabled(config: dict[str, Any] | None, *, surface: str) -> bool:
     cfg = config or {}
+    if not cfg.get("enabled"):
+        return False
     if surface == "telegram":
         return bool(cfg.get("telegram_enabled", True))
     if surface == "discord":
@@ -299,7 +301,14 @@ def clear_external_pending_feedback(*, user_id: str, decision_id: str | None = N
     if decision_id and str(current.get("decision_id") or "") != str(decision_id):
         return
     payload.pop(key, None)
-    _save_pending_store(payload, store_path=store_path)
+    try:
+        _save_pending_store(payload, store_path=store_path)
+    except Exception:
+        LOGGER.warning(
+            "Failed to persist external router feedback pending store at %s",
+            store_path,
+            exc_info=True,
+        )
 
 
 def send_feedback_prompt_to_telegram_user(*, chat_id: str, text: str, buttons: list[list[Button]], token: str | None = None, timeout_seconds: float = 4.0) -> tuple[bool, str]:

@@ -1,12 +1,11 @@
-import pytest
-import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
 import sys
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
 
-sys.modules['requests'] = MagicMock()
 
 @pytest.mark.asyncio
-async def test_chat_bridge_callback_emits_feedback():
+async def test_chat_bridge_callback_emits_feedback(monkeypatch):
+    monkeypatch.setitem(sys.modules, "requests", MagicMock())
     from nexus.core.command_bridge.router import CommandRouter
 
     router = CommandRouter()
@@ -46,7 +45,3 @@ async def test_chat_bridge_callback_emits_feedback():
             assert kwargs["source_message_id"] == "12345"
             assert kwargs["result"] == {"message": "Hello", "decision_id": "test_id"}
             assert kwargs["feedback_config"] == {"router_url": "http://test"}
-
-if __name__ == "__main__":
-    asyncio.run(test_chat_bridge_callback_emits_feedback())
-    print("Test passed!")

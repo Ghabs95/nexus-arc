@@ -20,6 +20,7 @@ from nexus.core.callbacks.callback_menu_service import (
 from nexus.core.telegram.telegram_router_feedback_service import (
     CALLBACK_PREFIX,
     PENDING_KEY,
+    TASK_LABELS,
     build_feedback_payload,
     clear_external_pending_feedback,
     has_feedback_submission,
@@ -27,6 +28,9 @@ from nexus.core.telegram.telegram_router_feedback_service import (
     remember_feedback_submission,
     submit_feedback,
 )
+
+
+_ROUTE_FEEDBACK_VALID_ACTIONS = {"ok", "wrong", "fix"}
 
 
 @dataclass
@@ -257,6 +261,10 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
     action = parts[1]
     decision_id = parts[2]
 
+    if action not in _ROUTE_FEEDBACK_VALID_ACTIONS:
+        await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Invalid feedback action.", buttons=[])
+        return
+
     pending = ctx.user_state.get(PENDING_KEY)
     if not isinstance(pending, dict):
         pending = load_external_pending_feedback(user_id=str(ctx.user_id or ""))
@@ -271,6 +279,9 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
         }
         ctx.user_state[PENDING_KEY] = pending
     corrected_task = parts[3] if action == "fix" and len(parts) >= 4 else None
+    if action == "fix" and (not corrected_task or corrected_task not in TASK_LABELS):
+        await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Invalid or missing correction task.", buttons=[])
+        return
     if decision_id != str(pending.get("decision_id") or ""):
         await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Feedback no longer matches the latest route.", buttons=[])
         return
