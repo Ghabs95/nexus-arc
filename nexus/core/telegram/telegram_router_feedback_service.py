@@ -102,6 +102,8 @@ def extract_feedback_meta(
             "selected_model": str(feedback_meta.get("selected_model") or feedback_meta.get("model") or "").strip(),
             "confidence": feedback_meta.get("confidence"),
             "source_channel": str(feedback_meta.get("source_channel") or source_channel or "telegram").strip() or "telegram",
+            "source_user_id": str(feedback_meta.get("source_user_id") or source_user_id or "").strip(),
+            "source_sender_name": str(feedback_meta.get("source_sender_name") or "").strip(),
             "metadata": feedback_meta.get("metadata") if isinstance(feedback_meta.get("metadata"), dict) else {},
         }
 
@@ -120,6 +122,8 @@ def extract_feedback_meta(
         "selected_model": str(result.get("selected_model") or result.get("model") or "inbox_route").strip() or "inbox_route",
         "confidence": result.get("confidence"),
         "source_channel": str(source_channel or "telegram").strip() or "telegram",
+        "source_user_id": str(source_user_id or "").strip(),
+        "source_sender_name": "",
         "metadata": {
             "project": result.get("project"),
             "content": result.get("content"),
@@ -138,7 +142,26 @@ def build_feedback_prompt(meta: dict[str, Any]) -> tuple[str, list[list[Button]]
         pass
     task = str(meta.get("task_type") or "unknown")
     model = str(meta.get("selected_model") or "unknown")
-    text = f"🧭 {task} · {model} · {confidence_text}\nFeedback?"
+    metadata = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else {}
+    preview = str(metadata.get("source_message_preview") or "").strip()
+    sender_name = str(meta.get("source_sender_name") or "").strip()
+    sender_id = str(meta.get("source_user_id") or "").strip()
+    source_channel = str(meta.get("source_channel") or "").strip()
+    reason = str(metadata.get("origin") or "").strip()
+    header = f"🧭 {task} · {model} · {confidence_text}"
+    details: list[str] = []
+    if sender_name or sender_id:
+        details.append(f"from @{sender_name or sender_id}".replace("@@", "@"))
+    if source_channel:
+        details.append(source_channel)
+    if reason:
+        details.append(reason)
+    if preview:
+        preview = preview.replace("\n", " ").strip()
+        if len(preview) > 180:
+            preview = f"{preview[:177]}..."
+        details.append(f"💬 \"{preview}\"")
+    text = "\n".join([header, *details, "Feedback?"])
     token = decision_token(str(meta.get("decision_id") or ""))
     buttons = [
         [

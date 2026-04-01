@@ -121,6 +121,7 @@ def create_command_bridge_app(
                         {"error": allow_error[0], "error_code": allow_error[1]},
                     )
                 result = asyncio.run(router.route(request))
+                _maybe_dispatch_route_feedback_prompt_external(router=router, request=request, result=result)
                 return _command_result_response(start_response, result)
 
             if method == "POST" and path == "/api/v1/router/feedback-card":
@@ -139,6 +140,7 @@ def create_command_bridge_app(
                 source_channel = str(payload.get("source_channel") or "openclaw").strip() or "openclaw"
                 source_message_id = str(payload.get("source_message_id") or "").strip() or None
                 confidence = payload.get("confidence")
+                source_message_preview = str(payload.get("source_message_preview") or "").strip() or None
 
                 result_payload = {
                     "routing_feedback": {
@@ -147,9 +149,12 @@ def create_command_bridge_app(
                         "selected_model": selected_model,
                         "confidence": confidence,
                         "source_channel": source_channel,
+                        "source_user_id": telegram_user_id,
+                        "source_sender_name": str(payload.get("source_sender_name") or "").strip(),
                         "metadata": {
                             "origin": "openclaw-router-plugin",
                             "bridge": "command-bridge",
+                            "source_message_preview": source_message_preview,
                         },
                     }
                 }
@@ -552,18 +557,27 @@ def _validate_requester(
     request: CommandRequest, *, config: CommandBridgeConfig
 ) -> tuple[str, str] | None:
     requester = request.requester
+    sender_id = str(requester.sender_id or "").strip()
+    allowed_sender_ids = [
+        str(item or "").strip() for item in (config.allowed_sender_ids or []) if str(item or "").strip()
+    ]
+
+    # Backward-compatible auth gate:
+    # if requester auth marker is missing, still allow explicitly allowlisted senders.
     if config.require_authorized_sender and requester.is_authorized_sender is not True:
-        return "Authenticated OpenClaw requester is required", "requester_not_authorized"
-    allowed_sources = [str(item or "").strip().lower() for item in (config.allowed_sources or []) if str(item or "").strip()]
+        if not (allowed_sender_ids and sender_id in allowed_sender_ids):
+            return "Authenticated OpenClaw requester is required", "requester_not_authorized"
+
+    allowed_sources = [
+        str(item or "").strip().lower() for item in (config.allowed_sources or []) if str(item or "").strip()
+    ]
     if allowed_sources:
         source = str(requester.source_platform or "").strip().lower()
         if source not in allowed_sources:
             return f"Source '{requester.source_platform}' is not allowed", "source_not_allowed"
-    allowed_sender_ids = [str(item or "").strip() for item in (config.allowed_sender_ids or []) if str(item or "").strip()]
-    if allowed_sender_ids:
-        sender_id = str(requester.sender_id or "").strip()
-        if sender_id not in allowed_sender_ids:
-            return f"Sender '{sender_id}' is not allowed", "sender_not_allowed"
+
+    if allowed_sender_ids and sender_id not in allowed_sender_ids:
+        return f"Sender '{sender_id}' is not allowed", "sender_not_allowed"
     return None
 
 
@@ -637,6 +651,55 @@ def _load_json_body(environ: dict[str, Any]) -> dict[str, Any]:
 def _command_result_response(start_response, result: CommandResult):
     status_code = 202 if result.status == "accepted" else 200
     return _json_response(start_response, status_code, result.to_dict())
+
+
+def _maybe_dispatch_route_feedback_prompt_external(*, router: CommandRouter, request: CommandRequest, result: CommandResult) -> None:
+    """Best-effort fallback: send router feedback card directly from /commands/route.
+
+    This removes hard dependency on a second /router/feedback-card callback from OpenClaw.
+    """
+    try:
+        telegram_user_id = str(getattr(request.requester, "sender_id", "") or "").strip()
+        if not telegram_user_id:
+            return
+
+        result_data = dict(getattr(result, "data", {}) or {})
+        if not isinstance(result_data.get("routing_feedback"), dict):
+            return
+
+        source_message_id = None
+        metadata = getattr(request.context, "metadata", {}) if request.context is not None else {}
+        if isinstance(metadata, dict):
+            source_message_id = str(
+                metadata.get("source_message_id")
+                or metadata.get("message_id")
+                or metadata.get("telegram_message_id")
+                or ""
+            ).strip() or None
+
+        source_channel = str(getattr(request.requester, "source_platform", "") or "openclaw").strip() or "openclaw"
+
+        sent = asyncio.run(
+            maybe_send_feedback_prompt_external(
+                telegram_user_id=telegram_user_id,
+                feedback_config=getattr(router.hands_free_deps, "router_feedback_config", None),
+                result=result_data,
+                source_message_id=source_message_id,
+                source_channel=source_channel,
+            )
+        )
+        if sent:
+            _logger.info(
+                "Router feedback prompt sent from /commands/route fallback for telegram_user_id=%s",
+                telegram_user_id,
+            )
+        else:
+            _logger.debug(
+                "Router feedback prompt not sent from /commands/route fallback for telegram_user_id=%s",
+                telegram_user_id,
+            )
+    except Exception:
+        _logger.warning("/commands/route feedback fallback failed", exc_info=True)
 
 
 def _json_response(start_response, status_code: int, payload: dict[str, Any]):
