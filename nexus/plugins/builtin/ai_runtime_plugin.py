@@ -1652,7 +1652,7 @@ class AIOrchestrator:
     def _get_default_analysis_result(self, task: str, **kwargs) -> dict[str, Any]:
         if task == "classify":
             return {
-                "project": kwargs.get("projects", ["case-italia"])[0],
+                "project": kwargs.get("projects", ["nexus"])[0],
                 "type": kwargs.get("types", ["feature"])[0],
                 "task_name": "generic-task",
             }
