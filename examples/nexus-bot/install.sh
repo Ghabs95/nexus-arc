@@ -543,7 +543,7 @@ if [ "$setup_db" -eq 1 ]; then
                     cp "$SCRIPT_DIR/docker-compose.yml" "$COMPOSE_FILE"
                 else
                     echo "Downloading docker-compose.yml from GitHub..."
-                    curl -fsSL https://raw.githubusercontent.com/Ghabs95/nexus-arc/main/examples/nexus-bot/docker-compose.yml -o "$COMPOSE_FILE" || true
+                    curl -fsSL https://raw.githubusercontent.com/ghabs-org/nexus-arc/main/examples/nexus-bot/docker-compose.yml -o "$COMPOSE_FILE" || true
                 fi
             fi
             

@@ -530,7 +530,7 @@ ai_tool_preferences:
 
                         try:
                             urllib.request.urlretrieve(
-                                "https://raw.githubusercontent.com/Ghabs95/nexus-arc/main/examples/nexus-bot/docker-compose.yml",
+                                "https://raw.githubusercontent.com/ghabs-org/nexus-arc/main/examples/nexus-bot/docker-compose.yml",
                                 compose_file,
                             )
                         except Exception as e:

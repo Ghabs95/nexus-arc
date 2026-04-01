@@ -214,7 +214,7 @@ def test_structured_cto_completion_with_long_checklist_chains_architect():
             "comment_body": (
                 "## 🔍 Technical Feasibility Complete — cto\n\n"
                 "**Severity:** High\n"
-                "**Target Sub-Repo:** `wlbl-ecos`, `wlbl-app`\n"
+                "**Target Sub-Repo:** `prj-be`, `prj-app`\n"
                 "**Workflow:** new_feature\n\n"
                 "**Step ID:** `new_feature_workflow__technical_feasibility`\n"
                 "**Step Num:** 4\n\n"

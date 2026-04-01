@@ -109,11 +109,11 @@ def test_bind_issue_requester_allows_same_user_refresh(monkeypatch):
         repo_key="acme/repo",
         issue_number=7,
         issue_url="https://github.com/acme/repo/issues/7?updated=1",
-        project_key="wlbl-app",
+        project_key="prj-app",
         requester_nexus_id="nexus-owner-1",
     )
 
     assert row.issue_url == "https://github.com/acme/repo/issues/7?updated=1"
-    assert row.project_key == "wlbl-app"
+    assert row.project_key == "prj-app"
     assert row.requester_nexus_id == "nexus-owner-1"
     assert session.committed is True

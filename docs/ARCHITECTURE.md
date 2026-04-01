@@ -428,7 +428,7 @@ PROJECT_CONFIG = {
     "example_project": {
        "agents_dir": "examples/agents",
        "workspace": "examples",
-       "git_repo": "Ghabs95/nexus-arc",
+       "git_repo": "ghabs-org/nexus-arc",
     }
 }
 

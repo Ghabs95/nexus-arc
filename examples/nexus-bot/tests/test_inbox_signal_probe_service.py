@@ -23,7 +23,7 @@ def test_read_latest_structured_comment_parses_nexus_automated_comment():
 
     signal = read_latest_structured_comment(
         issue_num="113",
-        repo="Ghabs95/nexus-arc",
+        repo="ghabs-org/nexus-arc",
         project_name="nexus",
         get_git_platform=lambda *_a, **_k: _Platform(),
         resolve_issue_token=None,
@@ -65,7 +65,7 @@ def test_read_latest_structured_comment_accepts_hyphen_and_backticks():
 
     signal = read_latest_structured_comment(
         issue_num="113",
-        repo="Ghabs95/nexus-arc",
+        repo="ghabs-org/nexus-arc",
         project_name="nexus",
         get_git_platform=lambda *_a, **_k: _Platform(),
         resolve_issue_token=None,
@@ -108,7 +108,7 @@ def test_read_latest_structured_comment_accepts_terminal_without_ready():
 
     signal = read_latest_structured_comment(
         issue_num="113",
-        repo="Ghabs95/nexus-arc",
+        repo="ghabs-org/nexus-arc",
         project_name="nexus",
         get_git_platform=lambda *_a, **_k: _Platform(),
         resolve_issue_token=None,

@@ -9,12 +9,12 @@ def test_run_comment_monitor_cycle_skips_token_required_list_failure():
 
     run_comment_monitor_cycle(
         logger=MagicMock(),
-        iter_projects=lambda: [("wallible", {})],
+        iter_projects=lambda: [("projectA", {})],
         get_project_platform=lambda _p: "gitlab",
-        get_repo=lambda _p: "acme/wallible",
+        get_repo=lambda _p: "acme/projectA",
         list_workflow_issue_numbers=lambda *_args: (_ for _ in ()).throw(
             ValueError(
-                "GitLab token required for project 'wallible'. "
+                "GitLab token required for project 'projectA'. "
                 "Provide requester-scoped token_override."
             )
         ),
@@ -26,7 +26,7 @@ def test_run_comment_monitor_cycle_skips_token_required_list_failure():
     )
 
     assert recorded == []
-    assert "agent-comments:list-issues:wallible" in cleared
+    assert "agent-comments:list-issues:projectA" in cleared
 
 
 def test_run_comment_monitor_cycle_skips_not_found_list_failure():
@@ -35,9 +35,9 @@ def test_run_comment_monitor_cycle_skips_not_found_list_failure():
 
     run_comment_monitor_cycle(
         logger=MagicMock(),
-        iter_projects=lambda: [("biome", {})],
+        iter_projects=lambda: [("projectA", {})],
         get_project_platform=lambda _p: "github",
-        get_repo=lambda _p: "acme/biome",
+        get_repo=lambda _p: "acme/projectA",
         list_workflow_issue_numbers=lambda *_args: (_ for _ in ()).throw(
             RuntimeError("HTTP Error 404: Not Found")
         ),
@@ -49,4 +49,4 @@ def test_run_comment_monitor_cycle_skips_not_found_list_failure():
     )
 
     assert recorded == []
-    assert "agent-comments:list-issues:biome" in cleared
+    assert "agent-comments:list-issues:projectA" in cleared

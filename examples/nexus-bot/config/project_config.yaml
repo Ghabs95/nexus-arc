@@ -115,9 +115,9 @@ nexus:
   agents_dir: ghabs/nexus-arc/examples/agents
   workspace: nexus
   git_platform: github
-  git_repo: Ghabs95/nexus-arc
+  git_repo: ghabs-org/nexus-arc
   git_repos:
-    - Ghabs95/nexus-arc
+    - ghabs-org/nexus-arc
   git_branches:
     default: develop
   git_sync:
@@ -129,7 +129,7 @@ nexus:
     decision_timeout_seconds: 120
   access_control:
     github_teams:
-      - Ghabs95/nexus-team
+      - ghabs-org/nexus-team
     github_users:
       - Ghabs95
   system_operations:

@@ -262,7 +262,7 @@ development workflow.
 
 - Try it: `pip install nexus-arc` *(Coming soon to PyPI)*
 - Docs: https://nexus-arc.readthedocs.io *(Coming soon!)*
-- GitHub: https://github.com/Ghabs95/nexus-arc
+- GitHub: https://github.com/ghabs-org/nexus-arc
 
 ---
 

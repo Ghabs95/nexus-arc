@@ -9,45 +9,45 @@ def test_candidate_repos_for_issue_lookup_includes_other_project_repos_after_req
         project_key="nexus",
         project_config={
             "nexus": {
-                "git_repo": "Ghabs95/nexus-arc",
-                "git_repos": ["Ghabs95/nexus-arc", "Ghabs95/nexus"],
+                "git_repo": "ghabs-org/nexus-arc",
+                "git_repos": ["ghabs-org/nexus-arc", "ghabs-org/nexus"],
             },
-            "biome": {
-                "git_repo": "mybiohackingdata/biome-literature",
-                "git_repos": ["mybiohackingdata/biome-literature"],
+            "projectA": {
+                "git_repo": "acme/projectA-os",
+                "git_repos": ["acme/projectA-be", "acme/projectA-app"],
             },
         },
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
     )
 
     assert repos == [
-        "Ghabs95/nexus-arc",
-        "Ghabs95/nexus",
-        "mybiohackingdata/biome-literature",
+        "ghabs-org/nexus-arc",
+        "ghabs-org/nexus",
+        "acme/projectA-be",
     ]
 
 
 def test_resolve_project_config_for_repo_rebinds_to_matching_project():
     project_name, config = resolve_project_config_for_repo(
-        repo="mybiohackingdata/biome-literature",
+        repo="acme/projectA-be",
         requested_project_key="nexus",
         project_config={
             "nexus": {
                 "agents_dir": "agents/nexus",
                 "workspace": "nexus",
-                "git_repo": "Ghabs95/nexus-arc",
+                "git_repo": "ghabs-org/nexus-arc",
             },
-            "biome": {
-                "agents_dir": "agents/biome",
-                "workspace": "biome",
-                "git_repo": "mybiohackingdata/biome-literature",
+            "acme": {
+                "agents_dir": "agents/acme",
+                "workspace": "acme",
+                "git_repo": "acme/projectA-os",
             },
         },
     )
 
-    assert project_name == "biome"
+    assert project_name == "acme"
     assert config == {
-        "agents_dir": "agents/biome",
-        "workspace": "biome",
-        "git_repo": "mybiohackingdata/biome-literature",
+        "agents_dir": "agents/acme",
+        "workspace": "acme",
+        "git_repo": "acme/projectA-os",
     }

@@ -76,7 +76,7 @@ def test_recover_orphaned_running_agents_passes_repo_override():
         orphan_recovery_last_attempt={},
         orphan_recovery_cooldown_seconds=0,
         resolve_project_for_issue=lambda issue_num, workflow_id=None: "nexus",
-        resolve_repo_for_issue=lambda issue_num, default_project=None: "Ghabs95/nexus-arc",
+        resolve_repo_for_issue=lambda issue_num, default_project=None: "ghabs-org/nexus-arc",
         reconcile_closed_or_missing_issue=None,
     )
 
@@ -85,7 +85,7 @@ def test_recover_orphaned_running_agents_passes_repo_override():
         "88",
         "developer",
         trigger_source="orphan-recovery",
-        repo_override="Ghabs95/nexus-arc",
+        repo_override="ghabs-org/nexus-arc",
     )
 
 
@@ -129,7 +129,7 @@ def test_recover_orphaned_running_agents_falls_back_when_runtime_does_not_accept
         orphan_recovery_last_attempt={},
         orphan_recovery_cooldown_seconds=0,
         resolve_project_for_issue=lambda issue_num, workflow_id=None: "nexus",
-        resolve_repo_for_issue=lambda issue_num, default_project=None: "Ghabs95/nexus-arc",
+        resolve_repo_for_issue=lambda issue_num, default_project=None: "ghabs-org/nexus-arc",
         reconcile_closed_or_missing_issue=None,
     )
 
@@ -158,7 +158,7 @@ def test_recover_orphaned_running_agents_honors_retry_guard():
         orphan_recovery_last_attempt={},
         orphan_recovery_cooldown_seconds=0,
         resolve_project_for_issue=lambda issue_num, workflow_id=None: "nexus",
-        resolve_repo_for_issue=lambda issue_num, default_project=None: "Ghabs95/nexus-arc",
+        resolve_repo_for_issue=lambda issue_num, default_project=None: "ghabs-org/nexus-arc",
         reconcile_closed_or_missing_issue=None,
     )
 

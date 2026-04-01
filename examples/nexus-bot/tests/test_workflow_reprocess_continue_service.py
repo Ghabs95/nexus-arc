@@ -345,7 +345,7 @@ async def test_continue_service_reconciles_before_launch_when_ready(monkeypatch)
     deps = SimpleNamespace(
         logger=logging.getLogger("test"),
         allowed_user_ids=[],
-        project_repo=lambda _project: "Ghabs95/nexus-arc",
+        project_repo=lambda _project: "ghabs-org/nexus-arc",
         reconcile_issue_from_signals=_reconcile,
         get_direct_issue_plugin=lambda _repo: None,
         extract_structured_completion_signals=lambda _comments: [],
@@ -415,7 +415,7 @@ async def test_continue_service_reports_blocked_finalization_for_completed_workf
         "_prepare_continue_context",
         lambda *_args, **_kwargs: {
             "status": "workflow_done_open",
-            "repo": "Ghabs95/nexus-arc",
+            "repo": "ghabs-org/nexus-arc",
             "resumed_from": "writer",
             "project_name": "nexus",
         },
@@ -461,7 +461,7 @@ async def test_continue_service_reports_closed_issue_when_finalization_closes(mo
         "_prepare_continue_context",
         lambda *_args, **_kwargs: {
             "status": "workflow_done_open",
-            "repo": "Ghabs95/nexus-arc",
+            "repo": "ghabs-org/nexus-arc",
             "resumed_from": "writer",
             "project_name": "nexus",
         },
@@ -479,7 +479,7 @@ async def test_continue_service_reports_closed_issue_when_finalization_closes(mo
         finalize_workflow=lambda *a, **k: (
             captured.update({"emit_notifications": k.get("emit_notifications")}) or {
                 "issue_closed": True,
-                "pr_urls": ["https://github.com/Ghabs95/nexus-arc/pull/120"],
+                "pr_urls": ["https://github.com/ghabs-org/nexus-arc/pull/120"],
             }
         ),
     )
@@ -513,7 +513,7 @@ def test_example_consumer_prepare_continue_context_skips_stale_human_handoff(tmp
         rest_tokens=[],
         base_dir=str(tmp_path),
         project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         find_task_file_by_issue=lambda _n: None,
         get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
             "state": "open",
@@ -565,7 +565,7 @@ def test_example_consumer_prepare_continue_context_prefers_completed_workflow_ov
         rest_tokens=[],
         base_dir=str(tmp_path),
         project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         find_task_file_by_issue=lambda _n: None,
         get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
             "state": "open",

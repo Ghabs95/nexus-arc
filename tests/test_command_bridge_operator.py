@@ -363,20 +363,20 @@ async def test_routing_validate_explains_nexus_repo_split(operator_service: Brid
             "nexus": {
                 "workflow_definition_path": "nexus/workflows/main.yaml",
                 "git_platform": "github",
-                "git_repo": "Ghabs95/nexus",
-                "git_repos": ["Ghabs95/nexus-os", "Ghabs95/nexus-arc", "Ghabs95/nexus"],
+                "git_repo": "ghabs-org/nexus",
+                "git_repos": ["ghabs-org/nexus-os", "ghabs-org/nexus-arc", "ghabs-org/nexus"],
                 "git_branches": {"default": "develop"},
                 "ai_tool_preferences": {"developer": {"profile": "reasoning", "provider": "codex"}},
                 "model_profiles": {"reasoning": {"codex": "gpt-5.4"}},
                 "profile_provider_priority": {"reasoning": ["codex", "gemini"]},
             }
-        }, "Ghabs95/nexus"),
+        }, "ghabs-org/nexus"),
     )
 
     payload = await operator_service.routing_validate(project_key="nexus", task_type="operator")
 
     assert payload["ok"] is True
-    assert payload["validation"]["recommended_repo"] == "Ghabs95/nexus-os"
+    assert payload["validation"]["recommended_repo"] == "ghabs-org/nexus-os"
     checks = {item["check"]: item for item in payload["validation"]["checks"]}
     assert checks["nexus_repo_split"]["status"] == "ok"
     roles = {item["slug"]: item for item in payload["validation"]["repo_roles"]}

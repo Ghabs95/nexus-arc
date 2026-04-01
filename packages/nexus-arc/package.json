@@ -6,12 +6,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Ghabs95/nexus-arc.git",
+    "url": "git+https://github.com/ghabs-org/nexus-arc.git",
     "directory": "packages/nexus-arc"
   },
-  "homepage": "https://github.com/Ghabs95/nexus-arc/tree/main/packages/nexus-arc",
+  "homepage": "https://github.com/ghabs-org/nexus-arc/tree/main/packages/nexus-arc",
   "bugs": {
-    "url": "https://github.com/Ghabs95/nexus-arc/issues"
+    "url": "https://github.com/ghabs-org/nexus-arc/issues"
   },
   "keywords": [
     "openclaw",

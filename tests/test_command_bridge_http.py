@@ -114,7 +114,7 @@ class _FakeRouter:
         return {"ok": True, **kwargs}
 
     async def validate_routing(self, **kwargs):
-        return {"ok": True, "validation": {"recommended_repo": "Ghabs95/nexus-os"}, **kwargs}
+        return {"ok": True, "validation": {"recommended_repo": "ghabs-org/nexus-os"}, **kwargs}
 
     async def continue_workflow(self, **kwargs):
         return {"ok": True, "action": "continue", **kwargs}
@@ -827,7 +827,7 @@ def test_operator_routing_validate_endpoint_returns_payload():
     )
 
     assert status.startswith("200")
-    assert payload["validation"]["recommended_repo"] == "Ghabs95/nexus-os"
+    assert payload["validation"]["recommended_repo"] == "ghabs-org/nexus-os"
 
 
 def test_operator_workflow_status_returns_400_when_no_ref():

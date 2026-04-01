@@ -25,7 +25,7 @@ def test_prepare_continue_context_stops_on_human_handoff(tmp_path, monkeypatch):
         rest_tokens=[],
         base_dir=str(tmp_path),
         project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         find_task_file_by_issue=lambda _n: None,
         get_issue_details=lambda _n, _repo=None: {"state": "open", "title": "x", "body": "y"},
         resolve_project_config_from_task=lambda _p: (
@@ -71,7 +71,7 @@ def test_prepare_continue_context_ignores_stale_human_handoff_when_workflow_poin
         rest_tokens=[],
         base_dir=str(tmp_path),
         project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         find_task_file_by_issue=lambda _n: None,
         get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
             "state": "open",
@@ -124,7 +124,7 @@ def test_prepare_continue_context_treats_completed_workflow_as_done_even_with_st
         rest_tokens=[],
         base_dir=str(tmp_path),
         project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         find_task_file_by_issue=lambda _n: None,
         get_issue_details=lambda _n, _repo=None, requester_nexus_id=None: {
             "state": "open",

@@ -17,14 +17,14 @@ def test_list_project_issues_passes_requester_nexus_id():
 
     rows = list_project_issues(
         project_key="nexus",
-        project_config={"nexus": {"git_repo": "Ghabs95/nexus-arc"}},
+        project_config={"nexus": {"git_repo": "ghabs-org/nexus-arc"}},
         get_repos=lambda _project_key: [],
         get_direct_issue_plugin=_get_direct_issue_plugin,
         logger=logging.getLogger("test"),
         requester_nexus_id="nx-42",
     )
 
-    assert seen == [("Ghabs95/nexus-arc", "nx-42")]
+    assert seen == [("ghabs-org/nexus-arc", "nx-42")]
     assert rows[0]["number"] == 12
 
 

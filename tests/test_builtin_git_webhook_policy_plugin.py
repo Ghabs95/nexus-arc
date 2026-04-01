@@ -7,11 +7,11 @@ def test_resolve_project_key_matches_single_repo_field():
     plugin = GitWebhookPolicyPlugin()
     config = {
         "nexus": {
-            "git_repo": "Ghabs95/nexus-arc",
+            "git_repo": "ghabs-org/nexus-arc",
         }
     }
 
-    project = plugin.resolve_project_key("Ghabs95/nexus-arc", config, default_project="fallback")
+    project = plugin.resolve_project_key("ghabs-org/nexus-arc", config, default_project="fallback")
 
     assert project == "nexus"
 

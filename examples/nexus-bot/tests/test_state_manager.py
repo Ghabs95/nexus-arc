@@ -87,8 +87,8 @@ class TestMergeQueue:
                     item = HostStateManager.enqueue_merge_candidate(
                         issue_num="42",
                         project="nexus",
-                        repo="Ghabs95/nexus-arc",
-                        pr_url="https://github.com/Ghabs95/nexus-arc/pull/123",
+                        repo="ghabs-org/nexus-arc",
+                        pr_url="https://github.com/ghabs-org/nexus-arc/pull/123",
                         review_mode="manual",
                     )
 

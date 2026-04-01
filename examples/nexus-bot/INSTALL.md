@@ -27,7 +27,7 @@ This guide covers three runtime modes for Nexus ARC installations:
 
 ```bash
 # Clone nexus-arc
-git clone https://github.com/Ghabs95/nexus-arc.git
+git clone https://github.com/ghabs-org/nexus-arc.git
 cd nexus-arc
 
 # Create virtual environment
@@ -66,7 +66,7 @@ etc.) is to use our interactive setup wizard:
 > **Prefer a quick curl install instead of cloning the whole repo?**
 > You can download and run the setup script directly using bash:
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/Ghabs95/nexus-arc/main/examples/nexus-bot/install.sh | bash
+> curl -fsSL https://raw.githubusercontent.com/ghabs-org/nexus-arc/main/examples/nexus-bot/install.sh | bash
 > ```
 > *(A Python version `install.py` is also available if preferred).*
 

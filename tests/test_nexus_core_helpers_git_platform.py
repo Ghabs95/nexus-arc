@@ -24,11 +24,11 @@ def test_get_git_platform_github_without_fallback_uses_empty_token(monkeypatch):
         lambda: {"nexus": {"git_token_var_name": "GITHUB_TOKEN"}},
     )
     monkeypatch.setattr(helpers, "get_default_project", lambda: "nexus")
-    monkeypatch.setattr(helpers, "get_git_repo", lambda _p: "Ghabs95/nexus-arc")
+    monkeypatch.setattr(helpers, "get_git_repo", lambda _p: "ghabs-org/nexus-arc")
     monkeypatch.setattr(helpers, "get_project_platform", lambda _p: "github")
     monkeypatch.setattr(helpers, "resolve_git_platform_class", lambda _p: _GitHubDummy)
     platform = helpers.get_git_platform(
-        repo="Ghabs95/nexus-arc",
+        repo="ghabs-org/nexus-arc",
         project_name="nexus",
         token_override=None,
         allow_env_token_fallback=False,

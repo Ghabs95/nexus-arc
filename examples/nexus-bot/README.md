@@ -139,7 +139,7 @@ OpenClaw plugin can show Nexus ARC spend details inline.
 
 When you operate multiple projects through separate OpenClaw profiles, give each
 profile its own plugin config with a project-specific `defaultProject` and
-bridge token. For example, keep distinct `ghabs`, `wallible`, and `biome`
+bridge token. For example, keep distinct `ghabs`, `acme`, and `projectA`
 profiles so bare commands like `/nexus reprocess #42` and `/nexus wfstate #42`
 resolve against the correct project context without retyping it every time.
 

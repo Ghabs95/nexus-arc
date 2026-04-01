@@ -28,7 +28,7 @@ def test_prepare_continue_context_prefers_recovered_next_agent_over_stale_runnin
         rest_tokens=[],
         base_dir=str(tmp_path),
         project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         find_task_file_by_issue=lambda _n: None,
         get_issue_details=lambda _n, _repo=None: {"state": "open", "title": "x", "body": "y"},
         resolve_project_config_from_task=lambda _p: (
@@ -60,7 +60,7 @@ def test_prepare_continue_context_ignores_placeholder_agent_type_in_issue_conten
         rest_tokens=[],
         base_dir="/tmp",
         project_config={"nexus": {"agents_dir": "agents", "workspace": "."}},
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         find_task_file_by_issue=lambda _n: None,
         get_issue_details=lambda _n, _repo=None: {
             "state": "open",

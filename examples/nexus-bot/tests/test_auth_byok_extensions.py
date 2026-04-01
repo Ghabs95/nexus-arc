@@ -509,7 +509,7 @@ def test_complete_github_oauth_reuses_existing_nexus_identity(monkeypatch):
         lambda _code: {"access_token": "gh-token", "refresh_token": "gh-refresh", "expires_in": 3600},
     )
     monkeypatch.setattr(auth_svc, "_fetch_github_profile", lambda _token: {"id": 42, "login": "Ghabs95"})
-    monkeypatch.setattr(auth_svc, "_fetch_github_org_logins", lambda _token: {"mybiohackingdata"})
+    monkeypatch.setattr(auth_svc, "_fetch_github_org_logins", lambda _token: {"acme"})
     monkeypatch.setattr(auth_svc, "_allowed_github_orgs", lambda: set())
     monkeypatch.setattr(auth_svc, "encrypt_secret", lambda value, key_version=1: f"enc:{value}")
 
@@ -549,7 +549,7 @@ def test_complete_gitlab_oauth_reuses_existing_nexus_identity(monkeypatch):
         lambda _code: {"access_token": "gl-token", "refresh_token": "gl-refresh", "expires_in": 3600},
     )
     monkeypatch.setattr(auth_svc, "_fetch_gitlab_profile", lambda _token: {"id": 99, "username": "Ghabs"})
-    monkeypatch.setattr(auth_svc, "_fetch_gitlab_group_paths", lambda _token: {"mybiohackingdata/developer"})
+    monkeypatch.setattr(auth_svc, "_fetch_gitlab_group_paths", lambda _token: {"acme/developer"})
     monkeypatch.setattr(auth_svc, "_allowed_gitlab_groups", lambda: set())
     monkeypatch.setattr(auth_svc, "encrypt_secret", lambda value, key_version=1: f"enc:{value}")
 
@@ -578,7 +578,7 @@ def test_compute_project_grants_users_only_and_team_user_intersection():
         "nexus": {
             "workspace": "nexus",
             "access_control": {
-                "github_teams": ["Ghabs95/nexus-team"],
+                "github_teams": ["ghabs-org/nexus-team"],
                 "github_users": ["alice"],
             },
         },

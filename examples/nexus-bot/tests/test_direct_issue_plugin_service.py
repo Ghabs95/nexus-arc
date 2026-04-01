@@ -13,19 +13,19 @@ class _PluginFactory:
 def test_get_direct_issue_plugin_uses_transport_scoped_cache_key(monkeypatch):
     monkeypatch.setenv("NEXUS_GIT_PLATFORM_TRANSPORT", "cli")
     factory = _PluginFactory()
-    plugin = get_direct_issue_plugin(repo="Ghabs95/nexus-arc", get_profiled_plugin=factory)
+    plugin = get_direct_issue_plugin(repo="ghabs-org/nexus-arc", get_profiled_plugin=factory)
 
     assert plugin["profile"] == "git_agent_launcher"
     assert len(factory.calls) == 1
     assert factory.calls[0][0] == "git_agent_launcher"
-    assert factory.calls[0][2] == "git:direct:git_agent_launcher:cli:Ghabs95/nexus-arc"
+    assert factory.calls[0][2] == "git:direct:git_agent_launcher:cli:ghabs-org/nexus-arc"
 
 
 def test_get_direct_issue_plugin_scopes_cache_key_by_requester(monkeypatch):
     monkeypatch.setenv("NEXUS_GIT_PLATFORM_TRANSPORT", "api")
     factory = _PluginFactory()
     plugin = get_direct_issue_plugin(
-        repo="Ghabs95/nexus-arc",
+        repo="ghabs-org/nexus-arc",
         get_profiled_plugin=factory,
         requester_nexus_id="nx-123",
     )
@@ -33,7 +33,7 @@ def test_get_direct_issue_plugin_scopes_cache_key_by_requester(monkeypatch):
     assert plugin["profile"] == "git_agent_launcher"
     assert len(factory.calls) == 1
     assert factory.calls[0][1]["requester_nexus_id"] == "nx-123"
-    assert factory.calls[0][2] == "git:direct:git_agent_launcher:api:Ghabs95/nexus-arc:nx-123"
+    assert factory.calls[0][2] == "git:direct:git_agent_launcher:api:ghabs-org/nexus-arc:nx-123"
 
 
 def test_get_direct_issue_plugin_uses_gitlab_profile_for_gitlab_project(monkeypatch):

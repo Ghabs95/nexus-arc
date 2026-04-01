@@ -9,7 +9,7 @@ def test_resolve_project_name_for_repo_matches_config(monkeypatch):
         "_get_project_config",
         lambda: {
             "example-org": {"workspace": "../example-org", "repos": ["example-org/example-project"]},
-            "nexus": {"workspace": ".", "repos": ["Ghabs95/nexus-arc"]},
+            "nexus": {"workspace": ".", "repos": ["ghabs-org/nexus-arc"]},
         },
     )
     monkeypatch.setattr(
@@ -17,10 +17,10 @@ def test_resolve_project_name_for_repo_matches_config(monkeypatch):
         "get_repos",
         lambda project: ["example-org/example-project"]
         if project == "example-org"
-        else ["Ghabs95/nexus-arc"],
+        else ["ghabs-org/nexus-arc"],
     )
     monkeypatch.setattr(helpers, "get_default_project", lambda: "nexus")
-    monkeypatch.setattr(helpers, "get_repo", lambda project: "Ghabs95/nexus-arc")
+    monkeypatch.setattr(helpers, "get_repo", lambda project: "ghabs-org/nexus-arc")
 
     assert helpers.resolve_project_name_for_repo("example-org/example-project") == "example-org"
 

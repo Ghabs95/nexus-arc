@@ -299,7 +299,7 @@ def test_issue_body_resolution_skips_project_probe_failures(monkeypatch):
             "nexus": {
                 "workspace": "ghabs",
                 "git_platform": "github",
-                "git_repo": "Ghabs95/nexus-arc",
+                "git_repo": "ghabs-org/nexus-arc",
             },
         },
     )
@@ -335,7 +335,7 @@ def test_issue_body_resolution_skips_project_probe_failures(monkeypatch):
     body, repo, task_file = agent_launcher._load_issue_body_from_project_repo("88")
 
     assert "Nexus issue body" in body
-    assert repo == "Ghabs95/nexus-arc"
+    assert repo == "ghabs-org/nexus-arc"
     assert task_file == ""
 
 

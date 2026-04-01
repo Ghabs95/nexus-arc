@@ -125,10 +125,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Ghabs95/nexus-arc"
+Homepage = "https://github.com/ghabs-org/nexus-arc"
 Documentation = "https://nexus-arc.readthedocs.io"
-Repository = "https://github.com/Ghabs95/nexus-arc"
-Issues = "https://github.com/Ghabs95/nexus-arc/issues"
+Repository = "https://github.com/ghabs-org/nexus-arc"
+Issues = "https://github.com/ghabs-org/nexus-arc/issues"
 
 [project.scripts]
 nexus = "nexus.cli:main"

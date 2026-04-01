@@ -5,7 +5,7 @@ from nexus.core.project.issue_command_deps import project_repo
 
 
 def test_project_repo_resolves_from_project_config():
-    config = {"nexus": {"git_repo": "Ghabs95/nexus-arc"}}
+    config = {"nexus": {"git_repo": "ghabs-org/nexus-arc"}}
 
     def _resolve_repo(cfg, default):
         return cfg.get("git_repo", default)
@@ -13,14 +13,14 @@ def test_project_repo_resolves_from_project_config():
     repo = project_repo(
         project_key="nexus",
         project_config=config,
-        default_repo="Ghabs95/fallback",
+        default_repo="ghabs-org/fallback",
         resolve_repo=_resolve_repo,
     )
-    assert repo == "Ghabs95/nexus-arc"
+    assert repo == "ghabs-org/nexus-arc"
 
 
 def test_project_issue_url_uses_build_issue_url_with_resolved_repo():
-    config = {"nexus": {"git_repo": "Ghabs95/nexus-arc"}}
+    config = {"nexus": {"git_repo": "ghabs-org/nexus-arc"}}
 
     def _resolve_repo(cfg, default):
         return cfg.get("git_repo", default)
@@ -33,21 +33,21 @@ def test_project_issue_url_uses_build_issue_url_with_resolved_repo():
         project_key="nexus",
         issue_num="123",
         project_config=config,
-        default_repo="Ghabs95/fallback",
+        default_repo="ghabs-org/fallback",
         resolve_repo=_resolve_repo,
         build_issue_url=_build_issue_url,
     )
-    assert url.endswith("/Ghabs95/nexus-arc/issues/123")
+    assert url.endswith("/ghabs-org/nexus-arc/issues/123")
 
 
 def test_default_issue_url_falls_back_to_default_repo_when_resolver_fails():
     url = default_issue_url(
         issue_num="999",
-        default_repo="Ghabs95/fallback",
+        default_repo="ghabs-org/fallback",
         get_default_project=lambda: (_ for _ in ()).throw(RuntimeError("boom")),
         project_issue_url_fn=lambda _p, _i: "unreachable",
     )
-    assert url == "https://github.com/Ghabs95/fallback/issues/999"
+    assert url == "https://github.com/ghabs-org/fallback/issues/999"
 
 
 def test_get_issue_details_queries_plugin_with_expected_fields():
@@ -62,7 +62,7 @@ def test_get_issue_details_queries_plugin_with_expected_fields():
     result = get_issue_details(
         issue_num="42",
         repo=None,
-        default_repo="Ghabs95/nexus-arc",
+        default_repo="ghabs-org/nexus-arc",
         get_direct_issue_plugin=lambda _repo: _Plugin(),
         logger=type("_L", (), {"error": lambda *args, **kwargs: None})(),
     )

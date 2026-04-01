@@ -105,7 +105,7 @@ For setting up the fully-featured interactive bot, see the [nexus-bot example](e
 installer:
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/Ghabs95/nexus-arc/main/examples/nexus-bot/install.sh)
+bash <(curl -s https://raw.githubusercontent.com/ghabs-org/nexus-arc/main/examples/nexus-bot/install.sh)
 ```
 
 ### Your First Workflow
@@ -436,7 +436,7 @@ NEXUS_METRICS_PORT=9090
 ### Setup
 
 ```bash
-git clone https://github.com/Ghabs95/nexus-arc
+git clone https://github.com/ghabs-org/nexus-arc
 cd nexus-arc
 python -m venv venv
 source venv/bin/activate
@@ -511,7 +511,7 @@ Apache License 2.0 - see [LICENSE](LICENSE) for details.
 
 - **Documentation**: https://nexus-arc.readthedocs.io *(Coming Soon! For now, see the `docs/` directory)*
 - **Comparison Guide**: [vs Google ADK, LangChain, CrewAI](docs/COMPARISON.md)
-- **Issues**: https://github.com/Ghabs95/nexus-arc/issues
+- **Issues**: https://github.com/ghabs-org/nexus-arc/issues
 - **Discord**: https://discord.gg/nexus-arc
 - **Email**: support@nexus-arc.dev
 
