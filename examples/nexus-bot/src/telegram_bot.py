@@ -228,6 +228,9 @@ from nexus.core.handlers.ops_command_handlers import (
     audit_handler as ops_audit_handler,
 )
 from nexus.core.handlers.ops_command_handlers import (
+    doctor_handler as ops_doctor_handler,
+)
+from nexus.core.handlers.ops_command_handlers import (
     direct_handler as ops_direct_handler,
 )
 from nexus.core.handlers.ops_command_handlers import (
@@ -1362,6 +1365,7 @@ def _command_handler_map():
         active_handler=active_handler,
         inboxq_handler=inboxq_handler,
         stats_handler=stats_handler,
+        doctor_handler=doctor_handler,
         logs_handler=logs_handler,
         logsfull_handler=logsfull_handler,
         tail_handler=tail_handler,
@@ -2298,6 +2302,12 @@ async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @rate_limited("stats")
+async def doctor_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Diagnose runtime or workflow state and optionally apply a safe fix."""
+    await ops_doctor_handler(_build_telegram_interactive_ctx(update, context), _ops_handler_deps())
+
+
+@rate_limited("stats")
 async def inboxq_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Inspect inbox queue summary for postgres backend."""
     await ops_inboxq_handler(_build_telegram_interactive_ctx(update, context), _ops_handler_deps())
@@ -2555,6 +2565,7 @@ def main():
             "visualize_handler": visualize_handler,
             "watch_handler": watch_handler,
             "stats_handler": stats_handler,
+            "doctor_handler": doctor_handler,
             "comments_handler": comments_handler,
             "reprocess_handler": reprocess_handler,
             "reconcile_handler": reconcile_handler,

@@ -77,6 +77,9 @@ class _FakeRouter:
     async def get_runtime_health(self):
         return {"ok": True, "runtime_mode": "openclaw"}
 
+    async def get_doctor(self, **kwargs):
+        return {"ok": True, "scope": "workflow" if kwargs.get("issue_number") else "runtime", **kwargs}
+
     async def get_active_workflows(self, *, limit: int = 20):
         return {"ok": True, "count": 1, "items": [{"workflow_id": "demo-42-full"}], "limit": limit}
 
@@ -606,6 +609,25 @@ def test_operator_runtime_health_endpoint_returns_payload():
 
     assert status.startswith("200")
     assert payload["runtime_mode"] == "openclaw"
+
+
+def test_operator_doctor_endpoint_returns_payload():
+    app = create_command_bridge_app(
+        _FakeRouter(),
+        config=CommandBridgeConfig(auth_token="secret"),
+    )
+
+    status, payload = _call_app(
+        app,
+        method="GET",
+        path="/api/v1/operator/doctor",
+        auth="Bearer secret",
+        extra_headers={"QUERY_STRING": "issue_number=42&fix=true"},
+    )
+
+    assert status.startswith("200")
+    assert payload["issue_number"] == "42"
+    assert payload["apply_fix"] is True
 
 
 def test_operator_active_workflows_endpoint_returns_payload():

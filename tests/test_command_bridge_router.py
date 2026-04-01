@@ -400,6 +400,9 @@ async def test_router_operator_helpers_delegate_to_service(router: CommandRouter
         async def recent_incidents(self, *, limit: int = 20):
             return {"ok": True, "limit": limit}
 
+        async def doctor(self, **kwargs):
+            return {"ok": True, "action": "doctor", **kwargs}
+
         async def git_identity_status(self):
             return {"ok": True, "github": {"installed": True}}
 
@@ -424,6 +427,7 @@ async def test_router_operator_helpers_delegate_to_service(router: CommandRouter
     assert (await router.get_active_workflows(limit=5))["limit"] == 5
     assert (await router.get_recent_failures(limit=3))["limit"] == 3
     assert (await router.get_recent_incidents(limit=4))["limit"] == 4
+    assert (await router.get_doctor(issue_number="42", apply_fix=True))["action"] == "doctor"
     assert (await router.get_git_identity_status())["github"]["installed"] is True
     assert (await router.explain_routing(project_key="nexus"))["project_key"] == "nexus"
     assert (await router.continue_workflow(issue_number="42"))["action"] == "continue"

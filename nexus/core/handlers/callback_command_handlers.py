@@ -26,6 +26,7 @@ from nexus.core.telegram.telegram_router_feedback_service import (
     build_wrong_model_prompt,
     build_wrong_task_prompt,
     clear_external_pending_feedback,
+    decision_token,
     has_feedback_submission,
     load_external_pending_feedback,
     remember_feedback_submission,
@@ -262,7 +263,7 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
         await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Invalid feedback action.", buttons=[])
         return
     action = parts[1]
-    decision_id = parts[2]
+    decision_ref = parts[2]
 
     if action not in _ROUTE_FEEDBACK_VALID_ACTIONS:
         await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Invalid feedback action.", buttons=[])
@@ -275,19 +276,21 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
             ctx.user_state[PENDING_KEY] = pending
     if not isinstance(pending, dict):
         pending = {
-            "decision_id": decision_id,
+            "decision_id": decision_ref,
             "feedback_mode": "router",
             "source_channel": getattr(getattr(ctx, "client", None), "name", None) or "openclaw",
             "metadata": {},
         }
         ctx.user_state[PENDING_KEY] = pending
 
-    if decision_id != str(pending.get("decision_id") or ""):
+    actual_decision_id = str(pending.get("decision_id") or "")
+    expected_refs = {actual_decision_id, decision_token(actual_decision_id)}
+    if decision_ref not in expected_refs:
         await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Feedback no longer matches the latest route.", buttons=[])
         return
 
     user_id = str(ctx.user_id or "") or None
-    if has_feedback_submission(ctx.user_state, decision_id=decision_id, user_id=user_id):
+    if has_feedback_submission(ctx.user_state, decision_id=actual_decision_id, user_id=user_id):
         await ctx.edit_message_text(message_id=query.message_id, text="✅ Feedback already recorded.", buttons=[])
         return
 
@@ -310,9 +313,9 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
                 parse_mode=None,
             )
             return
-        remember_feedback_submission(ctx.user_state, decision_id=decision_id, user_id=user_id)
+        remember_feedback_submission(ctx.user_state, decision_id=actual_decision_id, user_id=user_id)
         ctx.user_state.pop(PENDING_KEY, None)
-        clear_external_pending_feedback(user_id=str(ctx.user_id or ""), decision_id=decision_id)
+        clear_external_pending_feedback(user_id=str(ctx.user_id or ""), decision_id=actual_decision_id)
         await ctx.edit_message_text(message_id=query.message_id, text="✅ Feedback recorded.", buttons=[])
         return
 
@@ -357,9 +360,9 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
                 parse_mode=None,
             )
             return
-        remember_feedback_submission(ctx.user_state, decision_id=decision_id, user_id=user_id)
+        remember_feedback_submission(ctx.user_state, decision_id=actual_decision_id, user_id=user_id)
         ctx.user_state.pop(PENDING_KEY, None)
-        clear_external_pending_feedback(user_id=str(ctx.user_id or ""), decision_id=decision_id)
+        clear_external_pending_feedback(user_id=str(ctx.user_id or ""), decision_id=actual_decision_id)
         parts_summary = []
         if corrected_task:
             parts_summary.append(f"task→{corrected_task}")
@@ -392,9 +395,9 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
                 parse_mode=None,
             )
             return
-        remember_feedback_submission(ctx.user_state, decision_id=decision_id, user_id=user_id)
+        remember_feedback_submission(ctx.user_state, decision_id=actual_decision_id, user_id=user_id)
         ctx.user_state.pop(PENDING_KEY, None)
-        clear_external_pending_feedback(user_id=str(ctx.user_id or ""), decision_id=decision_id)
+        clear_external_pending_feedback(user_id=str(ctx.user_id or ""), decision_id=actual_decision_id)
         await ctx.edit_message_text(message_id=query.message_id, text=f"✅ Marked wrong → {corrected_task}.", buttons=[])
         return
 

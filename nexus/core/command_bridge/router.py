@@ -69,6 +69,7 @@ from nexus.core.handlers.monitoring_command_handlers import (
 from nexus.core.handlers.ops_command_handlers import (
     agents_handler,
     audit_handler,
+    doctor_handler,
     direct_handler,
     stats_handler,
 )
@@ -400,6 +401,7 @@ class CommandRouter:
         plugin.register_command("stats", self._plugin_callback(plugin, "stats"))
         plugin.register_command("summary", self._plugin_callback(plugin, "summary"))
         plugin.register_command("continue", self._plugin_callback(plugin, "continue"))
+        plugin.register_command("doctor", self._plugin_callback(plugin, "doctor"))
         plugin.register_command("forget", self._plugin_callback(plugin, "forget"))
         plugin.register_command("kill", self._plugin_callback(plugin, "kill"))
         plugin.register_command("pause", self._plugin_callback(plugin, "pause"))
@@ -628,6 +630,23 @@ class CommandRouter:
     async def get_recent_incidents(self, *, limit: int = 20) -> dict[str, Any]:
         return await self.operator_service.recent_incidents(limit=limit)
 
+    async def get_doctor(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        project_key: str | None = None,
+        target: str | None = None,
+        apply_fix: bool = False,
+    ) -> dict[str, Any]:
+        return await self.operator_service.doctor(
+            workflow_id=workflow_id,
+            issue_number=issue_number,
+            project_key=project_key,
+            target=target,
+            apply_fix=apply_fix,
+        )
+
     async def get_git_identity_status(self) -> dict[str, Any]:
         return await self.operator_service.git_identity_status()
 
@@ -850,6 +869,7 @@ class CommandRouter:
         self.register_command("stats", self._wrap_command_handler(stats_handler, self.ops_deps))
         self.register_command("summary", self._summary_callback())
         self.register_command("continue", self._wrap_command_handler(continue_handler, self.workflow_deps))
+        self.register_command("doctor", self._wrap_command_handler(doctor_handler, self.ops_deps))
         self.register_command("forget", self._wrap_command_handler(forget_handler, self.workflow_deps), bridge_enabled=False)
         self.register_command("kill", self._wrap_command_handler(kill_handler, self.workflow_deps))
         self.register_command("pause", self._wrap_command_handler(pause_handler, self.workflow_deps))

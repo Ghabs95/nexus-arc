@@ -53,6 +53,7 @@ class HandsFreeRoutingDeps:
     feature_ideation_deps: Any = None
     base_dir: str = ""
     project_config: dict[str, Any] | None = None
+    router_feedback_config: dict[str, Any] | None = None
 
 
 def _configured_primary_agent_type(project_key: str) -> str:

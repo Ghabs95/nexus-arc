@@ -3,6 +3,7 @@ import logging
 from nexus.adapters.git.utils import build_issue_url, resolve_repo
 from nexus.core.analytics.reporting import get_stats_report
 from nexus.core.audit_store import AuditStore
+from nexus.core.command_bridge.operator import BridgeOperatorService
 from nexus.core.completion import scan_for_completions
 # Import configuration from centralized config module
 from nexus.core.config import (
@@ -109,6 +110,7 @@ rate_limiter = get_rate_limiter()
 user_manager = get_user_manager()
 
 DEFAULT_REPO = get_default_repo()
+_bridge_operator_service: BridgeOperatorService | None = None
 _WORKFLOW_STATE_PLUGIN_KWARGS = {
     "storage_dir": NEXUS_CORE_STORAGE_DIR,
     "storage_type": "postgres" if NEXUS_WORKFLOW_BACKEND == "postgres" else "file",
@@ -275,6 +277,12 @@ def _ops_handler_deps() -> OpsHandlerDeps:
 
         return get_queue_overview(limit=limit)
 
+    global _bridge_operator_service
+    if _bridge_operator_service is None:
+        _bridge_operator_service = BridgeOperatorService(
+            workflow_state_plugin_kwargs=_WORKFLOW_STATE_PLUGIN_KWARGS
+        )
+
     return OpsHandlerDeps(
         logger=logger,
         allowed_user_ids=TELEGRAM_ALLOWED_USER_IDS,
@@ -298,6 +306,7 @@ def _ops_handler_deps() -> OpsHandlerDeps:
         get_chat_history=get_chat_history,
         append_message=append_message,
         create_chat=create_chat,
+        run_doctor=lambda **kwargs: _bridge_operator_service.doctor(**kwargs),
         requester_context_builder=lambda user_id: {
             "platform": "telegram",
             "platform_user_id": str(user_id),

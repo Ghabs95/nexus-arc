@@ -6,6 +6,7 @@ from typing import Any
 from nexus.adapters.git.utils import build_issue_url, resolve_repo
 from nexus.core.analytics.reporting import get_stats_report
 from nexus.core.audit_store import AuditStore
+from nexus.core.command_bridge.operator import BridgeOperatorService
 from nexus.core.completion import scan_for_completions
 from nexus.core.config import (
     AI_PERSONA,
@@ -15,6 +16,7 @@ from nexus.core.config import (
     NEXUS_FEATURE_REGISTRY_DEDUP_SIMILARITY,
     NEXUS_FEATURE_REGISTRY_ENABLED,
     NEXUS_FEATURE_REGISTRY_MAX_ITEMS_PER_PROJECT,
+    NEXUS_ROUTER_FEEDBACK_CONFIG,
     NEXUS_STORAGE_BACKEND,
     NEXUS_STORAGE_DSN,
     NEXUS_WORKFLOW_BACKEND,
@@ -167,6 +169,7 @@ _orchestrator = None
 _user_manager = None
 _tracked_issues: dict[str, Any] | None = None
 _feature_registry_service: FeatureRegistryService | None = None
+_bridge_operator_service: BridgeOperatorService | None = None
 
 _WORKFLOW_STATE_PLUGIN_KWARGS = {
     "storage_dir": NEXUS_CORE_STORAGE_DIR,
@@ -253,6 +256,15 @@ def _get_user_manager():
     if _user_manager is None:
         _user_manager = get_user_manager()
     return _user_manager
+
+
+def _get_bridge_operator_service() -> BridgeOperatorService:
+    global _bridge_operator_service
+    if _bridge_operator_service is None:
+        _bridge_operator_service = BridgeOperatorService(
+            workflow_state_plugin_kwargs=_WORKFLOW_STATE_PLUGIN_KWARGS
+        )
+    return _bridge_operator_service
 
 
 def _get_tracked_issues_ref() -> dict[str, Any]:
@@ -485,6 +497,7 @@ def ops_bridge_deps(*, allowed_user_ids, prompt_project_selection, ensure_projec
         get_chat_history=get_chat_history,
         append_message=append_message,
         create_chat=create_chat,
+        run_doctor=lambda **kwargs: _get_bridge_operator_service().doctor(**kwargs),
         requester_context_builder=lambda user_id: {
             "platform": "discord",
             "platform_user_id": str(user_id),
@@ -580,6 +593,7 @@ def hands_free_bridge_deps(*, requester_context_builder=None):
         authorize_project=None,
         base_dir=BASE_DIR,
         project_config=PROJECT_CONFIG,
+        router_feedback_config=NEXUS_ROUTER_FEEDBACK_CONFIG,
     )
 
 

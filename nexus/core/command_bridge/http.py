@@ -175,6 +175,19 @@ def create_command_bridge_app(
                 payload = asyncio.run(router.get_runtime_health())
                 return _json_response(start_response, 200 if payload.get("ok") else 500, payload)
 
+            if method == "GET" and path == "/api/v1/operator/doctor":
+                params = _query_params(environ)
+                payload = asyncio.run(
+                    router.get_doctor(
+                        workflow_id=_str_param(params, "workflow_id"),
+                        issue_number=_str_param(params, "issue_number"),
+                        project_key=_str_param(params, "project_key"),
+                        target=_str_param(params, "target"),
+                        apply_fix=_bool_param(params, "fix"),
+                    )
+                )
+                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+
             if method == "GET" and path == "/api/v1/operator/workflows/active":
                 params = _query_params(environ)
                 payload = asyncio.run(router.get_active_workflows(limit=_int_param(params, "limit", 20)))
@@ -407,6 +420,19 @@ def create_command_bridge_app(
                 )
                 return _json_response(start_response, 200 if result.get("ok") else 400, result)
 
+            if method == "POST" and path == "/api/v1/operator/doctor":
+                payload = _load_json_body(environ)
+                result = asyncio.run(
+                    router.get_doctor(
+                        workflow_id=str(payload.get("workflow_id") or "").strip() or None,
+                        issue_number=str(payload.get("issue_number") or "").strip() or None,
+                        project_key=str(payload.get("project_key") or "").strip() or None,
+                        target=str(payload.get("target") or "").strip() or None,
+                        apply_fix=bool(payload.get("fix")),
+                    )
+                )
+                return _json_response(start_response, 200 if result.get("ok") else 400, result)
+
             if method == "POST" and path == "/api/v1/bridge/openclaw/reply":
                 payload = _load_json_body(environ)
                 _validate_reply_payload(payload)
@@ -563,6 +589,13 @@ def _int_param(params: dict[str, list[str]], name: str, default: int) -> int:
         return int(raw)
     except ValueError as exc:
         raise ValueError(f"Query parameter '{name}' must be an integer") from exc
+
+
+def _bool_param(params: dict[str, list[str]], name: str) -> bool:
+    raw = _str_param(params, name)
+    if raw is None:
+        return False
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _validate_reply_payload(payload: dict[str, Any]) -> None:

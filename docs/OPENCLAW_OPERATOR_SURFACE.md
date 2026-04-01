@@ -46,6 +46,19 @@ Returns a compact runtime summary including:
 - availability of `gh`, `glab`, and `pgrep`
 - active/recent failure counts
 
+### Doctor
+
+```bash
+curl -s "http://127.0.0.1:8091/api/v1/operator/doctor?issue_number=123&fix=true" \
+  -H "Authorization: Bearer $NEXUS_COMMAND_BRIDGE_AUTH_TOKEN"
+```
+
+Returns a best-effort runtime or workflow diagnosis. When `fix=true` is passed
+with a workflow or issue reference, Nexus will only apply a safe targeted fix:
+- failed or paused workflows can be rewound to their current agent step
+- running workflows remain read-only
+- global/runtime doctor remains read-only
+
 ### Active workflows
 
 ```bash

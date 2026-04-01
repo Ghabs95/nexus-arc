@@ -42,6 +42,7 @@ class OpsHandlerDeps:
     append_message: Callable[[int, str, str], None]
     create_chat: Callable[..., str]
     requester_context_builder: Callable[[int], dict[str, Any]] | None = None
+    run_doctor: Callable[..., Awaitable[dict[str, Any]]] | None = None
 
 
 def _normalize_agent_key(value: str) -> str:
@@ -240,6 +241,129 @@ async def stats_handler(ctx: InteractiveContext, deps: OpsHandlerDeps) -> None:
             message_id=msg_id,
             text=error_msg,
         )
+
+
+def _doctor_fix_requested(args: list[str]) -> bool:
+    return any(str(item or "").strip().lower() in {"fix", "--fix"} for item in args)
+
+
+def _doctor_issue_args(args: list[str]) -> list[str]:
+    return [item for item in args if str(item or "").strip().lower() not in {"fix", "--fix"}]
+
+
+def _doctor_runtime_target(args: list[str]) -> str | None:
+    aliases = {
+        "oc": "openclaw",
+        "openclaw": "openclaw",
+        "runtime": "openclaw",
+        "instance": "openclaw",
+        "gateway": "gateway",
+        "chat": "chat",
+        "session": "session",
+    }
+    for item in args:
+        token = str(item or "").strip().lower()
+        if token in aliases:
+            return aliases[token]
+    return None
+
+
+def _format_doctor_payload(payload: dict[str, Any], *, fix_requested: bool) -> str:
+    if not payload.get("ok"):
+        return f"❌ Doctor failed: {payload.get('error') or 'unknown error'}"
+
+    lines: list[str] = ["🩺 **Doctor**"]
+    scope = str(payload.get("scope") or "runtime").strip().lower()
+    if scope == "workflow":
+        workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+        diagnosis = payload.get("diagnosis") if isinstance(payload.get("diagnosis"), dict) else {}
+        fix = payload.get("fix") if isinstance(payload.get("fix"), dict) else {}
+        workflow_id = str(workflow.get("workflow_id") or payload.get("workflow_id") or "").strip()
+        issue_number = str(workflow.get("issue_number") or payload.get("issue_number") or "").strip()
+        state = str(workflow.get("state") or "unknown").strip()
+        current_step = workflow.get("current_step") if isinstance(workflow.get("current_step"), dict) else {}
+        current_agent = str(current_step.get("agent") or "").strip() or "unknown"
+        summary = str(diagnosis.get("summary") or "").strip()
+        cause = str(diagnosis.get("likely_cause") or "").strip()
+        lines.append(f"Workflow: `{workflow_id or 'unknown'}`")
+        if issue_number:
+            lines.append(f"Issue: `#{issue_number}`")
+        lines.append(f"State: `{state}`")
+        lines.append(f"Current agent: `{current_agent}`")
+        if summary:
+            lines.append(f"Diagnosis: {summary}")
+        if cause:
+            lines.append(f"Likely cause: {cause}")
+        if fix_requested:
+            action = str(fix.get("action") or "").strip() or "none"
+            if fix.get("applied"):
+                target = str(fix.get("target_agent") or "").strip()
+                lines.append(f"Fix: applied `{action}`{f' via `{target}`' if target else ''}")
+            else:
+                reason = str(fix.get("reason") or "").strip() or "No safe automated fix available."
+                lines.append(f"Fix: not applied. {reason}")
+    else:
+        runtime = payload.get("runtime_health") if isinstance(payload.get("runtime_health"), dict) else {}
+        incidents = payload.get("recent_incidents") if isinstance(payload.get("recent_incidents"), dict) else {}
+        openclaw = runtime.get("openclaw") if isinstance(runtime.get("openclaw"), dict) else {}
+        oc_checks = openclaw.get("checks") if isinstance(openclaw.get("checks"), list) else []
+        runtime_warnings = runtime.get("warnings") if isinstance(runtime.get("warnings"), list) else []
+        warning_count = len(runtime_warnings) + sum(
+            1 for item in oc_checks if isinstance(item, dict) and str(item.get("status")) == "warning"
+        )
+        error_count = sum(1 for item in oc_checks if isinstance(item, dict) and str(item.get("status")) == "error")
+        count = int(incidents.get("count") or 0)
+        summary = str(incidents.get("summary") or "").strip()
+        target = str(payload.get("target") or "openclaw").strip()
+        lines.append(f"Target: `{target}`")
+        lines.append(f"OpenClaw installed: `{'yes' if openclaw.get('installed') else 'no'}`")
+        lines.append(f"OpenClaw healthy: `{'yes' if openclaw.get('healthy') else 'no'}`")
+        lines.append(f"Runtime warnings: `{warning_count}`")
+        lines.append(f"Runtime errors: `{error_count}`")
+        lines.append(f"Recent incidents: `{count}`")
+        if summary:
+            lines.append(f"Summary: {summary}")
+        if fix_requested:
+            fix = payload.get("fix") if isinstance(payload.get("fix"), dict) else {}
+            action = str(fix.get("action") or "").strip()
+            if fix.get("applied"):
+                lines.append(f"Fix: applied `{action or 'openclaw_recovery'}`")
+            else:
+                reason = str(fix.get("reason") or "").strip() or "No automated recovery was applied."
+                lines.append(f"Fix: not applied. {reason}")
+    return "\n".join(lines)
+
+
+async def doctor_handler(ctx: InteractiveContext, deps: OpsHandlerDeps) -> None:
+    deps.logger.info(f"Doctor requested by user: {ctx.user_id}")
+    if deps.allowed_user_ids and int(ctx.user_id) not in deps.allowed_user_ids:
+        log_unauthorized_access(getattr(deps, "logger", None), int(ctx.user_id))
+        return
+    if not callable(deps.run_doctor):
+        await ctx.reply_text("❌ Doctor service is not configured for this runtime.")
+        return
+
+    fix_requested = _doctor_fix_requested(ctx.args)
+    target = _doctor_runtime_target(ctx.args)
+    original_args = list(ctx.args)
+    try:
+        msg_id = await ctx.reply_text("🩺 Running OpenClaw doctor checks...")
+        payload = await deps.run_doctor(
+            project_key=None,
+            issue_number=None,
+            target=target,
+            apply_fix=fix_requested,
+        )
+        await ctx.edit_message_text(
+            message_id=msg_id,
+            text=_format_doctor_payload(payload, fix_requested=fix_requested),
+        )
+    except Exception as exc:
+        deps.logger.error(f"Error in doctor_handler: {exc}", exc_info=True)
+        error_msg = deps.format_error_for_user(exc, "while running doctor")
+        await ctx.reply_text(error_msg)
+    finally:
+        ctx.args = original_args
 
 
 async def inboxq_handler(ctx: InteractiveContext, deps: OpsHandlerDeps) -> None:

@@ -57,6 +57,20 @@ def _trim_error_summary(error: Any, *, max_len: int = 240) -> str | None:
     return compact[: max_len - 3].rstrip() + "..."
 
 
+def _workflow_step_by_num(workflow: Any, step_num: Any) -> Any | None:
+    try:
+        target = int(step_num)
+    except Exception:
+        return None
+    for step in list(getattr(workflow, "steps", []) or []):
+        try:
+            if int(getattr(step, "step_num", 0)) == target:
+                return step
+        except Exception:
+            continue
+    return None
+
+
 async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
@@ -737,6 +751,184 @@ class BridgeOperatorService:
             "log_count": len(logs),
         }
 
+    @staticmethod
+    def _run_cli_command(command: list[str], *, timeout: int = 20) -> dict[str, Any]:
+        command_text = " ".join(command)
+        try:
+            proc = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "command": command_text,
+                "returncode": None,
+                "stdout": "",
+                "stderr": f"{type(exc).__name__}: {exc}",
+            }
+
+        return {
+            "ok": proc.returncode == 0,
+            "command": command_text,
+            "returncode": int(proc.returncode),
+            "stdout": str(proc.stdout or ""),
+            "stderr": str(proc.stderr or ""),
+        }
+
+    def _openclaw_health_snapshot(self) -> dict[str, Any]:
+        openclaw_bin = shutil.which("openclaw")
+        if not openclaw_bin:
+            return {
+                "installed": False,
+                "healthy": False,
+                "checks": [
+                    {
+                        "name": "openclaw_cli",
+                        "status": "error",
+                        "summary": "openclaw CLI not found in PATH",
+                    }
+                ],
+            }
+
+        checks: list[dict[str, Any]] = []
+
+        status_cmd = self._run_cli_command([openclaw_bin, "status"], timeout=20)
+        checks.append(
+            {
+                "name": "openclaw_status",
+                "status": "ok" if status_cmd.get("ok") else "error",
+                "summary": "openclaw status ok" if status_cmd.get("ok") else "openclaw status failed",
+                "command": status_cmd.get("command"),
+                "returncode": status_cmd.get("returncode"),
+                "stderr": str(status_cmd.get("stderr") or "").strip()[:240] or None,
+            }
+        )
+
+        gateway_cmd = self._run_cli_command([openclaw_bin, "gateway", "status"], timeout=20)
+        gateway_out = "\n".join(
+            part for part in [str(gateway_cmd.get("stdout") or ""), str(gateway_cmd.get("stderr") or "")] if part
+        ).strip()
+        gateway_text = gateway_out.lower()
+        gateway_status = "ok"
+        gateway_summary = "gateway status healthy"
+        if not gateway_cmd.get("ok"):
+            gateway_status = "error"
+            gateway_summary = "gateway status command failed"
+        elif any(token in gateway_text for token in ["inactive", "failed", "unhealthy", "stopped"]):
+            gateway_status = "warning"
+            gateway_summary = "gateway appears degraded"
+        checks.append(
+            {
+                "name": "openclaw_gateway",
+                "status": gateway_status,
+                "summary": gateway_summary,
+                "command": gateway_cmd.get("command"),
+                "returncode": gateway_cmd.get("returncode"),
+                "output": gateway_out[:600] if gateway_out else None,
+            }
+        )
+
+        healthy = all(str(item.get("status")) == "ok" for item in checks)
+        return {
+            "installed": True,
+            "binary": openclaw_bin,
+            "healthy": healthy,
+            "checks": checks,
+        }
+
+    async def _attempt_openclaw_recovery(self, *, target: str | None = None) -> dict[str, Any]:
+        snapshot = await asyncio.to_thread(self._openclaw_health_snapshot)
+        if not snapshot.get("installed"):
+            return {
+                "requested": True,
+                "applied": False,
+                "action": "openclaw_recovery",
+                "reason": "openclaw CLI is not installed on this runtime.",
+                "actions": [],
+                "target": target or "openclaw",
+            }
+
+        openclaw_bin = str(snapshot.get("binary") or "openclaw")
+        actions: list[dict[str, Any]] = []
+
+        restart_result = await asyncio.to_thread(
+            self._run_cli_command,
+            [openclaw_bin, "gateway", "restart"],
+            timeout=35,
+        )
+        actions.append(
+            {
+                "name": "gateway_restart",
+                "ok": bool(restart_result.get("ok")),
+                "command": restart_result.get("command"),
+                "returncode": restart_result.get("returncode"),
+                "stderr": str(restart_result.get("stderr") or "").strip()[:240] or None,
+            }
+        )
+
+        post_restart = await asyncio.to_thread(self._openclaw_health_snapshot)
+        recovered = bool(post_restart.get("healthy"))
+
+        if not recovered:
+            start_result = await asyncio.to_thread(
+                self._run_cli_command,
+                [openclaw_bin, "gateway", "start"],
+                timeout=35,
+            )
+            actions.append(
+                {
+                    "name": "gateway_start",
+                    "ok": bool(start_result.get("ok")),
+                    "command": start_result.get("command"),
+                    "returncode": start_result.get("returncode"),
+                    "stderr": str(start_result.get("stderr") or "").strip()[:240] or None,
+                }
+            )
+            post_restart = await asyncio.to_thread(self._openclaw_health_snapshot)
+            recovered = bool(post_restart.get("healthy"))
+
+        wake_result = await asyncio.to_thread(
+            self._run_cli_command,
+            [
+                openclaw_bin,
+                "system",
+                "event",
+                "--text",
+                "Reminder: doctor recovery ping — verify OpenClaw chat/session responsiveness.",
+                "--mode",
+                "now",
+            ],
+            timeout=20,
+        )
+        actions.append(
+            {
+                "name": "wake_ping",
+                "ok": bool(wake_result.get("ok")),
+                "command": wake_result.get("command"),
+                "returncode": wake_result.get("returncode"),
+                "stderr": str(wake_result.get("stderr") or "").strip()[:240] or None,
+            }
+        )
+
+        applied = recovered or bool(wake_result.get("ok"))
+        reason = None
+        if not recovered:
+            reason = "OpenClaw gateway still appears unhealthy after restart/start attempts."
+
+        return {
+            "requested": True,
+            "applied": applied,
+            "action": "openclaw_recovery",
+            "reason": reason,
+            "actions": actions,
+            "target": target or "openclaw",
+            "post_check": post_restart,
+        }
+
     async def runtime_health(self) -> dict[str, Any]:
         engine = await self._engine()
         storage = getattr(engine, "storage", None)
@@ -744,6 +936,7 @@ class BridgeOperatorService:
         runtime_ops = RuntimeOpsPlugin()
         active = await self.active_workflows(limit=100)
         failures = await self.recent_failures(limit=20)
+        openclaw_health = await asyncio.to_thread(self._openclaw_health_snapshot)
         runtime_mode = str(os.getenv("NEXUS_RUNTIME_MODE") or "").strip() or None
         openclaw_wake_mode = str(os.getenv("NEXUS_OPENCLAW_WAKE_MODE") or "").strip() or None
         warnings: list[str] = []
@@ -752,6 +945,10 @@ class BridgeOperatorService:
                 "OpenClaw wake mode is enabled. Wakeful workflow notifications can loop back into the "
                 "operator chat and leave OpenClaw stuck on 'Compacting context...'. Leave "
                 "NEXUS_OPENCLAW_WAKE_MODE unset for passive notifications unless interactive wakeups are required."
+            )
+        if openclaw_health.get("installed") and not openclaw_health.get("healthy"):
+            warnings.append(
+                "OpenClaw CLI is installed but reports degraded runtime status. Use /doctor fix to attempt gateway recovery."
             )
         return {
             "ok": True,
@@ -771,6 +968,7 @@ class BridgeOperatorService:
                 "glab": shutil.which("glab") is not None,
                 "pgrep": runtime_ops._pgrep_path is not None,
             },
+            "openclaw": openclaw_health,
             "active_workflow_count": int(active.get("count") or 0) if active.get("ok") else None,
             "recent_failure_count": int(failures.get("count") or 0) if failures.get("ok") else None,
             "warnings": warnings,
@@ -1012,6 +1210,113 @@ class BridgeOperatorService:
             validations.append({'status': 'ok' if not missing else 'warning', 'check': 'nexus_repo_split', 'message': 'All expected nexus split repos are configured.' if not missing else f"Missing expected nexus split repo(s): {', '.join(missing)}"})
         active_role = next((item for item in repo_roles if item.get('task_type_match')), None)
         return {'ok': True, **explained, 'validation': {'checks': validations, 'repo_roles': repo_roles, 'recommended_repo': active_role.get('repo') if active_role else explained.get('default_repo'), 'provider_expectation': explained.get('resolved_profile', {}), 'note': 'Validation is best-effort and based on current PROJECT_CONFIG plus repo-name heuristics for the nexus multi-repo split.'}}
+
+    async def doctor(
+        self,
+        *,
+        workflow_id: str | None = None,
+        issue_number: str | None = None,
+        project_key: str | None = None,
+        target: str | None = None,
+        apply_fix: bool = False,
+    ) -> dict[str, Any]:
+        if workflow_id or issue_number:
+            workflow, resolved_issue, resolved_workflow_id = await self._workflow_by_ref(
+                workflow_id=workflow_id,
+                issue_number=issue_number,
+            )
+            if workflow is None:
+                return {
+                    "ok": False,
+                    "error": "Workflow not found",
+                    "workflow_id": resolved_workflow_id,
+                    "issue_number": resolved_issue,
+                    "scope": "workflow",
+                }
+            if resolved_issue is None:
+                resolved_issue = self._issue_from_metadata(workflow)
+            status_payload = await self.workflow_status(
+                workflow_id=resolved_workflow_id,
+                issue_number=resolved_issue,
+            )
+            diagnosis_payload = await self.workflow_diagnosis(
+                workflow_id=resolved_workflow_id,
+                issue_number=resolved_issue,
+            )
+            payload: dict[str, Any] = {
+                "ok": True,
+                "scope": "workflow",
+                "workflow_id": resolved_workflow_id,
+                "issue_number": resolved_issue,
+                "project_key": project_key,
+                "workflow": status_payload.get("workflow"),
+                "plugin_status": status_payload.get("plugin_status"),
+                "diagnosis": diagnosis_payload,
+                "fix": {
+                    "requested": bool(apply_fix),
+                    "applied": False,
+                    "action": None,
+                    "target_agent": None,
+                    "reason": None,
+                },
+            }
+            if not apply_fix:
+                return payload
+
+            state = _status_value(getattr(workflow, "state", None))
+            target_step = _workflow_step_by_num(workflow, getattr(workflow, "current_step", None))
+            target_agent = _step_agent_name(target_step)
+            if state not in {"failed", "paused"}:
+                payload["fix"]["reason"] = (
+                    f"Safe auto-fix only applies to failed or paused workflows, not state={state or 'unknown'}."
+                )
+                return payload
+            if not resolved_issue or not target_agent:
+                payload["fix"]["reason"] = "Could not resolve a safe target agent for workflow reset."
+                return payload
+            fix_result = await self.continue_workflow(
+                workflow_id=resolved_workflow_id,
+                issue_number=resolved_issue,
+                target_agent=target_agent,
+            )
+            payload["fix"] = {
+                "requested": True,
+                "applied": bool(fix_result.get("ok")),
+                "action": "continue_workflow",
+                "target_agent": target_agent,
+                "reason": None if fix_result.get("ok") else str(fix_result.get("error") or "Workflow continue failed."),
+                "result": fix_result,
+            }
+            if fix_result.get("ok"):
+                refreshed = await self.workflow_status(
+                    workflow_id=resolved_workflow_id,
+                    issue_number=resolved_issue,
+                )
+                payload["workflow"] = refreshed.get("workflow")
+                payload["plugin_status"] = refreshed.get("plugin_status")
+            return payload
+
+        runtime_payload = await self.runtime_health()
+        incidents_payload = await self.recent_incidents(limit=10)
+        if apply_fix:
+            fix_payload = await self._attempt_openclaw_recovery(target=target)
+        else:
+            fix_payload = {
+                "requested": False,
+                "applied": False,
+                "action": None,
+                "reason": "Fix not requested. Pass fix=true (or /doctor fix) to attempt OpenClaw recovery.",
+                "target": target or "openclaw",
+            }
+        return {
+            "ok": True,
+            "scope": "runtime",
+            "project_key": project_key,
+            "target": target or "openclaw",
+            "runtime_health": runtime_payload,
+            "recent_incidents": incidents_payload,
+            "fix": fix_payload,
+        }
 
     async def continue_workflow(
         self,

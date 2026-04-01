@@ -94,6 +94,7 @@ from nexus.core.handlers.monitoring_command_handlers import (
 from nexus.core.handlers.ops_command_handlers import inboxq_handler as ops_inboxq_handler
 from nexus.core.handlers.ops_command_handlers import audit_handler as ops_audit_handler
 from nexus.core.handlers.ops_command_handlers import agents_handler as ops_agents_handler
+from nexus.core.handlers.ops_command_handlers import doctor_handler as ops_doctor_handler
 from nexus.core.handlers.ops_command_handlers import direct_handler as ops_direct_handler
 from nexus.core.handlers.ops_command_handlers import stats_handler as ops_stats_handler
 from nexus.core.handlers.issue_command_handlers import assign_handler as issue_assign_handler
@@ -2652,6 +2653,18 @@ async def stats_command(interaction: discord.Interaction, args: str = ""):
         command_name="stats",
         args=args,
         handler=ops_stats_handler,
+        deps_factory=_ops_bridge_deps,
+    )
+
+
+@bot.tree.command(name="doctor", description="Diagnose OpenClaw runtime/session health and recover when possible")
+@app_commands.describe(args="Optional: [project] [issue] [fix|--fix]")
+async def doctor_command(interaction: discord.Interaction, args: str = ""):
+    await _run_bridge_handler(
+        interaction,
+        command_name="doctor",
+        args=args,
+        handler=ops_doctor_handler,
         deps_factory=_ops_bridge_deps,
     )
 

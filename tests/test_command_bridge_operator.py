@@ -57,6 +57,28 @@ class _Plugin:
     async def get_workflow_status(self, issue_number):
         return self.plugin_status_map.get(str(issue_number))
 
+    async def reset_to_agent_for_issue(self, issue_number, agent_ref):
+        workflow_id = self._resolve_workflow_id(issue_number)
+        workflow = await self.engine.get_workflow(workflow_id)
+        if workflow is None:
+            return False
+        target_step = next(
+            (
+                step
+                for step in workflow.steps
+                if str(getattr(step.agent, "name", "")) == str(agent_ref)
+                or str(getattr(step, "name", "")) == str(agent_ref)
+            ),
+            None,
+        )
+        if target_step is None:
+            return False
+        workflow.state = WorkflowState.RUNNING
+        workflow.current_step = target_step.step_num
+        target_step.status = StepStatus.RUNNING
+        target_step.error = None
+        return True
+
 
 def _agent(name: str) -> Agent:
     return Agent(name=name, display_name=name.title(), description="test", timeout=60, max_retries=2)
@@ -372,6 +394,59 @@ async def test_workflow_blockers_surfaces_approvals_and_pauses(operator_service:
     assert approval_payload["blocking"] is True
     assert approval_payload["approval"]["pending_approval"]["step_name"] == "review"
     assert any(item["type"] == "approval_required" for item in approval_payload["blockers"])
+
+
+@pytest.mark.asyncio
+async def test_doctor_reports_runtime_and_applies_safe_fix(operator_service: BridgeOperatorService):
+    runtime_payload = await operator_service.doctor()
+    assert runtime_payload["ok"] is True
+    assert runtime_payload["scope"] == "runtime"
+    assert runtime_payload["fix"]["applied"] is False
+
+    workflow_payload = await operator_service.doctor(issue_number="101", apply_fix=True)
+    assert workflow_payload["ok"] is True
+    assert workflow_payload["scope"] == "workflow"
+    assert workflow_payload["fix"]["requested"] is True
+    assert workflow_payload["fix"]["action"] == "continue_workflow"
+
+
+@pytest.mark.asyncio
+async def test_doctor_runtime_fix_attempts_openclaw_recovery(
+    operator_service: BridgeOperatorService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        operator_service,
+        "_openclaw_health_snapshot",
+        lambda: {
+            "installed": True,
+            "binary": "/usr/bin/openclaw",
+            "healthy": False,
+            "checks": [{"name": "openclaw_gateway", "status": "error"}],
+        },
+    )
+
+    def _fake_run(cmd, timeout=20):
+        cmd_text = " ".join(cmd)
+        if "gateway restart" in cmd_text:
+            return {"ok": True, "command": cmd_text, "returncode": 0, "stdout": "ok", "stderr": ""}
+        if "gateway start" in cmd_text:
+            return {"ok": True, "command": cmd_text, "returncode": 0, "stdout": "ok", "stderr": ""}
+        if "system event" in cmd_text:
+            return {"ok": True, "command": cmd_text, "returncode": 0, "stdout": "ok", "stderr": ""}
+        return {"ok": True, "command": cmd_text, "returncode": 0, "stdout": "ok", "stderr": ""}
+
+    monkeypatch.setattr(operator_service, "_run_cli_command", _fake_run)
+
+    payload = await operator_service.doctor(apply_fix=True, target="session")
+
+    assert payload["ok"] is True
+    assert payload["scope"] == "runtime"
+    assert payload["target"] == "session"
+    assert payload["fix"]["requested"] is True
+    assert payload["fix"]["action"] == "openclaw_recovery"
+    assert payload["fix"]["applied"] is True
+    assert any(item.get("name") == "gateway_restart" for item in payload["fix"]["actions"])
 
 
 @pytest.mark.asyncio

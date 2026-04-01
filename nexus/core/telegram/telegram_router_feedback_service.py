@@ -38,6 +38,14 @@ MODEL_VERDICT_LABELS: dict[str, str] = {
 MODEL_VERDICTS = list(MODEL_VERDICT_LABELS.keys())
 
 
+def decision_token(decision_id: str | None) -> str:
+    """Compact decision reference safe for Telegram callback_data (<=64 bytes)."""
+    raw = str(decision_id or "").strip()
+    if not raw:
+        return ""
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+
+
 def feedback_enabled(config: dict[str, Any] | None, *, surface: str) -> bool:
     cfg = config or {}
     if not cfg.get("enabled"):
@@ -131,10 +139,11 @@ def build_feedback_prompt(meta: dict[str, Any]) -> tuple[str, list[list[Button]]
     task = str(meta.get("task_type") or "unknown")
     model = str(meta.get("selected_model") or "unknown")
     text = f"🧭 {task} · {model} · {confidence_text}\nFeedback?"
+    token = decision_token(str(meta.get("decision_id") or ""))
     buttons = [
         [
-            Button("✅ Correct", callback_data=f"{CALLBACK_PREFIX}ok:{meta['decision_id']}"),
-            Button("❌ Wrong", callback_data=f"{CALLBACK_PREFIX}wrong:{meta['decision_id']}"),
+            Button("✅ Correct", callback_data=f"{CALLBACK_PREFIX}ok:{token}"),
+            Button("❌ Wrong", callback_data=f"{CALLBACK_PREFIX}wrong:{token}"),
         ],
     ]
     return text, buttons
@@ -142,31 +151,31 @@ def build_feedback_prompt(meta: dict[str, Any]) -> tuple[str, list[list[Button]]
 
 def build_wrong_task_prompt(meta: dict[str, Any]) -> tuple[str, list[list[Button]]]:
     """Step 1 of 'Wrong' flow: ask which task was correct."""
-    decision_id = meta["decision_id"]
+    token = decision_token(str(meta.get("decision_id") or ""))
     text = "❌ Step 1/2 — Which task was it?"
     buttons: list[list[Button]] = []
     row: list[Button] = []
     for label in TASK_LABELS:
-        row.append(Button(label, callback_data=f"{CALLBACK_PREFIX}wrong_task:{decision_id}:{label}"))
+        row.append(Button(label, callback_data=f"{CALLBACK_PREFIX}wrong_task:{token}:{label}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
-    buttons.append([Button("⏭ Skip", callback_data=f"{CALLBACK_PREFIX}wrong_task:{decision_id}:skip")])
+    buttons.append([Button("⏭ Skip", callback_data=f"{CALLBACK_PREFIX}wrong_task:{token}:skip")])
     return text, buttons
 
 
 def build_wrong_model_prompt(meta: dict[str, Any], corrected_task: str | None) -> tuple[str, list[list[Button]]]:
     """Step 2 of 'Wrong' flow: ask about model quality (too cheap/ok/too powerful)."""
-    decision_id = meta["decision_id"]
+    token = decision_token(str(meta.get("decision_id") or ""))
     task_slot = corrected_task or "skip"
     text = "❌ Step 2/2 — Was the model right?"
     buttons: list[list[Button]] = [[
-        Button(label_text, callback_data=f"{CALLBACK_PREFIX}wrong_model:{decision_id}:{task_slot}:{verdict_key}")
+        Button(label_text, callback_data=f"{CALLBACK_PREFIX}wrong_model:{token}:{task_slot}:{verdict_key}")
         for verdict_key, label_text in MODEL_VERDICT_LABELS.items()
     ]]
-    buttons.append([Button("⏭ Skip", callback_data=f"{CALLBACK_PREFIX}wrong_model:{decision_id}:{task_slot}:skip")])
+    buttons.append([Button("⏭ Skip", callback_data=f"{CALLBACK_PREFIX}wrong_model:{token}:{task_slot}:skip")])
     return text, buttons
 
 
