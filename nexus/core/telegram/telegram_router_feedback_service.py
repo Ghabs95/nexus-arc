@@ -28,6 +28,8 @@ SUBMITTED_KEY = "router_feedback_submitted"
 CALLBACK_PREFIX = "routefb:"
 FALLBACK_STORE_PATH = os.path.join(NEXUS_STATE_DIR, "router_feedback_fallback.jsonl")
 PENDING_STORE_PATH = os.path.join(NEXUS_STATE_DIR, "router_feedback_pending.json")
+TOKEN_MAP_STORE_PATH = os.path.join(NEXUS_STATE_DIR, "router_feedback_tokens.json")
+TOKEN_MAP_TTL_SECONDS = 24 * 3600
 
 # Model-verdict options surfaced in step 2 of the "Wrong" flow
 MODEL_VERDICT_LABELS: dict[str, str] = {
@@ -377,6 +379,97 @@ def clear_external_pending_feedback(*, user_id: str, decision_id: str | None = N
         )
 
 
+def _load_token_map_store(*, store_path: str = TOKEN_MAP_STORE_PATH) -> dict[str, Any]:
+    try:
+        with open(store_path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return payload if isinstance(payload, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        LOGGER.debug("Failed to load router feedback token store", exc_info=True)
+        return {}
+
+
+def _save_token_map_store(payload: dict[str, Any], *, store_path: str = TOKEN_MAP_STORE_PATH) -> None:
+    ensure_state_dir()
+    os.makedirs(os.path.dirname(store_path), exist_ok=True)
+    tmp_path = f"{store_path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, sort_keys=True)
+    os.replace(tmp_path, store_path)
+
+
+def _prune_token_map(payload: dict[str, Any], now_ts: int) -> None:
+    for user_id, refs in list(payload.items()):
+        if not isinstance(refs, dict):
+            payload.pop(user_id, None)
+            continue
+        for token, entry in list(refs.items()):
+            if not isinstance(entry, dict):
+                refs.pop(token, None)
+                continue
+            expires_at = int(entry.get("expires_at") or 0)
+            decision_id = str(entry.get("decision_id") or "").strip()
+            if not decision_id or expires_at <= now_ts:
+                refs.pop(token, None)
+        if not refs:
+            payload.pop(user_id, None)
+
+
+def register_feedback_token(*, user_id: str, decision_id: str | None, ttl_seconds: int = TOKEN_MAP_TTL_SECONDS, store_path: str = TOKEN_MAP_STORE_PATH) -> None:
+    uid = str(user_id or "").strip()
+    did = str(decision_id or "").strip()
+    if not uid or not did:
+        return
+    token = decision_token(did)
+    if not token:
+        return
+    now_ts = int(time.time())
+    payload = _load_token_map_store(store_path=store_path)
+    _prune_token_map(payload, now_ts)
+    refs = payload.setdefault(uid, {})
+    refs[token] = {
+        "decision_id": did,
+        "created_at": now_ts,
+        "expires_at": now_ts + max(60, int(ttl_seconds or TOKEN_MAP_TTL_SECONDS)),
+    }
+    try:
+        _save_token_map_store(payload, store_path=store_path)
+    except Exception:
+        LOGGER.warning("Failed to persist router feedback token store at %s", store_path, exc_info=True)
+
+
+def resolve_feedback_token(*, user_id: str, decision_ref: str | None, store_path: str = TOKEN_MAP_STORE_PATH) -> str | None:
+    uid = str(user_id or "").strip()
+    ref = str(decision_ref or "").strip()
+    if not uid or not ref:
+        return None
+
+    # Full UUID can pass-through for callers that already have it.
+    if len(ref) > 10 and ref.count("-") >= 4:
+        return ref
+
+    now_ts = int(time.time())
+    payload = _load_token_map_store(store_path=store_path)
+    _prune_token_map(payload, now_ts)
+    refs = payload.get(uid)
+    if not isinstance(refs, dict):
+        return None
+    entry = refs.get(ref)
+    decision_id = str(entry.get("decision_id") or "").strip() if isinstance(entry, dict) else ""
+    if not decision_id:
+        return None
+
+    # touch TTL on successful resolve
+    entry["expires_at"] = now_ts + TOKEN_MAP_TTL_SECONDS
+    try:
+        _save_token_map_store(payload, store_path=store_path)
+    except Exception:
+        LOGGER.debug("Failed to refresh token map TTL", exc_info=True)
+    return decision_id
+
+
 def send_feedback_prompt_to_telegram_user(*, chat_id: str, text: str, buttons: list[list[Button]], token: str | None = None, timeout_seconds: float = 4.0) -> tuple[bool, str]:
     api_token = str(token or TELEGRAM_TOKEN or "").strip()
     if not api_token:
@@ -452,6 +545,7 @@ async def maybe_send_feedback_prompt_external(
 
     meta["feedback_message_id"] = str(detail or "") or None
     store_external_pending_feedback(user_id=telegram_user_id, meta=meta)
+    register_feedback_token(user_id=telegram_user_id, decision_id=str(meta.get("decision_id") or ""))
     return True
 
 

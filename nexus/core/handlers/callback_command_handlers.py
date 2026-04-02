@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -30,11 +31,23 @@ from nexus.core.telegram.telegram_router_feedback_service import (
     has_feedback_submission,
     load_external_pending_feedback,
     remember_feedback_submission,
+    resolve_feedback_token,
     submit_feedback,
 )
 
 
 _ROUTE_FEEDBACK_VALID_ACTIONS = {"ok", "wrong", "fix", "wrong_task", "wrong_model"}
+
+
+def _is_uuid(value: str | None) -> bool:
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    try:
+        uuid.UUID(raw)
+        return True
+    except Exception:
+        return False
 
 
 @dataclass
@@ -275,15 +288,27 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
         if isinstance(pending, dict):
             ctx.user_state[PENDING_KEY] = pending
     if not isinstance(pending, dict):
-        pending = {
-            "decision_id": decision_ref,
-            "feedback_mode": "router",
-            "source_channel": getattr(getattr(ctx, "client", None), "name", None) or "openclaw",
-            "metadata": {},
-        }
-        ctx.user_state[PENDING_KEY] = pending
+        await ctx.edit_message_text(
+            message_id=query.message_id,
+            text="⚠️ Feedback card expired. Please submit feedback from a fresh routing prompt.",
+            buttons=[],
+        )
+        return
 
     actual_decision_id = str(pending.get("decision_id") or "")
+    if not _is_uuid(actual_decision_id):
+        resolved = resolve_feedback_token(user_id=str(ctx.user_id or ""), decision_ref=decision_ref)
+        if resolved and _is_uuid(resolved):
+            pending["decision_id"] = resolved
+            actual_decision_id = resolved
+            ctx.user_state[PENDING_KEY] = pending
+        else:
+            await ctx.edit_message_text(
+                message_id=query.message_id,
+                text="⚠️ Feedback reference invalid. Please submit feedback from a fresh routing prompt.",
+                buttons=[],
+            )
+            return
     expected_refs = {actual_decision_id, decision_token(actual_decision_id)}
     if decision_ref not in expected_refs:
         await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Feedback no longer matches the latest route.", buttons=[])
