@@ -535,6 +535,28 @@ def get_auth_session(session_id: str) -> AuthSessionRecord | None:
         return _row_to_session(row) if row else None
 
 
+def get_latest_auth_session_for_chat(chat_platform: str, chat_id: str) -> AuthSessionRecord | None:
+    """Return the latest auth session record for a chat sender (platform + chat id).
+
+    This is used to map incoming chat messages (Telegram, Discord) to the canonical
+    nexus_id stored in the auth session created during onboarding.
+    """
+    engine = _get_engine()
+    platform = str(chat_platform or "").strip().lower()
+    cid = str(chat_id or "").strip()
+    if not (platform and cid):
+        return None
+    with Session(engine) as session:
+        row = (
+            session.query(_AuthSessionRow)
+            .filter(_AuthSessionRow.chat_platform == platform)
+            .filter(_AuthSessionRow.chat_id == cid)
+            .order_by(_AuthSessionRow.created_at.desc())
+            .first()
+        )
+        return _row_to_session(row) if row else None
+
+
 def get_latest_auth_session_for_nexus(nexus_id: str) -> AuthSessionRecord | None:
     engine = _get_engine()
     with Session(engine) as session:
