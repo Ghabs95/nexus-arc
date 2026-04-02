@@ -11,10 +11,23 @@ from typing import Any
 
 from nexus.connectors.linkedin import linkedin_connector_service, LinkedInConnectorError
 from nexus.adapters.social.linkedin_publisher import LinkedInSocialAdapter
-from nexus.core.auth.credential_store import get_latest_auth_session_for_chat, record_social_publish_event
 from nexus.core.social_publish import derive_idempotency_key
 
 logger = logging.getLogger(__name__)
+
+
+def _get_latest_auth_session_for_chat(chat_platform: str, chat_id: str):
+    # Lazy import keeps unit tests lightweight when optional auth DB deps are missing.
+    from nexus.core.auth.credential_store import get_latest_auth_session_for_chat
+
+    return get_latest_auth_session_for_chat(chat_platform, chat_id)
+
+
+def _record_social_publish_event(**kwargs):
+    # Lazy import keeps unit tests lightweight when optional auth DB deps are missing.
+    from nexus.core.auth.credential_store import record_social_publish_event
+
+    return record_social_publish_event(**kwargs)
 
 
 def publish_linkedin_text(
@@ -48,7 +61,7 @@ def publish_linkedin_text(
         resolved_nexus_id = str(nexus_id)
     else:
         if chat_platform and chat_id:
-            session = get_latest_auth_session_for_chat(chat_platform, chat_id)
+            session = _get_latest_auth_session_for_chat(chat_platform, chat_id)
             if session:
                 resolved_nexus_id = str(session.nexus_id)
     if not resolved_nexus_id:
@@ -116,7 +129,7 @@ def publish_linkedin_text(
     # Persist audit/event
     try:
         published_at = getattr(result, "published_at", None) or datetime.now()
-        record = record_social_publish_event(
+        _record_social_publish_event(
             platform=platform,
             campaign_id=safe_campaign,
             post_id=getattr(result, "post_id", None),

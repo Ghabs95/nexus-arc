@@ -11,7 +11,7 @@ class DummySession:
 def test_resolve_nexus_id_and_dry_run(monkeypatch):
     # Monkeypatch the auth session lookup to return a fake session for a chat sender
     monkeypatch.setattr(
-        "nexus.core.auth.credential_store.get_latest_auth_session_for_chat",
+        "nexus.core.social_publish_linkedin._get_latest_auth_session_for_chat",
         lambda platform, cid: DummySession("nexus_1234"),
     )
 
