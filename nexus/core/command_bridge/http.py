@@ -364,13 +364,45 @@ def create_command_bridge_app(
                 )
                 return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
 
-            if method == "GET" and path == "/api/v1/operator/linkedin/auth-status":
-                payload = asyncio.run(
-                    router.operator_service.linkedin_auth_status(
-                        headers=environ,
+            if method == "POST" and path == "/api/v1/social/linkedin/publish":
+                payload = _load_json_body(environ)
+                # Validate required fields
+                content = payload.get("content")
+                if not isinstance(content, str) or not content.strip():
+                    return _json_response(start_response, 400, {"ok": False, "error": "content is required and must be non-empty"})
+                campaign_id = payload.get("campaign_id") or payload.get("campaign") or None
+                dry_run = bool(payload.get("dry_run", True))
+                idempotency_key = payload.get("idempotency_key") or None
+                nexus_id = payload.get("nexus_id") or None
+                chat_platform = payload.get("chat_platform") or None
+                chat_id = payload.get("chat_id") or None
+
+                # Fallback: use authenticated sender id header if available
+                if not nexus_id and not (chat_platform and chat_id):
+                    sender_hdr = environ.get("HTTP_X_SENDER_ID") or environ.get("HTTP_X_OPENCLAW_SENDER_ID") or ""
+                    sender_hdr = str(sender_hdr).strip()
+                    if sender_hdr:
+                        # assume openclaw/telegram callers carry platform info
+                        chat_id = chat_id or sender_hdr
+                        chat_platform = chat_platform or environ.get("HTTP_X_SENDER_PLATFORM") or environ.get("HTTP_X_OPENCLAW_PLATFORM") or None
+
+                try:
+                    from nexus.core.social_publish_linkedin import publish_linkedin_text
+                    result = publish_linkedin_text(
+                        content=content,
+                        campaign_id=campaign_id,
+                        nexus_id=nexus_id,
+                        chat_platform=chat_platform,
+                        chat_id=chat_id,
+                        dry_run=dry_run,
+                        idempotency_key=idempotency_key,
                     )
-                )
-                return _json_response(start_response, 200 if payload.get("ok") else 400, payload)
+                except Exception as exc:
+                    _logger.exception("LinkedIn publish handler failed")
+                    return _json_response(start_response, 500, {"ok": False, "error": "internal_error", "error_detail": str(exc)})
+
+                status = 200 if result.get("ok") else 400
+                return _json_response(start_response, status, result)
 
             if method == "GET" and path == "/api/v1/operator/linkedin/profile/me":
                 payload = asyncio.run(
