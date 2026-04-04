@@ -102,7 +102,10 @@ def extract_feedback_meta(
             "feedback_mode": "router",
             "task_type": str(feedback_meta.get("task_type") or feedback_meta.get("predicted_task") or "").strip(),
             "selected_model": str(feedback_meta.get("selected_model") or feedback_meta.get("model") or "").strip(),
+            "actual_model": str(feedback_meta.get("actual_model") or "").strip() or None,
+            "shadow_mode": bool(feedback_meta.get("shadow_mode")),
             "confidence": feedback_meta.get("confidence"),
+            "classifier_source": str(feedback_meta.get("classifier_source") or "").strip().lower() or None,
             "source_channel": str(feedback_meta.get("source_channel") or source_channel or "telegram").strip() or "telegram",
             "source_user_id": str(feedback_meta.get("source_user_id") or source_user_id or "").strip(),
             "source_sender_name": str(feedback_meta.get("source_sender_name") or "").strip(),
@@ -136,22 +139,36 @@ def extract_feedback_meta(
 
 def build_feedback_prompt(meta: dict[str, Any]) -> tuple[str, list[list[Button]]]:
     confidence = meta.get("confidence")
+    classifier_source = str(meta.get("classifier_source") or "").strip().lower()
     confidence_text = "?"
+    confidence_value = None
     try:
         if confidence is not None:
-            confidence_text = f"{float(confidence):.2f}"
+            confidence_value = float(confidence)
     except (TypeError, ValueError):
-        pass
+        confidence_value = None
+    if classifier_source in {"fallback", "heuristic"} or confidence_value in {0.60, 0.72}:
+        confidence_text = "fallback"
+    elif confidence_value is not None:
+        confidence_text = f"{confidence_value:.2f}"
     task = str(meta.get("task_type") or "unknown")
     model = str(meta.get("selected_model") or "unknown")
+    actual_model = str(meta.get("actual_model") or "").strip()
+    shadow_mode = bool(meta.get("shadow_mode"))
     metadata = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else {}
     preview = str(metadata.get("source_message_preview") or "").strip()
     sender_name = str(meta.get("source_sender_name") or "").strip()
     sender_id = str(meta.get("source_user_id") or "").strip()
     source_channel = str(meta.get("source_channel") or "").strip()
     reason = str(metadata.get("origin") or "").strip()
-    header = f"🧭 {task} · {model} · {confidence_text}"
+    header = (
+        f"🧭 shadow {task} · proposed {model} · {confidence_text}"
+        if shadow_mode
+        else f"🧭 {task} · {model} · {confidence_text}"
+    )
     details: list[str] = []
+    if shadow_mode and actual_model:
+        details.append(f"actual reply model: {actual_model}")
     if sender_name or sender_id:
         details.append(f"from @{sender_name or sender_id}".replace("@@", "@"))
     if source_channel:

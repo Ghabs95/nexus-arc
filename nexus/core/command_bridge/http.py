@@ -140,6 +140,9 @@ def create_command_bridge_app(
                 source_channel = str(payload.get("source_channel") or "openclaw").strip() or "openclaw"
                 source_message_id = str(payload.get("source_message_id") or "").strip() or None
                 confidence = payload.get("confidence")
+                classifier_source = str(payload.get("classifier_source") or "").strip() or None
+                shadow_mode = bool(payload.get("shadow_mode"))
+                actual_model = str(payload.get("actual_model") or "").strip() or None
                 source_message_preview = str(payload.get("source_message_preview") or "").strip() or None
 
                 result_payload = {
@@ -147,7 +150,10 @@ def create_command_bridge_app(
                         "decision_id": decision_id,
                         "task_type": task_type,
                         "selected_model": selected_model,
+                        "actual_model": actual_model,
+                        "shadow_mode": shadow_mode,
                         "confidence": confidence,
+                        "classifier_source": classifier_source,
                         "source_channel": source_channel,
                         "source_user_id": telegram_user_id,
                         "source_sender_name": str(payload.get("source_sender_name") or "").strip(),

@@ -311,8 +311,24 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
             return
     expected_refs = {actual_decision_id, decision_token(actual_decision_id)}
     if decision_ref not in expected_refs:
-        await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Feedback no longer matches the latest route.", buttons=[])
-        return
+        # Allow older cards to be submitted when a newer card overwrote the
+        # single pending slot. If the callback token resolves for this user,
+        # rebuild a minimal pending payload for that decision instead of
+        # rejecting with "latest route".
+        resolved = resolve_feedback_token(user_id=str(ctx.user_id or ""), decision_ref=decision_ref)
+        if not resolved or not _is_uuid(resolved):
+            await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Feedback no longer matches the latest route.", buttons=[])
+            return
+        pending = {
+            "decision_id": resolved,
+            "feedback_mode": "router",
+            "task_type": str(pending.get("task_type") or "unknown"),
+            "selected_model": str(pending.get("selected_model") or "unknown"),
+            "source_channel": str(pending.get("source_channel") or "telegram"),
+            "metadata": pending.get("metadata") if isinstance(pending.get("metadata"), dict) else {},
+        }
+        ctx.user_state[PENDING_KEY] = pending
+        actual_decision_id = resolved
 
     user_id = str(ctx.user_id or "") or None
     if has_feedback_submission(ctx.user_state, decision_id=actual_decision_id, user_id=user_id):

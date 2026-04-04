@@ -176,27 +176,45 @@ class OpenClawEventHandler:
             agent_type = agent_type or _safe_str(getattr(event, "agent_name", ""))
 
         try:
-            ok = await self._channel.send_workflow_notification(
-                event_type=event.event_type,
-                workflow_id=workflow_id,
-                project_key=project_key,
-                repo=repo,
-                issue_number=issue_number,
-                pr_number=pr_number,
-                pr_url=pr_url,
-                current_step=current_step,
-                step_id=step_id,
-                step_num=step_num,
-                step_name=step_name,
-                workflow_phase=workflow_phase,
-                agent_type=agent_type,
-                severity=_event_severity(event),
-                summary=_event_summary(event),
-                blocked_reason=blocked_reason,
-                key_findings=_event_findings(event),
-                suggested_actions=_suggested_actions(event),
-                correlation_token=correlation_token or None,
-            )
+            if isinstance(event, SystemAlert) and not workflow_id:
+                from nexus.adapters.notifications.base import Message
+                from nexus.core.models import Severity
+
+                severity_map = {
+                    "info": Severity.INFO,
+                    "warning": Severity.WARNING,
+                    "error": Severity.ERROR,
+                    "critical": Severity.CRITICAL,
+                }
+                ok = bool(await self._channel.send_message(
+                    "",
+                    Message(
+                        text=_event_summary(event),
+                        severity=severity_map.get(_event_severity(event), Severity.INFO),
+                    ),
+                ))
+            else:
+                ok = await self._channel.send_workflow_notification(
+                    event_type=event.event_type,
+                    workflow_id=workflow_id,
+                    project_key=project_key,
+                    repo=repo,
+                    issue_number=issue_number,
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    current_step=current_step,
+                    step_id=step_id,
+                    step_num=step_num,
+                    step_name=step_name,
+                    workflow_phase=workflow_phase,
+                    agent_type=agent_type,
+                    severity=_event_severity(event),
+                    summary=_event_summary(event),
+                    blocked_reason=blocked_reason,
+                    key_findings=_event_findings(event),
+                    suggested_actions=_suggested_actions(event),
+                    correlation_token=correlation_token or None,
+                )
             self._last_send_ok = bool(ok)
         except Exception as exc:
             self._last_send_ok = False

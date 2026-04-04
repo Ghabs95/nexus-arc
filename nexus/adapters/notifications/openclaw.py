@@ -256,7 +256,7 @@ class OpenClawNotificationChannel(NotificationChannel):
     async def send_message(self, user_id: str, message: Message) -> str:
         emoji = _SEVERITY_EMOJI.get(message.severity, "ℹ️")
         text = f"{emoji} **[Nexus]** {message.text}"
-        payload = self._build_payload(text, target_user=user_id or self._sender_id)
+        payload = self._build_payload(text, target_user=user_id or self._sender_id, session_key=False)
         ok = await self._post(payload)
         if not ok:
             logger.error(
@@ -268,18 +268,18 @@ class OpenClawNotificationChannel(NotificationChannel):
         return "openclaw:ok"
 
     async def update_message(self, message_id: str, new_text: str) -> None:
-        payload = self._build_payload(f"ℹ️ **[Nexus update]** {new_text}")
+        payload = self._build_payload(f"ℹ️ **[Nexus update]** {new_text}", session_key=False)
         await self._post(payload)
 
     async def send_alert(self, message: str, severity: Severity) -> None:
         emoji = _SEVERITY_EMOJI.get(severity, "⚠️")
         text = f"{emoji} **[Nexus alert]** {message}"
-        payload = self._build_payload(text)
+        payload = self._build_payload(text, session_key=False)
         await self._post(payload)
 
     async def request_input(self, user_id: str, prompt: str) -> str:
         text = f"💬 **[Nexus needs input]** {prompt}"
-        payload = self._build_payload(text, target_user=user_id or self._sender_id)
+        payload = self._build_payload(text, target_user=user_id or self._sender_id, session_key=False)
         await self._post(payload)
         return ""
 
@@ -402,7 +402,7 @@ class OpenClawNotificationChannel(NotificationChannel):
         target_user: str | None = None,
         *,
         metadata: dict[str, Any] | None = None,
-        session_key: str | None = None,
+        session_key: str | bool | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "message": text,
@@ -414,7 +414,10 @@ class OpenClawNotificationChannel(NotificationChannel):
             payload["wakeMode"] = self._wake_mode
         if metadata:
             payload["metadata"] = metadata
-        resolved_session_key = str(session_key or self._session_key or "").strip()
+        if session_key is False:
+            resolved_session_key = ""
+        else:
+            resolved_session_key = str(session_key or self._session_key or "").strip()
         if resolved_session_key:
             payload["sessionKey"] = resolved_session_key
         recipient = target_user or self._sender_id
