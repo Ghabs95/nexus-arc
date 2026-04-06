@@ -30,6 +30,7 @@ from nexus.core.telegram.telegram_router_feedback_service import (
     decision_token,
     has_feedback_submission,
     load_external_pending_feedback,
+    load_feedback_meta_for_ref,
     remember_feedback_submission,
     resolve_feedback_token,
     submit_feedback,
@@ -312,21 +313,26 @@ async def route_feedback_callback_handler(ctx: InteractiveContext, deps: Callbac
     expected_refs = {actual_decision_id, decision_token(actual_decision_id)}
     if decision_ref not in expected_refs:
         # Allow older cards to be submitted when a newer card overwrote the
-        # single pending slot. If the callback token resolves for this user,
-        # rebuild a minimal pending payload for that decision instead of
-        # rejecting with "latest route".
+        # single pending slot. Recover the exact stored metadata for the
+        # clicked card when possible so delayed/batched feedback still maps to
+        # the original routed decision.
+        recovered = load_feedback_meta_for_ref(user_id=str(ctx.user_id or ""), decision_ref=decision_ref)
         resolved = resolve_feedback_token(user_id=str(ctx.user_id or ""), decision_ref=decision_ref)
         if not resolved or not _is_uuid(resolved):
             await ctx.edit_message_text(message_id=query.message_id, text="⚠️ Feedback no longer matches the latest route.", buttons=[])
             return
-        pending = {
-            "decision_id": resolved,
-            "feedback_mode": "router",
-            "task_type": str(pending.get("task_type") or "unknown"),
-            "selected_model": str(pending.get("selected_model") or "unknown"),
-            "source_channel": str(pending.get("source_channel") or "telegram"),
-            "metadata": pending.get("metadata") if isinstance(pending.get("metadata"), dict) else {},
-        }
+        if isinstance(recovered, dict):
+            pending = dict(recovered)
+        else:
+            pending = {
+                "decision_id": resolved,
+                "feedback_mode": "router",
+                "task_type": str(pending.get("task_type") or "unknown"),
+                "selected_model": str(pending.get("selected_model") or "unknown"),
+                "source_channel": str(pending.get("source_channel") or "telegram"),
+                "metadata": pending.get("metadata") if isinstance(pending.get("metadata"), dict) else {},
+            }
+        pending["decision_id"] = resolved
         ctx.user_state[PENDING_KEY] = pending
         actual_decision_id = resolved
 
