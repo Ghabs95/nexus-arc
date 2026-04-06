@@ -247,6 +247,13 @@ async def maybe_send_feedback_prompt(*, ctx: Any, user_state: dict[str, Any], fe
         sent_id = await ctx.reply_text(text, buttons=buttons, parse_mode=None)
         meta["feedback_message_id"] = str(sent_id or "") or None
         user_state[PENDING_KEY] = meta
+        if source_user_id:
+            store_external_pending_feedback(user_id=source_user_id, meta=meta)
+            register_feedback_token(
+                user_id=source_user_id,
+                decision_id=str(meta.get("decision_id") or ""),
+                meta=meta,
+            )
     except Exception:
         LOGGER.debug("Router feedback card send failed", exc_info=True)
 
@@ -434,7 +441,14 @@ def _prune_token_map(payload: dict[str, Any], now_ts: int) -> None:
             payload.pop(user_id, None)
 
 
-def register_feedback_token(*, user_id: str, decision_id: str | None, ttl_seconds: int = TOKEN_MAP_TTL_SECONDS, store_path: str = TOKEN_MAP_STORE_PATH) -> None:
+def register_feedback_token(
+    *,
+    user_id: str,
+    decision_id: str | None,
+    meta: dict[str, Any] | None = None,
+    ttl_seconds: int = TOKEN_MAP_TTL_SECONDS,
+    store_path: str = TOKEN_MAP_STORE_PATH,
+) -> None:
     uid = str(user_id or "").strip()
     did = str(decision_id or "").strip()
     if not uid or not did:
@@ -446,11 +460,14 @@ def register_feedback_token(*, user_id: str, decision_id: str | None, ttl_second
     payload = _load_token_map_store(store_path=store_path)
     _prune_token_map(payload, now_ts)
     refs = payload.setdefault(uid, {})
-    refs[token] = {
+    entry = {
         "decision_id": did,
         "created_at": now_ts,
         "expires_at": now_ts + max(60, int(ttl_seconds or TOKEN_MAP_TTL_SECONDS)),
     }
+    if isinstance(meta, dict):
+        entry["meta"] = dict(meta)
+    refs[token] = entry
     try:
         _save_token_map_store(payload, store_path=store_path)
     except Exception:
@@ -485,6 +502,39 @@ def resolve_feedback_token(*, user_id: str, decision_ref: str | None, store_path
     except Exception:
         LOGGER.debug("Failed to refresh token map TTL", exc_info=True)
     return decision_id
+
+
+def load_feedback_meta_for_ref(*, user_id: str, decision_ref: str | None, store_path: str = TOKEN_MAP_STORE_PATH) -> dict[str, Any] | None:
+    uid = str(user_id or "").strip()
+    ref = str(decision_ref or "").strip()
+    if not uid or not ref:
+        return None
+    # UUID decision_id: derive the stored token key deterministically so that
+    # callbacks carrying the full decision_id (older cards) still resolve meta.
+    if len(ref) > 10 and ref.count("-") >= 4:
+        ref = decision_token(ref)
+        if not ref:
+            return None
+
+    now_ts = int(time.time())
+    payload = _load_token_map_store(store_path=store_path)
+    _prune_token_map(payload, now_ts)
+    refs = payload.get(uid)
+    if not isinstance(refs, dict):
+        return None
+    entry = refs.get(ref)
+    if not isinstance(entry, dict):
+        return None
+    meta = entry.get("meta")
+    if not isinstance(meta, dict):
+        return None
+
+    entry["expires_at"] = now_ts + TOKEN_MAP_TTL_SECONDS
+    try:
+        _save_token_map_store(payload, store_path=store_path)
+    except Exception:
+        LOGGER.debug("Failed to refresh token map TTL", exc_info=True)
+    return dict(meta)
 
 
 def send_feedback_prompt_to_telegram_user(*, chat_id: str, text: str, buttons: list[list[Button]], token: str | None = None, timeout_seconds: float = 4.0) -> tuple[bool, str]:
@@ -562,7 +612,11 @@ async def maybe_send_feedback_prompt_external(
 
     meta["feedback_message_id"] = str(detail or "") or None
     store_external_pending_feedback(user_id=telegram_user_id, meta=meta)
-    register_feedback_token(user_id=telegram_user_id, decision_id=str(meta.get("decision_id") or ""))
+    register_feedback_token(
+        user_id=telegram_user_id,
+        decision_id=str(meta.get("decision_id") or ""),
+        meta=meta,
+    )
     return True
 
 
