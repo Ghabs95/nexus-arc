@@ -509,8 +509,12 @@ def load_feedback_meta_for_ref(*, user_id: str, decision_ref: str | None, store_
     ref = str(decision_ref or "").strip()
     if not uid or not ref:
         return None
+    # UUID decision_id: derive the stored token key deterministically so that
+    # callbacks carrying the full decision_id (older cards) still resolve meta.
     if len(ref) > 10 and ref.count("-") >= 4:
-        return None
+        ref = decision_token(ref)
+        if not ref:
+            return None
 
     now_ts = int(time.time())
     payload = _load_token_map_store(store_path=store_path)

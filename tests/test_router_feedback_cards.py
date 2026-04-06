@@ -79,6 +79,33 @@ def test_feedback_token_round_trips_meta(tmp_path):
     ) == meta
 
 
+def test_load_feedback_meta_for_ref_accepts_uuid_decision_id(tmp_path):
+    """UUID decision_id passed as decision_ref should resolve meta via token derivation."""
+    store_path = tmp_path / "tokens.json"
+    decision_id = "33333333-3333-4333-8333-333333333333"
+    meta = {
+        "decision_id": decision_id,
+        "task_type": "coding",
+        "selected_model": "anthropic/claude-opus",
+        "source_channel": "telegram",
+        "metadata": {"source_message_preview": "uuid ref test turn"},
+    }
+
+    feedback_service.register_feedback_token(
+        user_id="user-2",
+        decision_id=decision_id,
+        meta=meta,
+        store_path=str(store_path),
+    )
+
+    # Passing the full UUID as decision_ref should still return the stored meta.
+    assert feedback_service.load_feedback_meta_for_ref(
+        user_id="user-2",
+        decision_ref=decision_id,
+        store_path=str(store_path),
+    ) == meta
+
+
 @pytest.mark.asyncio
 async def test_route_feedback_callback_accepts_older_card_when_token_resolves(monkeypatch):
     old_decision = "11111111-1111-4111-8111-111111111111"
