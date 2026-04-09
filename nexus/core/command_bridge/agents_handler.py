@@ -26,7 +26,6 @@ Response schema:
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -38,11 +37,11 @@ async def handle_agents_run(payload: dict[str, Any], config: dict | None = None)
     Entry point for POST /api/v1/agents/run.
     Builds the requested agent composition and runs it.
     """
-    from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
-    from nexus.agents.sequential import SequentialAgent
-    from nexus.agents.parallel import ParallelAgent
-    from nexus.agents.loop import LoopAgent
+    from nexus.agents.base import AgentContext, BaseAgent
     from nexus.agents.coordinator import Coordinator
+    from nexus.agents.loop import LoopAgent
+    from nexus.agents.parallel import ParallelAgent
+    from nexus.agents.sequential import SequentialAgent
 
     task = (payload.get("task") or "").strip()
     if not task:
