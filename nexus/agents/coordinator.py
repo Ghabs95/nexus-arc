@@ -3,6 +3,7 @@ nexus/agents/coordinator.py — Coordinator agent with LLM-driven delegation and
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -69,12 +70,15 @@ class LLMSubAgent(BaseAgent):
         if prior:
             prompt = f"Previous context:\n{prior}\n\nYour task:\n{context.task}"
 
+        # Prefer model injected by Coordinator via context metadata over the instance default.
+        model_override = context.metadata.get("_router_model") or self.model_override
+
         exec_ctx = ExecutionContext(
             agent_name=self.name,
             prompt=prompt,
             workspace=Path(self.workspace_path),
             metadata=context.metadata,
-            model_override=self.model_override,
+            model_override=model_override,
         )
         result = await self.ai_provider.execute_agent(exec_ctx)
         content = result.output if result.success else f"[{self.name} failed]: {result.output}"
@@ -166,14 +170,23 @@ class Coordinator(BaseAgent):
         selected = await self._select_agent(context)
         logger.info("Coordinator selected agent: %s", selected.name)
 
-        # 2. Ask nexus-router for the best model for this sub-task
-        model = _call_nexus_router(self.router_url, task=context.task)
-        if model and isinstance(selected, LLMSubAgent):
-            selected.model_override = model
+        # 2. Ask nexus-router for the best model for this sub-task (non-blocking)
+        loop = asyncio.get_running_loop()
+        model = await loop.run_in_executor(
+            None, lambda: _call_nexus_router(self.router_url, context.task)
+        )
+        if model:
             logger.info("nexus-router selected model: %s for agent: %s", model, selected.name)
 
-        # 3. Run selected agent with sliced context
+        # 3. Run selected agent with sliced context; inject router model via metadata
+        #    to avoid mutating the shared sub-agent object.
         sliced = slice_context(context)
+        if model and isinstance(selected, LLMSubAgent):
+            sliced = AgentContext(
+                task=sliced.task,
+                prior_outputs=sliced.prior_outputs,
+                metadata={**sliced.metadata, "_router_model": model},
+            )
         output = await selected.run(sliced)
         output.metadata["coordinator_selected_agent"] = selected.name
         output.metadata["coordinator_model"] = model

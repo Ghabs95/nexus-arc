@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
@@ -10,6 +11,7 @@ from nexus.agents.loop import LoopAgent
 
 class CounterAgent(BaseAgent):
     """Agent that increments a counter and returns it."""
+
     def __init__(self):
         super().__init__("counter")
         self.call_count = 0
@@ -21,6 +23,7 @@ class CounterAgent(BaseAgent):
 
 class ToggleAgent(BaseAgent):
     """Agent that alternates outputs."""
+
     def __init__(self):
         super().__init__("toggle")
         self._flip = False
@@ -79,6 +82,24 @@ def test_loop_passes_prior_outputs():
     asyncio.run(loop.run(ctx))
     # First iter has 0 prior outputs, second has 1, third has 2
     assert prior_outputs_received == [0, 1, 2]
+
+
+def test_loop_stop_condition_called_exactly_once_per_iteration():
+    """stop_condition must not be called extra times after the loop exits."""
+    call_count = [0]
+
+    def counting_condition(output: AgentOutput) -> bool:
+        call_count[0] += 1
+        return call_count[0] >= 2
+
+    agent = CounterAgent()
+    loop = LoopAgent("loop", agent, stop_condition=counting_condition, max_iterations=10)
+    ctx = AgentContext(task="test")
+    result = asyncio.run(loop.run(ctx))
+    # stop_condition returns True on 2nd call → loop runs 2 iterations
+    assert result.metadata["loop_iterations"] == 2
+    # Condition was called exactly once per iteration (2 times total, not 3)
+    assert call_count[0] == 2
 
 
 def test_loop_invalid_max_iterations():

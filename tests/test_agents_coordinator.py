@@ -2,19 +2,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
-from nexus.agents.coordinator import Coordinator, LLMSubAgent, _call_nexus_router
-
+from nexus.agents.coordinator import Coordinator, _call_nexus_router
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 class FixedAgent(BaseAgent):
     """Simple sub-agent that returns a fixed response."""
+
     def __init__(self, name: str, description: str, response: str):
         super().__init__(name=name, description=description)
         self.response = response
@@ -36,6 +36,7 @@ def make_mock_provider(delegation_response: str = "CodeReviewer"):
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 def test_coordinator_delegates_to_correct_agent():
     reviewer = FixedAgent("CodeReviewer", "Reviews code", "LGTM")
@@ -133,3 +134,25 @@ def test_coordinator_case_insensitive_name_match():
 
     assert a.ran is True
     assert result.content == "reviewed"
+
+
+def test_coordinator_does_not_mutate_sub_agent_model_override():
+    """Coordinator must not persist router model onto the shared sub-agent instance."""
+    from nexus.agents.coordinator import LLMSubAgent
+
+    mock_provider = make_mock_provider("llm-sub")
+    sub = LLMSubAgent(name="llm-sub", description="test sub-agent", ai_provider=mock_provider)
+    assert sub.model_override is None
+
+    coord_provider = make_mock_provider("llm-sub")
+    coord = Coordinator("coord", [sub], coord_provider)
+
+    with patch("nexus.agents.coordinator._call_nexus_router") as mock_router:
+        mock_router.return_value = "claude-sonnet"
+        # Patch the actual LLMSubAgent.run to avoid full AIProvider bootstrap
+        sub_result = AgentOutput(content="ok", metadata={"success": True, "agent": "llm-sub"})
+        with patch.object(sub, "run", new=AsyncMock(return_value=sub_result)):
+            asyncio.run(coord.run(AgentContext(task="test")))
+
+    # model_override on the shared instance must be unchanged after the run
+    assert sub.model_override is None
