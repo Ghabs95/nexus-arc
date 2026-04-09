@@ -493,6 +493,14 @@ def create_command_bridge_app(
                 result = asyncio.run(router.receive_reply(reply))
                 return _command_result_response(start_response, result)
 
+            # ── nexus/agents/ multi-agent bridge endpoint ─────────────────────
+            if method == "POST" and path == "/api/v1/agents/run":
+                payload = _load_json_body(environ)
+                from nexus.core.command_bridge.agents_handler import handle_agents_run
+                result = asyncio.run(handle_agents_run(payload, config=config))
+                status = 200 if result.get("ok") else 400
+                return _json_response(start_response, status, result)
+
             return _json_response(start_response, 404, {"error": "Not found"})
         except ReplyTokenError as exc:
             error_code = getattr(exc, "code", "invalid_reply_token")
