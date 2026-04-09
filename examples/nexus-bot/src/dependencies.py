@@ -111,6 +111,17 @@ user_manager = get_user_manager()
 
 DEFAULT_REPO = get_default_repo()
 _bridge_operator_service: BridgeOperatorService | None = None
+
+
+def get_bridge_operator_service() -> BridgeOperatorService:
+    global _bridge_operator_service
+    if _bridge_operator_service is None:
+        _bridge_operator_service = BridgeOperatorService(
+            workflow_state_plugin_kwargs=_WORKFLOW_STATE_PLUGIN_KWARGS
+        )
+    return _bridge_operator_service
+
+
 _WORKFLOW_STATE_PLUGIN_KWARGS = {
     "storage_dir": NEXUS_CORE_STORAGE_DIR,
     "storage_type": "postgres" if NEXUS_WORKFLOW_BACKEND == "postgres" else "file",
@@ -276,12 +287,6 @@ def _ops_handler_deps() -> OpsHandlerDeps:
         from nexus.core.integrations.inbox_queue import get_queue_overview
 
         return get_queue_overview(limit=limit)
-
-    global _bridge_operator_service
-    if _bridge_operator_service is None:
-        _bridge_operator_service = BridgeOperatorService(
-            workflow_state_plugin_kwargs=_WORKFLOW_STATE_PLUGIN_KWARGS
-        )
 
     return OpsHandlerDeps(
         logger=logger,

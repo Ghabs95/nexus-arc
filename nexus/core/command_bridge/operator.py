@@ -8,6 +8,8 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from typing import Any
 
@@ -780,8 +782,40 @@ class BridgeOperatorService:
         }
 
     def _openclaw_health_snapshot(self) -> dict[str, Any]:
+        def _fetch_json(url: str, timeout: float = 3.0) -> dict[str, Any] | None:
+            try:
+                with urllib.request.urlopen(url, timeout=timeout) as resp:
+                    body = resp.read().decode("utf-8", errors="replace")
+                    return json.loads(body)
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError):
+                return None
+
         openclaw_bin = shutil.which("openclaw")
+        checks: list[dict[str, Any]] = []
+
         if not openclaw_bin:
+            gateway_probe = _fetch_json(
+                "http://host.docker.internal:18789/healthz",
+                timeout=3.0,
+            ) or _fetch_json(
+                "http://172.17.0.1:18789/healthz",
+                timeout=3.0,
+            )
+            if isinstance(gateway_probe, dict) and gateway_probe.get("ok") is True:
+                checks.append(
+                    {
+                        "name": "openclaw_gateway",
+                        "status": "ok",
+                        "summary": "host OpenClaw gateway healthz reachable",
+                        "output": "healthz ok",
+                    }
+                )
+                return {
+                    "installed": True,
+                    "binary": None,
+                    "healthy": True,
+                    "checks": checks,
+                }
             return {
                 "installed": False,
                 "healthy": False,
@@ -789,12 +823,10 @@ class BridgeOperatorService:
                     {
                         "name": "openclaw_cli",
                         "status": "error",
-                        "summary": "openclaw CLI not found in PATH",
+                        "summary": "openclaw CLI not found in PATH and host gateway is unreachable",
                     }
                 ],
             }
-
-        checks: list[dict[str, Any]] = []
 
         status_cmd = self._run_cli_command([openclaw_bin, "status"], timeout=20)
         checks.append(
@@ -847,7 +879,17 @@ class BridgeOperatorService:
                 "requested": True,
                 "applied": False,
                 "action": "openclaw_recovery",
-                "reason": "openclaw CLI is not installed on this runtime.",
+                "reason": "openclaw CLI is not installed on this runtime and host gateway is unreachable.",
+                "actions": [],
+                "target": target or "openclaw",
+            }
+
+        if not snapshot.get("binary"):
+            return {
+                "requested": True,
+                "applied": False,
+                "action": "openclaw_recovery",
+                "reason": "host OpenClaw gateway is reachable, but in-container CLI recovery is unavailable from this runtime.",
                 "actions": [],
                 "target": target or "openclaw",
             }

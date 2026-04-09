@@ -68,6 +68,7 @@ from nexus.adapters.git.utils import build_issue_url, resolve_repo
 from nexus.core.analytics.reporting import get_stats_report
 from nexus.core.audit_store import AuditStore
 from nexus.core.execution_mode import PLANNING_EXECUTION_MODE
+from src.dependencies import get_bridge_operator_service
 from nexus.core.auth import (
     check_project_access as _svc_check_project_access,
 )
@@ -925,6 +926,7 @@ def _ops_handler_deps() -> OpsHandlerDeps:
         append_message=append_message,
         create_chat=create_chat,
         requester_context_builder=_requester_context_for_telegram_user_id,
+        run_doctor=lambda **kwargs: get_bridge_operator_service().doctor(**kwargs),
     )
 
 

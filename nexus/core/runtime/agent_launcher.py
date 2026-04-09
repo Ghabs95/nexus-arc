@@ -1718,6 +1718,14 @@ def _ensure_agent_definition(
     yaml_path = find_agent_definition(agent_type, search_dirs)
 
     if not yaml_path:
+        normalized = str(agent_type or "").strip().lower()
+        provider_names = {"copilot", "gemini", "claude", "codex", "cursor", "opencode", "pi"}
+        if normalized in provider_names:
+            logger.warning(
+                "Skipping agent YAML lookup for provider-like agent_type '%s'; treating it as a runtime provider label",
+                agent_type,
+            )
+            return True
         msg = f"Missing agent YAML for agent_type '{agent_type}' in {search_dirs}"
         logger.error(msg)
         emit_alert(msg, severity="error", source="agent_launcher")

@@ -1,6 +1,11 @@
 import logging
 import os
+from types import SimpleNamespace
 from typing import Any, Awaitable, Callable
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+from nexus.core.telegram.telegram_router_feedback_service import maybe_send_feedback_prompt
 
 
 async def handle_task_confirmation_callback(
@@ -78,6 +83,39 @@ async def handle_task_confirmation_callback(
         context.user_data["pending_task_project_resolution"] = result["pending_resolution"]
 
     await query.edit_message_text(result.get("message", "⚠️ Task processing completed."))
+
+    if isinstance(result, dict):
+        async def _reply_text(text: str, *, buttons=None, parse_mode=None):
+            reply_markup = None
+            if buttons:
+                keyboard = [
+                    [
+                        InlineKeyboardButton(button.label, callback_data=button.callback_data)
+                        for button in row
+                    ]
+                    for row in buttons
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+            reply = await query.message.reply_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+            return getattr(reply, "message_id", None)
+
+        feedback_ctx = SimpleNamespace(
+            user_id=str(user_id or "") or None,
+            raw_event=getattr(query, "message", None),
+            client=SimpleNamespace(name="telegram"),
+            reply_text=_reply_text,
+        )
+        await maybe_send_feedback_prompt(
+            ctx=feedback_ctx,
+            user_state=context.user_data,
+            feedback_config=router_feedback_config,
+            result=result,
+            source_message_id=message_id or None,
+        )
 
 
 async def handle_save_task_selection(
