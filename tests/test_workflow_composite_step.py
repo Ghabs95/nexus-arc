@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import asyncio
-import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
-from nexus.agents.sequential import SequentialAgent
-from nexus.agents.parallel import ParallelAgent
 from nexus.agents.loop import LoopAgent
+from nexus.agents.parallel import ParallelAgent
+from nexus.agents.sequential import SequentialAgent
 from nexus.core.workflow_engine.composite_step import CompositeStep
 
 
@@ -50,7 +49,9 @@ def test_composite_step_runs_loop():
             counter[0] += 1
             return AgentOutput(content=str(counter[0]))
 
-    loop = LoopAgent("loop", CountAgent("c"), stop_condition=lambda o: int(o.content) >= 2, max_iterations=5)
+    loop = LoopAgent(
+        "loop", CountAgent("c"), stop_condition=lambda o: int(o.content) >= 2, max_iterations=5
+    )
     cs = CompositeStep(loop)
     output = asyncio.run(cs.run(task="loop"))
     assert output.content == "2"
@@ -73,6 +74,7 @@ def test_composite_step_passes_prior_outputs():
 
 def test_composite_step_handles_agent_failure():
     """CompositeStep must not raise — returns error AgentOutput on failure."""
+
     class BrokenAgent(BaseAgent):
         async def run(self, context: AgentContext) -> AgentOutput:
             raise RuntimeError("agent exploded")

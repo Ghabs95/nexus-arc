@@ -3,7 +3,7 @@ nexus/agents/loop.py — LoopAgent: runs a sub-agent in a loop until a condition
 """
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from .base import AgentContext, AgentOutput, BaseAgent
 from .context import slice_context
@@ -39,6 +39,7 @@ class LoopAgent(BaseAgent):
         current_context = slice_context(context)
         last_output = AgentOutput(content="")
         iterations = 0
+        condition_met = False
 
         for i in range(self.max_iterations):
             iterations = i + 1
@@ -47,9 +48,10 @@ class LoopAgent(BaseAgent):
             current_context = current_context.with_output(last_output)
 
             if self.stop_condition(last_output):
+                condition_met = True
                 break
 
         last_output.metadata["loop_iterations"] = iterations
-        last_output.metadata["loop_completed"] = self.stop_condition(last_output)
+        last_output.metadata["loop_completed"] = condition_met
         last_output.metadata["loop_hit_max"] = iterations == self.max_iterations
         return last_output

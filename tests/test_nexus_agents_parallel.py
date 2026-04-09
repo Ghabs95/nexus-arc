@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+
 import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
@@ -38,7 +39,7 @@ def test_parallel_runs_all_agents():
 
 
 def test_parallel_runs_concurrently():
-    """Three 0.1s agents should complete in ~0.1s, not ~0.3s."""
+    """Three 0.05s agents should complete in ~0.05s, not ~0.15s."""
     agents = [SlowAgent(f"s{i}", 0.05, f"result{i}") for i in range(3)]
     par = ParallelAgent("par", agents)
     ctx = AgentContext(task="concurrent")
@@ -61,7 +62,7 @@ def test_parallel_metadata():
 
 
 def test_parallel_requires_sub_agents():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="at least one sub-agent"):
         ParallelAgent("empty", [])
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
@@ -10,6 +11,7 @@ from nexus.agents.loop import LoopAgent
 
 class CounterAgent(BaseAgent):
     """Agent that increments a counter and returns it."""
+
     def __init__(self):
         super().__init__("counter")
         self.call_count = 0
@@ -19,20 +21,11 @@ class CounterAgent(BaseAgent):
         return AgentOutput(content=str(self.call_count), metadata={"count": self.call_count})
 
 
-class ToggleAgent(BaseAgent):
-    """Agent that alternates outputs."""
-    def __init__(self):
-        super().__init__("toggle")
-        self._flip = False
-
-    async def run(self, context: AgentContext) -> AgentOutput:
-        self._flip = not self._flip
-        return AgentOutput(content="done" if self._flip else "not_done")
-
-
 def test_loop_stops_on_condition():
     counter = CounterAgent()
-    loop = LoopAgent("loop", counter, stop_condition=lambda o: int(o.content) >= 3, max_iterations=10)
+    loop = LoopAgent(
+        "loop", counter, stop_condition=lambda o: int(o.content) >= 3, max_iterations=10
+    )
     ctx = AgentContext(task="count")
     result = asyncio.run(loop.run(ctx))
     assert result.metadata["loop_iterations"] == 3
@@ -42,7 +35,7 @@ def test_loop_stops_on_condition():
 
 def test_loop_respects_max_iterations():
     counter = CounterAgent()
-    loop = LoopAgent("loop", counter, stop_condition=lambda o: False, max_iterations=4)
+    loop = LoopAgent("loop", counter, stop_condition=lambda _: False, max_iterations=4)
     ctx = AgentContext(task="forever")
     result = asyncio.run(loop.run(ctx))
     assert result.metadata["loop_iterations"] == 4
@@ -52,7 +45,7 @@ def test_loop_respects_max_iterations():
 
 def test_loop_single_iteration():
     counter = CounterAgent()
-    loop = LoopAgent("loop", counter, stop_condition=lambda o: True, max_iterations=5)
+    loop = LoopAgent("loop", counter, stop_condition=lambda _: True, max_iterations=5)
     ctx = AgentContext(task="once")
     result = asyncio.run(loop.run(ctx))
     assert result.metadata["loop_iterations"] == 1
@@ -70,7 +63,7 @@ def test_loop_passes_prior_outputs():
     agent = RecordPriorAgent("recorder")
     call_count = [0]
 
-    def stop_after_3(output):
+    def stop_after_3(_output):
         call_count[0] += 1
         return call_count[0] >= 3
 
@@ -83,5 +76,15 @@ def test_loop_passes_prior_outputs():
 
 def test_loop_invalid_max_iterations():
     agent = CounterAgent()
-    with pytest.raises(ValueError):
-        LoopAgent("loop", agent, stop_condition=lambda o: True, max_iterations=0)
+    with pytest.raises(ValueError, match="max_iterations must be >= 1"):
+        LoopAgent("loop", agent, stop_condition=lambda _: True, max_iterations=0)
+
+
+def test_loop_max_iterations_not_completed():
+    """When max_iterations is hit without condition, loop_completed must be False."""
+    counter = CounterAgent()
+    loop = LoopAgent("loop", counter, stop_condition=lambda _: False, max_iterations=3)
+    ctx = AgentContext(task="exhaust")
+    result = asyncio.run(loop.run(ctx))
+    assert result.metadata["loop_completed"] is False
+    assert result.metadata["loop_hit_max"] is True

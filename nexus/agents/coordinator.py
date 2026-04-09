@@ -1,19 +1,17 @@
 """
-nexus/agents/coordinator.py — Coordinator agent with LLM-driven delegation and nexus-router model selection.
+nexus/agents/coordinator.py — Coordinator agent with LLM-driven delegation and
+nexus-router model selection.
 """
 from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from .base import AgentContext, AgentOutput, BaseAgent
 from .context import slice_context
-
-if TYPE_CHECKING:
-    pass  # AIProvider imported lazily to avoid nexus.plugins bootstrap
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +105,10 @@ class Coordinator(BaseAgent):
         workspace_path: str = "/tmp",
         description: str = "",
     ) -> None:
-        super().__init__(name=name, description=description or "Coordinator that delegates tasks to sub-agents")
+        super().__init__(
+            name=name,
+            description=description or "Coordinator that delegates tasks to sub-agents",
+        )
         if not sub_agents:
             raise ValueError("Coordinator requires at least one sub-agent")
         self.sub_agents = sub_agents
@@ -157,7 +158,10 @@ class Coordinator(BaseAgent):
                 "Coordinator chose unknown agent %r — falling back to first sub-agent", chosen_name
             )
         except Exception as exc:
-            logger.warning("Coordinator LLM delegation failed (%s) — falling back to first sub-agent", exc)
+            logger.warning(
+                "Coordinator LLM delegation failed (%s) — falling back to first sub-agent",
+                exc,
+            )
 
         return self.sub_agents[0]
 

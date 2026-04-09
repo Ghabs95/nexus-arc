@@ -1,10 +1,9 @@
 """
-nexus/workflow/composite_step.py — CompositeStep: wraps nexus/agents/ primitives
+nexus/core/workflow_engine/composite_step.py — CompositeStep: wraps nexus/agents/ primitives
 into a Nexus Workflow step, preserving Git artifact writing and DB persistence.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -67,6 +66,6 @@ class CompositeStep:
             )
 
     @classmethod
-    def from_metadata(cls, step_metadata: dict[str, Any]) -> "CompositeStep | None":
+    def from_metadata(cls, step_metadata: dict[str, Any]) -> CompositeStep | None:
         """Extract a CompositeStep from a WorkflowStep's metadata dict, if present."""
         return step_metadata.get(cls.METADATA_KEY)

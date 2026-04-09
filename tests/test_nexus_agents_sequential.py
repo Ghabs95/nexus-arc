@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
 from nexus.agents.sequential import SequentialAgent
@@ -11,12 +11,14 @@ from nexus.agents.sequential import SequentialAgent
 
 class EchoAgent(BaseAgent):
     """Test agent that echoes its name + the task."""
+
     async def run(self, context: AgentContext) -> AgentOutput:
         return AgentOutput(content=f"{self.name}:{context.task}", metadata={"agent": self.name})
 
 
 class AppendAgent(BaseAgent):
     """Test agent that appends its name to prior outputs."""
+
     async def run(self, context: AgentContext) -> AgentOutput:
         prior = " | ".join(o.content for o in context.prior_outputs)
         return AgentOutput(content=f"{prior} -> {self.name}" if prior else self.name)
@@ -65,7 +67,7 @@ def test_sequential_context_sliced():
 
 
 def test_sequential_requires_sub_agents():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="at least one sub-agent"):
         SequentialAgent("empty", [])
 
 
@@ -77,10 +79,7 @@ def test_sequential_single_agent():
     assert result.content == "solo:hello"
 
 
-# Integration test: two-agent pipeline end-to-end
 def test_sequential_integration_two_agents():
-    results = []
-
     class SummaryAgent(BaseAgent):
         async def run(self, context: AgentContext) -> AgentOutput:
             return AgentOutput(content=f"Summary of: {context.task}")
