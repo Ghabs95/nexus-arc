@@ -29,11 +29,11 @@ class AgentContext:
     prior_outputs: list[AgentOutput] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def with_task(self, task: str) -> "AgentContext":
+    def with_task(self, task: str) -> AgentContext:
         """Return a new context with a different task, keeping prior outputs."""
         return AgentContext(task=task, prior_outputs=self.prior_outputs.copy(), metadata=self.metadata.copy())
 
-    def with_output(self, output: AgentOutput) -> "AgentContext":
+    def with_output(self, output: AgentOutput) -> AgentContext:
         """Return a new context with output appended to prior_outputs."""
         return AgentContext(
             task=self.task,
@@ -55,7 +55,7 @@ class BaseAgent(ABC):
     def __init__(self, name: str, description: str = "") -> None:
         self.name = name
         self.description = description
-        self._parent: "BaseAgent | None" = None
+        self._parent: BaseAgent | None = None
 
     @abstractmethod
     async def run(self, context: AgentContext) -> AgentOutput:

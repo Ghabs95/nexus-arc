@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-import pytest
 
 from nexus.core.command_bridge.agents_handler import handle_agents_run
-
 
 AGENTS = [
     {"name": "Summariser", "description": "Summarises text", "response": "Summary done"},
@@ -36,7 +34,6 @@ def test_parallel_run():
 
 
 def test_loop_run():
-    counter = {"n": 0}
     result = asyncio.run(handle_agents_run({
         "task": "Keep trying",
         "agent_type": "loop",

@@ -3,7 +3,7 @@ nexus/agents/loop.py — LoopAgent: runs a sub-agent in a loop until a condition
 """
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from .base import AgentContext, AgentOutput, BaseAgent
 from .context import slice_context

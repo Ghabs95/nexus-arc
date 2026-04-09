@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
@@ -10,6 +11,7 @@ from nexus.agents.loop import LoopAgent
 
 class CounterAgent(BaseAgent):
     """Agent that increments a counter and returns it."""
+
     def __init__(self):
         super().__init__("counter")
         self.call_count = 0
@@ -21,6 +23,7 @@ class CounterAgent(BaseAgent):
 
 class ToggleAgent(BaseAgent):
     """Agent that alternates outputs."""
+
     def __init__(self):
         super().__init__("toggle")
         self._flip = False

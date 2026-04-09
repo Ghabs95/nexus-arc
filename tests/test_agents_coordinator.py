@@ -2,19 +2,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
-from nexus.agents.coordinator import Coordinator, LLMSubAgent, _call_nexus_router
+from nexus.agents.coordinator import Coordinator, _call_nexus_router
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
 
 class FixedAgent(BaseAgent):
     """Simple sub-agent that returns a fixed response."""
+
     def __init__(self, name: str, description: str, response: str):
         super().__init__(name=name, description=description)
         self.response = response
@@ -36,6 +36,7 @@ def make_mock_provider(delegation_response: str = "CodeReviewer"):
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 def test_coordinator_delegates_to_correct_agent():
     reviewer = FixedAgent("CodeReviewer", "Reviews code", "LGTM")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+
 import pytest
 
 from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
