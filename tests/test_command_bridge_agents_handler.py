@@ -1,7 +1,9 @@
-"""Integration tests for POST /api/v1/agents/run bridge endpoint."""
+"""Tests for POST /api/v1/agents/run bridge endpoint."""
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from nexus.core.command_bridge.agents_handler import handle_agents_run
@@ -12,9 +14,21 @@ AGENTS = [
     {"name": "Reviewer", "description": "Reviews output", "response": "Review OK"},
 ]
 
+# Patch _get_ai_provider to return None so tests use MockSubAgent deterministically.
+# This also prevents real provider availability checks from running in CI.
+_no_provider = patch(
+    "nexus.core.command_bridge.agents_handler._get_ai_provider",
+    new=AsyncMock(return_value=None),
+)
 
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+@_no_provider
 def test_sequential_run():
-    result = asyncio.run(handle_agents_run({
+    result = _run(handle_agents_run({
         "task": "Summarise this document",
         "agent_type": "sequential",
         "agents": AGENTS,
@@ -24,8 +38,9 @@ def test_sequential_run():
     assert "metadata" in result
 
 
+@_no_provider
 def test_parallel_run():
-    result = asyncio.run(handle_agents_run({
+    result = _run(handle_agents_run({
         "task": "Analyse in parallel",
         "agent_type": "parallel",
         "agents": AGENTS,
@@ -35,9 +50,9 @@ def test_parallel_run():
     assert "Review OK" in result["output"]
 
 
+@_no_provider
 def test_loop_run():
-    counter = {"n": 0}
-    result = asyncio.run(handle_agents_run({
+    result = _run(handle_agents_run({
         "task": "Keep trying",
         "agent_type": "loop",
         "agents": [{"name": "Worker", "description": "Does work", "response": "done"}],
@@ -48,30 +63,34 @@ def test_loop_run():
     assert result["metadata"]["loop_iterations"] == 1
 
 
+@_no_provider
 def test_loop_requires_single_agent():
-    result = asyncio.run(handle_agents_run({
+    result = _run(handle_agents_run({
         "task": "loop",
         "agent_type": "loop",
-        "agents": AGENTS,  # two agents — should fail
+        "agents": AGENTS,
     }))
     assert result["ok"] is False
     assert "exactly one" in result["error"]
 
 
+@_no_provider
 def test_missing_task():
-    result = asyncio.run(handle_agents_run({"agent_type": "sequential", "agents": AGENTS}))
+    result = _run(handle_agents_run({"agent_type": "sequential", "agents": AGENTS}))
     assert result["ok"] is False
     assert "task is required" in result["error"]
 
 
+@_no_provider
 def test_missing_agents():
-    result = asyncio.run(handle_agents_run({"task": "do something", "agent_type": "sequential"}))
+    result = _run(handle_agents_run({"task": "do something", "agent_type": "sequential"}))
     assert result["ok"] is False
     assert "agents list" in result["error"]
 
 
+@_no_provider
 def test_unknown_agent_type():
-    result = asyncio.run(handle_agents_run({
+    result = _run(handle_agents_run({
         "task": "task",
         "agent_type": "invalid_type",
         "agents": AGENTS,
@@ -81,10 +100,15 @@ def test_unknown_agent_type():
 
 
 def test_coordinator_without_provider():
-    result = asyncio.run(handle_agents_run({
-        "task": "coordinate",
-        "agent_type": "coordinator",
-        "agents": AGENTS,
-    }))
+    """Coordinator must return an error when all providers are unavailable."""
+    with patch(
+        "nexus.core.command_bridge.agents_handler._get_ai_provider",
+        new=AsyncMock(return_value=None),
+    ):
+        result = _run(handle_agents_run({
+            "task": "coordinate",
+            "agent_type": "coordinator",
+            "agents": AGENTS,
+        }))
     assert result["ok"] is False
     assert "AI provider" in result["error"]

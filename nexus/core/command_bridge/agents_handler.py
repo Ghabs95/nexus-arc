@@ -23,6 +23,10 @@ Response schema:
         "metadata": dict,
         "error": "string (if ok=False)"
     }
+
+Note on MockSubAgent: when no AI provider is available (all providers fail
+availability check), agents fall back to MockSubAgent which returns the
+spec-defined response field. Useful for dry-run / testing.
 """
 from __future__ import annotations
 
@@ -35,7 +39,7 @@ logger = logging.getLogger(__name__)
 async def handle_agents_run(payload: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
     """
     Entry point for POST /api/v1/agents/run.
-    Builds the requested agent composition and runs it.
+    Resolves the AI provider once and passes it into all sub-agent builders.
     """
     from nexus.agents.base import AgentContext, BaseAgent
     from nexus.agents.coordinator import Coordinator
@@ -56,8 +60,11 @@ async def handle_agents_run(payload: dict[str, Any], config: dict | None = None)
     if not agents_spec:
         return {"ok": False, "error": "agents list is required"}
 
-    # Build sub-agents from spec
-    sub_agents: list[BaseAgent] = _build_sub_agents(agents_spec, config=config)
+    # Resolve provider once — passed into both sub-agent builder and coordinator.
+    # This avoids constructing multiple provider instances per request.
+    ai_provider = await _get_ai_provider(config)
+
+    sub_agents: list[BaseAgent] = _build_sub_agents(agents_spec, ai_provider=ai_provider)
 
     try:
         agent: BaseAgent
@@ -68,15 +75,13 @@ async def handle_agents_run(payload: dict[str, Any], config: dict | None = None)
         elif agent_type == "loop":
             if len(sub_agents) != 1:
                 return {"ok": False, "error": "loop agent_type requires exactly one agent"}
-            stop_fn = _make_stop_condition(stop_expr)
             agent = LoopAgent(
                 name="bridge_loop",
                 sub_agent=sub_agents[0],
-                stop_condition=stop_fn,
+                stop_condition=_make_stop_condition(stop_expr),
                 max_iterations=max_iterations,
             )
         elif agent_type == "coordinator":
-            ai_provider = _get_ai_provider(config)
             if ai_provider is None:
                 return {"ok": False, "error": "coordinator requires an AI provider; none configured"}
             agent = Coordinator(
@@ -88,8 +93,7 @@ async def handle_agents_run(payload: dict[str, Any], config: dict | None = None)
         else:
             return {"ok": False, "error": f"unknown agent_type: {agent_type}"}
 
-        context = AgentContext(task=task)
-        output = await agent.run(context)
+        output = await agent.run(AgentContext(task=task))
         return {"ok": True, "output": output.content, "metadata": output.metadata}
 
     except Exception as exc:
@@ -97,15 +101,12 @@ async def handle_agents_run(payload: dict[str, Any], config: dict | None = None)
         return {"ok": False, "error": str(exc)}
 
 
-def _build_sub_agents(specs: list[dict], config: dict | None = None):
+def _build_sub_agents(specs: list[dict], *, ai_provider: Any) -> list:
     """
-    Build sub-agents from spec list.
-    If an AI provider is available, wraps each spec as an LLMSubAgent.
-    Falls back to a MockSubAgent (returns description as output) for tests.
+    Build sub-agents from spec list using a pre-resolved AI provider.
+    Falls back to MockSubAgent when ai_provider is None (dry-run / testing).
     """
     from nexus.agents.base import AgentContext, AgentOutput, BaseAgent
-
-    ai_provider = _get_ai_provider(config)
 
     agents = []
     for spec in specs:
@@ -116,11 +117,10 @@ def _build_sub_agents(specs: list[dict], config: dict | None = None):
             from nexus.agents.coordinator import LLMSubAgent
             agents.append(LLMSubAgent(name=name, description=description, ai_provider=ai_provider))
         else:
-            # MockSubAgent: returns spec-defined response (useful for testing/dry-run)
             fixed_response = spec.get("response") or f"[{name}]: {description}"
 
             class _MockAgent(BaseAgent):
-                def __init__(self, _name, _desc, _resp):
+                def __init__(self, _name: str, _desc: str, _resp: str) -> None:
                     super().__init__(name=_name, description=_desc)
                     self._resp = _resp
 
@@ -132,44 +132,54 @@ def _build_sub_agents(specs: list[dict], config: dict | None = None):
     return agents
 
 
-def _get_ai_provider(config: dict | None):
-    """Resolve an AIProvider for agent execution.
+async def _get_ai_provider(config: dict | None) -> Any:
+    """Resolve and verify an AIProvider for agent execution.
 
     Priority:
     1. config["ai_provider_factory"] callable (explicit injection)
     2. Auto-discover from registered Nexus adapters (Claude > Copilot > Gemini)
-    Returns None if nothing is available.
+
+    Constructors are cheap but don't check CLI/env availability — we call
+    check_availability() to verify before returning. Returns None if no
+    working provider is found.
     """
-    # 1. Explicit factory
+    # 1. Explicit factory from config
     if config:
         try:
             provider_factory = config.get("ai_provider_factory")
             if callable(provider_factory):
-                return provider_factory()
+                provider = provider_factory()
+                if provider is not None:
+                    return provider
         except Exception as exc:
             logger.debug("ai_provider_factory failed: %s", exc)
 
-    # 2. Auto-discover: try registered providers in preference order
+    # 2. Auto-discover in preference order, checking availability
+    candidates = []
     try:
         from nexus.adapters.ai.claude_provider import ClaudeProvider
-        p = ClaudeProvider()
-        return p
-    except Exception:
-        pass
+        candidates.append(ClaudeProvider())
+    except Exception as exc:
+        logger.debug("ClaudeProvider init failed: %s", exc)
 
     try:
         from nexus.adapters.ai.copilot_provider import CopilotCLIProvider
-        p = CopilotCLIProvider()
-        return p
-    except Exception:
-        pass
+        candidates.append(CopilotCLIProvider())
+    except Exception as exc:
+        logger.debug("CopilotCLIProvider init failed: %s", exc)
 
     try:
         from nexus.adapters.ai.gemini_provider import GeminiCLIProvider
-        p = GeminiCLIProvider()
-        return p
-    except Exception:
-        pass
+        candidates.append(GeminiCLIProvider())
+    except Exception as exc:
+        logger.debug("GeminiCLIProvider init failed: %s", exc)
+
+    for provider in candidates:
+        try:
+            if await provider.check_availability():
+                return provider
+        except Exception as exc:
+            logger.debug("%s.check_availability() failed: %s", type(provider).__name__, exc)
 
     return None
 
@@ -177,7 +187,6 @@ def _get_ai_provider(config: dict | None):
 def _make_stop_condition(expr: str):
     """
     Build a stop_condition callable from a Python expression string.
-    The expression is evaluated with `output` in scope (AgentOutput).
     Falls back to never-stop if expression is empty or invalid.
     """
     if not expr:
