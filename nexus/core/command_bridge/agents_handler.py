@@ -133,15 +133,44 @@ def _build_sub_agents(specs: list[dict], config: dict | None = None):
 
 
 def _get_ai_provider(config: dict | None):
-    """Try to resolve an AIProvider from config. Returns None if unavailable."""
-    if not config:
-        return None
+    """Resolve an AIProvider for agent execution.
+
+    Priority:
+    1. config["ai_provider_factory"] callable (explicit injection)
+    2. Auto-discover from registered Nexus adapters (Claude > Copilot > Gemini)
+    Returns None if nothing is available.
+    """
+    # 1. Explicit factory
+    if config:
+        try:
+            provider_factory = config.get("ai_provider_factory")
+            if callable(provider_factory):
+                return provider_factory()
+        except Exception as exc:
+            logger.debug("ai_provider_factory failed: %s", exc)
+
+    # 2. Auto-discover: try registered providers in preference order
     try:
-        provider_factory = config.get("ai_provider_factory")
-        if callable(provider_factory):
-            return provider_factory()
-    except Exception as exc:
-        logger.debug("Could not resolve AI provider: %s", exc)
+        from nexus.adapters.ai.claude_provider import ClaudeProvider
+        p = ClaudeProvider()
+        return p
+    except Exception:
+        pass
+
+    try:
+        from nexus.adapters.ai.copilot_provider import CopilotCLIProvider
+        p = CopilotCLIProvider()
+        return p
+    except Exception:
+        pass
+
+    try:
+        from nexus.adapters.ai.gemini_provider import GeminiCLIProvider
+        p = GeminiCLIProvider()
+        return p
+    except Exception:
+        pass
+
     return None
 
 
