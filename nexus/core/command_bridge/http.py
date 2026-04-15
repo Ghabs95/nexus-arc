@@ -377,7 +377,13 @@ def create_command_bridge_app(
                 if not isinstance(content, str) or not content.strip():
                     return _json_response(start_response, 400, {"ok": False, "error": "content is required and must be non-empty"})
                 campaign_id = payload.get("campaign_id") or payload.get("campaign") or None
-                dry_run = bool(payload.get("dry_run", True))
+                dry_run_raw = payload.get("dry_run", True)
+                if isinstance(dry_run_raw, bool):
+                    dry_run = dry_run_raw
+                elif isinstance(dry_run_raw, str):
+                    dry_run = dry_run_raw.strip().lower() in {"1", "true", "yes", "on"}
+                else:
+                    dry_run = bool(dry_run_raw)
                 idempotency_key = payload.get("idempotency_key") or None
                 nexus_id = payload.get("nexus_id") or None
                 chat_platform = payload.get("chat_platform") or None
