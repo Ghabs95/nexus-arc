@@ -116,19 +116,17 @@ def publish_linkedin_text(
         scheduled_time_utc="",
     )
 
-    # Use adapter.dry_run if available for validation, otherwise call publish
-    try:
-        result = adapter.dry_run(post)
-        # adapter.dry_run returns PublishResult synchronously or may be coroutine
-        if hasattr(result, "__await__"):
-            import asyncio
+    if dry_run:
+        try:
+            result = adapter.dry_run(post)
+            # adapter.dry_run returns PublishResult synchronously or may be coroutine
+            if hasattr(result, "__await__"):
+                import asyncio
 
-            result = asyncio.run(result)
-    except Exception as exc:
-        return {"ok": False, "error": f"validation failed: {exc}"}
-
-    if not getattr(result, "dry_run", False):
-        # proceed to actual publish
+                result = asyncio.run(result)
+        except Exception as exc:
+            return {"ok": False, "error": f"validation failed: {exc}"}
+    else:
         try:
             import asyncio
 

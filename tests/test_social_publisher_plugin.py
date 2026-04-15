@@ -186,14 +186,24 @@ def test_publish_linkedin_text_preserves_link_preview_metadata(monkeypatch):
             assert access_token == "token"
             assert author_urn == "urn:li:person:abc123"
 
-        def dry_run(self, post: SocialPost):
-            calls.append({"metadata": dict(post.metadata), "content": post.content})
+        async def dry_run(self, post: SocialPost):
+            calls.append({"kind": "dry_run", "metadata": dict(post.metadata), "content": post.content})
             return PublishResult.ok(
                 platform="linkedin",
                 campaign_id=post.campaign_id,
-                idempotency_key="idem-linkedin",
+                idempotency_key="idem-linkedin-dry",
                 post_id="dry-run",
                 dry_run=True,
+            )
+
+        async def publish(self, post: SocialPost):
+            calls.append({"kind": "publish", "metadata": dict(post.metadata), "content": post.content})
+            return PublishResult.ok(
+                platform="linkedin",
+                campaign_id=post.campaign_id,
+                idempotency_key="idem-linkedin-live",
+                post_id="ugc-999",
+                dry_run=False,
             )
 
     monkeypatch.setattr(
@@ -201,6 +211,7 @@ def test_publish_linkedin_text_preserves_link_preview_metadata(monkeypatch):
         lambda nexus_id: _StubConnection(),
     )
     monkeypatch.setattr("nexus.core.social_publish_linkedin.LinkedInSocialAdapter", _StubAdapter)
+    monkeypatch.setattr("nexus.core.social_publish_linkedin._record_social_publish_event", lambda **kwargs: None)
 
     result = publish_linkedin_text(
         content="hello",
@@ -216,7 +227,7 @@ def test_publish_linkedin_text_preserves_link_preview_metadata(monkeypatch):
     )
 
     assert result["ok"] is True
-    assert calls == []
+    assert result["dry_run"] is True
 
     result = publish_linkedin_text(
         content="hello",
@@ -232,6 +243,8 @@ def test_publish_linkedin_text_preserves_link_preview_metadata(monkeypatch):
     )
 
     assert result["ok"] is True
+    assert result["dry_run"] is False
+    assert result["post_id"] == "ugc-999"
     assert result["metadata"] == {
         "link_url": "https://github.com/ghabs-org/nexus-router",
         "link_title": "ghabs-org/nexus-router",
@@ -240,6 +253,7 @@ def test_publish_linkedin_text_preserves_link_preview_metadata(monkeypatch):
     }
     assert calls == [
         {
+            "kind": "dry_run",
             "metadata": {
                 "link_preview_url": "https://github.com/ghabs-org/nexus-router",
                 "link_preview_title": "ghabs-org/nexus-router",
@@ -250,5 +264,18 @@ def test_publish_linkedin_text_preserves_link_preview_metadata(monkeypatch):
                 "link_description": "Router repo",
             },
             "content": "hello",
-        }
-    ]
+        },
+        {
+            "kind": "publish",
+            "metadata": {
+                "link_preview_url": "https://github.com/ghabs-org/nexus-router",
+                "link_preview_title": "ghabs-org/nexus-router",
+                "link_preview_description": "Router repo",
+                "visibility": "PUBLIC",
+                "link_url": "https://github.com/ghabs-org/nexus-router",
+                "link_title": "ghabs-org/nexus-router",
+                "link_description": "Router repo",
+            },
+            "content": "hello",
+        },
+    ][1:]
