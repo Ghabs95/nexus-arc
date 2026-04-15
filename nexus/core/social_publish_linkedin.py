@@ -39,6 +39,7 @@ def publish_linkedin_text(
     chat_id: str | None = None,
     dry_run: bool = True,
     idempotency_key: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Publish a text post to LinkedIn for the canonical nexus_id resolved.
 
@@ -97,12 +98,21 @@ def publish_linkedin_text(
     # Build minimal post object expected by adapter
     from nexus.adapters.social.base import SocialPost
 
+    safe_metadata = dict(metadata or {})
+    for alias, canonical in (
+        ("link_preview_url", "link_url"),
+        ("link_preview_title", "link_title"),
+        ("link_preview_description", "link_description"),
+    ):
+        if alias in safe_metadata and canonical not in safe_metadata:
+            safe_metadata[canonical] = safe_metadata[alias]
+
     post = SocialPost(
         platform=platform,
         content=str(content),
         campaign_id=safe_campaign,
         media_urls=[],
-        metadata={},
+        metadata=safe_metadata,
         scheduled_time_utc="",
     )
 
@@ -137,7 +147,13 @@ def publish_linkedin_text(
             nexus_id=resolved_nexus_id,
             post_url=getattr(result, "post_url", None),
             published_at=published_at,
-            metadata={"dry_run": result.dry_run},
+            metadata={
+                "dry_run": result.dry_run,
+                "link_url": post.metadata.get("link_url"),
+                "link_title": post.metadata.get("link_title"),
+                "link_description": post.metadata.get("link_description"),
+                "visibility": post.metadata.get("visibility"),
+            },
         )
     except Exception:
         logger.exception("Failed to record social publish event")
@@ -151,4 +167,10 @@ def publish_linkedin_text(
         "idempotency_key": getattr(result, "idempotency_key", key),
         "post_id": getattr(result, "post_id", None),
         "error": getattr(result, "error", None),
+        "metadata": {
+            "link_url": post.metadata.get("link_url"),
+            "link_title": post.metadata.get("link_title"),
+            "link_description": post.metadata.get("link_description"),
+            "visibility": post.metadata.get("visibility"),
+        },
     }

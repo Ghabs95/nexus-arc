@@ -382,6 +382,7 @@ def create_command_bridge_app(
                 nexus_id = payload.get("nexus_id") or None
                 chat_platform = payload.get("chat_platform") or None
                 chat_id = payload.get("chat_id") or None
+                metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else None
 
                 # Fallback: use authenticated sender id header if available
                 if not nexus_id and not (chat_platform and chat_id):
@@ -402,6 +403,7 @@ def create_command_bridge_app(
                         chat_id=chat_id,
                         dry_run=dry_run,
                         idempotency_key=idempotency_key,
+                        metadata=metadata,
                     )
                 except Exception as exc:
                     _logger.exception("LinkedIn publish handler failed")

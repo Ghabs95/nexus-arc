@@ -5,6 +5,7 @@ import pytest
 from nexus.adapters.social.base import PublishResult, SocialPlatformAdapter, SocialPost
 import nexus.plugins.builtin.social_publisher_plugin as social_publisher_plugin
 from nexus.plugins.builtin.social_publisher_plugin import SocialPublisherPlugin
+from nexus.core.social_publish_linkedin import publish_linkedin_text
 
 
 class _StubAdapter(SocialPlatformAdapter):
@@ -169,5 +170,85 @@ async def test_publish_persists_social_publish_event(monkeypatch):
                 "link_description": None,
                 "visibility": None,
             },
+        }
+    ]
+
+
+def test_publish_linkedin_text_preserves_link_preview_metadata(monkeypatch):
+    calls: list[dict] = []
+
+    class _StubConnection:
+        access_token = "token"
+        author_urn = "urn:li:person:abc123"
+
+    class _StubAdapter:
+        def __init__(self, access_token: str, author_urn: str):
+            assert access_token == "token"
+            assert author_urn == "urn:li:person:abc123"
+
+        def dry_run(self, post: SocialPost):
+            calls.append({"metadata": dict(post.metadata), "content": post.content})
+            return PublishResult.ok(
+                platform="linkedin",
+                campaign_id=post.campaign_id,
+                idempotency_key="idem-linkedin",
+                post_id="dry-run",
+                dry_run=True,
+            )
+
+    monkeypatch.setattr(
+        "nexus.core.social_publish_linkedin.linkedin_connector_service.get_connection",
+        lambda nexus_id: _StubConnection(),
+    )
+    monkeypatch.setattr("nexus.core.social_publish_linkedin.LinkedInSocialAdapter", _StubAdapter)
+
+    result = publish_linkedin_text(
+        content="hello",
+        campaign_id="camp-linkedin",
+        nexus_id="user-123",
+        dry_run=True,
+        metadata={
+            "link_preview_url": "https://github.com/ghabs-org/nexus-router",
+            "link_preview_title": "ghabs-org/nexus-router",
+            "link_preview_description": "Router repo",
+            "visibility": "PUBLIC",
+        },
+    )
+
+    assert result["ok"] is True
+    assert calls == []
+
+    result = publish_linkedin_text(
+        content="hello",
+        campaign_id="camp-linkedin",
+        nexus_id="user-123",
+        dry_run=False,
+        metadata={
+            "link_preview_url": "https://github.com/ghabs-org/nexus-router",
+            "link_preview_title": "ghabs-org/nexus-router",
+            "link_preview_description": "Router repo",
+            "visibility": "PUBLIC",
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["metadata"] == {
+        "link_url": "https://github.com/ghabs-org/nexus-router",
+        "link_title": "ghabs-org/nexus-router",
+        "link_description": "Router repo",
+        "visibility": "PUBLIC",
+    }
+    assert calls == [
+        {
+            "metadata": {
+                "link_preview_url": "https://github.com/ghabs-org/nexus-router",
+                "link_preview_title": "ghabs-org/nexus-router",
+                "link_preview_description": "Router repo",
+                "visibility": "PUBLIC",
+                "link_url": "https://github.com/ghabs-org/nexus-router",
+                "link_title": "ghabs-org/nexus-router",
+                "link_description": "Router repo",
+            },
+            "content": "hello",
         }
     ]
