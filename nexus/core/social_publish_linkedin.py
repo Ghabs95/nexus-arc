@@ -123,7 +123,7 @@ def publish_linkedin_text(
         if hasattr(result, "__await__"):
             import asyncio
 
-            result = asyncio.get_event_loop().run_until_complete(result)
+            result = asyncio.run(result)
     except Exception as exc:
         return {"ok": False, "error": f"validation failed: {exc}"}
 
@@ -132,7 +132,7 @@ def publish_linkedin_text(
         try:
             import asyncio
 
-            result = asyncio.get_event_loop().run_until_complete(adapter.publish(post))
+            result = asyncio.run(adapter.publish(post))
         except Exception as exc:
             return {"ok": False, "error": f"publish failed: {exc}"}
 
