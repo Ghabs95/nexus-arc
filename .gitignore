@@ -48,5 +48,6 @@ Thumbs.db
 .cache/
 *.pid
 .env
+node_modules/
 # Accidental pip output files
 =*

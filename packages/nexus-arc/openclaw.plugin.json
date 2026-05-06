@@ -3,6 +3,9 @@
   "name": "Nexus ARC Command Bridge",
   "description": "Adds /nexus, /chat, and /chatagents commands that forward requests to a Nexus ARC command bridge.",
   "version": "0.2.0",
+  "activation": {
+    "onStartup": true
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
